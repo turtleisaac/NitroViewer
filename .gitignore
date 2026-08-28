@@ -1,0 +1,21 @@
+# ROMs — never commit copyrighted game files
+*.nds
+
+# Java / Maven build output
+target/
+
+# Generated jar bundles (rebuild with scripts/build-jars.sh)
+spike/jars/*.jar
+web/public/jars/*.jar
+
+# Node / web
+node_modules/
+dist/
+.vite/
+*.log
+
+# OS / editor
+.DS_Store
+.idea/
+.vscode/
+*.iml

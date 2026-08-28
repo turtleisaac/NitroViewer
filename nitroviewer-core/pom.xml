@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <groupId>com.nitroviewer</groupId>
+    <artifactId>nitroviewer-core</artifactId>
+    <version>0.1.0-SNAPSHOT</version>
+    <packaging>jar</packaging>
+
+    <name>nitroviewer-core</name>
+    <description>
+        Transport-agnostic facade over Nds4j for NitroViewer. Exposes ROM browsing and 2D graphics
+        decoding through methods that only take/return JSON, byte[] and base64 strings, so the same
+        contract can run in-browser via CheerpJ or behind an HTTP backend.
+    </description>
+
+    <properties>
+        <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+        <!-- Java 8 to match Nds4j and CheerpJ's best-supported bytecode target. -->
+        <maven.compiler.source>8</maven.compiler.source>
+        <maven.compiler.target>8</maven.compiler.target>
+    </properties>
+
+    <dependencies>
+        <dependency>
+            <groupId>io.github.turtleisaac</groupId>
+            <artifactId>Nds4j</artifactId>
+            <!-- Consumes the local build of the feature/3d-formats branch: scripts/build-jars.sh runs
+                 `mvn install` from ../../Nds4j first, which installs that branch's code into ~/.m2 under
+                 the pom's own version (1.0.0), shadowing Maven Central for this build. Bump this to the
+                 real release coordinate once Nds4j 1.1.0 is published. -->
+            <version>1.0.0</version>
+        </dependency>
+    </dependencies>
+</project>

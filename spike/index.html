@@ -1,0 +1,68 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>NitroViewer — CheerpJ spike</title>
+  <!-- Phase-0 de-risk: run the Nds4j jar in the browser via CheerpJ, open a real ROM,
+       walk the FNT tree, and decode one sprite. Throwaway; not the v1 UI. -->
+  <script src="https://cjrtnc.leaningtech.com/4.3/loader.js"></script>
+  <style>
+    :root { color-scheme: dark; }
+    body { margin: 0; font: 14px/1.5 -apple-system, system-ui, sans-serif;
+           background: #0e0f13; color: #e6e6ea; }
+    header { padding: 16px 20px; border-bottom: 1px solid #23252d; }
+    header h1 { margin: 0; font-size: 16px; font-weight: 600; }
+    header p { margin: 4px 0 0; color: #9aa0ad; font-size: 12px; }
+    main { display: grid; grid-template-columns: 320px 1fr 360px; gap: 0;
+           height: calc(100vh - 66px); }
+    .pane { padding: 14px 16px; overflow: auto; border-right: 1px solid #23252d; }
+    .pane:last-child { border-right: 0; }
+    h2 { font-size: 12px; text-transform: uppercase; letter-spacing: .06em;
+         color: #7f8695; margin: 0 0 10px; }
+    button { background: #3b5bdb; color: #fff; border: 0; border-radius: 6px;
+             padding: 8px 14px; font-size: 13px; cursor: pointer; }
+    button:disabled { background: #2a2d36; color: #6b7280; cursor: default; }
+    #status { font-size: 12px; color: #9aa0ad; margin: 10px 0; white-space: pre-wrap; }
+    #tree { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px; }
+    details { margin-left: 10px; } summary { cursor: pointer; }
+    .file { margin-left: 20px; color: #b7bdc9; }
+    .file .id { color: #6b7280; }
+    table.metrics { border-collapse: collapse; width: 100%; font-size: 12px; }
+    table.metrics td { padding: 3px 6px; border-bottom: 1px solid #1c1e26; }
+    table.metrics td:last-child { text-align: right; font-variant-numeric: tabular-nums; }
+    .ok { color: #51cf66; } .warn { color: #ffd43b; } .bad { color: #ff6b6b; }
+    canvas { image-rendering: pixelated; background:
+      repeating-conic-gradient(#2a2d36 0% 25%, #1a1c22 0% 50%) 50% / 16px 16px;
+      border: 1px solid #23252d; border-radius: 6px; max-width: 100%; }
+    .meta { font-size: 12px; color: #9aa0ad; margin-top: 8px; }
+    code { color: #cdd3df; }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>NitroViewer — CheerpJ spike</h1>
+    <p>Nds4j runs in-browser via CheerpJ. Pick a DS ROM (it never leaves this tab). Goal: prove the
+       chain — parse ROM → walk FNT → decode a sprite — and measure it.</p>
+  </header>
+  <main>
+    <section class="pane">
+      <h2>ROM</h2>
+      <input type="file" id="rom" accept=".nds" disabled />
+      <div id="status">Booting CheerpJ…</div>
+      <h2 style="margin-top:18px">Metrics</h2>
+      <table class="metrics"><tbody id="metrics"></tbody></table>
+    </section>
+    <section class="pane">
+      <h2>Filesystem (FNT)</h2>
+      <div id="tree"><em style="color:#6b7280">open a ROM to walk its tree</em></div>
+    </section>
+    <section class="pane">
+      <h2>Decoded sprite</h2>
+      <canvas id="sprite" width="256" height="256"></canvas>
+      <div class="meta" id="spriteMeta"></div>
+    </section>
+  </main>
+  <script src="./spike.js"></script>
+</body>
+</html>
