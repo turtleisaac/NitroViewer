@@ -18,11 +18,14 @@ and Save ROM. What's left (asset encoders, the per-game manifest, polish) is sna
 - **2D:** NCGR (sprites) · NCLR (palettes) · NSCR (tilemaps) · NCER (cells) · NANR (cell animation, plays,
   auto-selects the first multi-frame clip so it looks alive on open) — with palette-pairing UX, 4bpp
   sub-palette selection, LZ decompression, PNG export.
-- **NARC** browse (format-typed entries) + **raw file export**.
+- **NARC** browse (format-typed entries), incl. **NARC-in-NARC** (nested archives browse; edits repack up
+  the whole nesting chain to the ROM) + **raw file export**.
 - **3D / effects (full Nitro stack):** NSBMD models + NSBTX textures (three.js, orbit/zoom/pan, unlit),
-  NSBCA skeletal animation (glTF), NSBMA/NSBVA/NSBTP tracks (three.js-driven per-frame), SPA particles
+  NSBCA animation (glTF node-TRS), NSBMA/NSBVA/NSBTP tracks (three.js-driven per-frame), SPA particles
   (server-rendered frame player), glTF export, **Capture PNG of the 3D view**, model/texture/animation
-  pickers, smart NSBCA auto-pairing.
+  pickers. Animation is driven by a **`setInterval` timer** (rAF gets throttled on iOS Safari) with a
+  capped `devicePixelRatio` + WebGL context-loss recovery, so it plays on iPhone. **Model↔NSBCA
+  auto-pairing is a nearest-index heuristic and is often wrong** (see §9).
 - **Write/edit/save (MVP done — §6):** **Import…** replaces any file's bytes (ROM file or NARC sub-file,
   auto-repacked into its ROM file); **Save ROM** serialises the edited image and downloads the `.nds`;
   dirty indicator + `beforeunload` guard; viewers re-decode edited bytes immediately.
@@ -38,9 +41,13 @@ and Save ROM. What's left (asset encoders, the per-game manifest, polish) is sna
   scroll the tree to them, the NARC segment jumps back to that NARC's file list; tree rows carry a
   full-path tooltip; the **NARC file grid remembers its scroll position** across a breadcrumb-back; a
   **loading spinner** covers the ROM-parse gap. Disambiguates HGSS's numeric `a/X/Y/Z`.
-- **SEO / landing:** `<title>` + meta description/keywords/canonical, Open Graph + Twitter cards, JSON-LD
-  `WebApplication`, `favicon.svg`, `site.webmanifest`, `robots.txt`, `sitemap.xml`; the **OG image is a
-  real capture of the 3D viewer rendering the manene model**. Decluttered header/landing copy.
+- **SEO / landing:** full `<title>` + meta description/keywords/canonical, Open Graph + Twitter cards
+  (incl. `og:image:alt`/`og:locale`), JSON-LD `WebApplication` (with `featureList`/`screenshot`/`author`/
+  `sameAs`), `favicon.svg` + `favicon-32.png` + `apple-touch-icon.png`, `site.webmanifest`, `robots.txt`,
+  `sitemap.xml`, `preconnect` to the CheerpJ CDN. The **OG image is a real capture of the 3D viewer
+  rendering the manene model**. **Crawlable static landing content** lives in `#root` (hero + features +
+  formats + FAQ) so non-JS crawlers get real text; React replaces it on mount. Positioning is a **Tinke
+  replacement** (copy avoids "free"/"in your browser").
 - **Infra:** responsive layout, GitHub Actions CI/CD to Pages, 19 JUnit facade tests + 4 Nds4j quantiser
   tests + 10 vitest tests.
 
@@ -418,9 +425,16 @@ so groupings/tile-widths/scanned flags come from data, not heuristics — incl. 
 one NARC, textures in another). Manifest-first, `pairing.ts` heuristics fall back. Highest-leverage
 correctness win; would retire most of the read-side pairing guesswork below.
 
-**Read-side polish (§5).** Smarter model↔NSBCA/track pairing (nearest-index today); model lighting/material
-polish + a ground grid; SPA emitter isolation / adjustable frame count/size / background toggle; NANR
-default-clip edge cases.
+**Model↔NSBCA/track pairing is the biggest read-side wart.** The auto-pair is "nearest NSBCA at/after the
+model index" and is **often wrong** — e.g. even manene's documented walk is narc-142 **model #51 →
+animation #53** (Nds4j `SoftwareRendererTest`/`GltfAnimationTest`), but the heuristic picks #52; and a
+model's real anims can sit *before* it. A model owns a small group of NSBCAs; the right mapping is
+per-game data. The **game DB (§8) is the fix**; until then, users pick the animation set manually.
+*(Note: Nds4j exports NSBMD as rigid **node** animation, never glTF skins — there are no vertex-skinned
+models, so don't chase GPU/CPU skinning.)*
+
+**Other read-side polish (§5).** Model lighting/material polish + a ground grid; SPA emitter isolation /
+adjustable frame count/size / background toggle; NANR default-clip edge cases.
 
 **Nds4j-blocked.** Bitmap-OBJ NCER composition (so scanned sprites compose per-cell instead of the raw-
 bitmap fallback) — a reverse-engineering task. New formats need parsers first: **NFTR** (fonts),
@@ -430,16 +444,13 @@ bitmap fallback) — a reverse-engineering task. New formats need parsers first:
 relabelling or accepting pixels. Cross-file live invalidation: editing an NCGR while a paired NCER/NANR
 viewer is open doesn't refresh that view until reselect (in-container edits already refresh).
 
-**SEO / discoverability.** Shipped: full meta + OG/Twitter + JSON-LD + favicon/manifest/robots/sitemap.
-Still worth doing:
-- **Crawlable landing content.** The served HTML is an empty `#root` + meta — Googlebot renders JS but
-  many crawlers/social scrapers don't. Add static hero copy (or a `<noscript>` block, or prerender the
-  landing route) so there's real indexable text, not just tags.
-- **Perf / Core Web Vitals** (a ranking factor): `preconnect`/`dns-prefetch` to the CheerpJ CDN
-  (`cjrtnc.leaningtech.com`); lazy/defer non-critical work; a Lighthouse pass.
-- **Social/robots polish:** `og:image:alt`, `og:locale`, an `apple-touch-icon` (180×180 PNG) + a 32×32
-  PNG favicon fallback, `theme-color` (done).
-- **Off-platform (needs the owner):** verify the site in Google Search Console + Bing Webmaster and submit
-  `sitemap.xml`; set the GitHub repo description/topics; link from the Nds4j README (backlink).
-- **Structured data extras:** `featureList`, `screenshot`, `softwareVersion`, `author`/`publisher`,
-  `sameAs` (GitHub) on the `WebApplication` JSON-LD.
+**SEO / discoverability.** On-page is **done**: full meta + OG/Twitter (+ `og:image:alt`/`og:locale`) +
+JSON-LD (`featureList`/`screenshot`/`author`/`sameAs`) + favicon set + manifest + robots + sitemap +
+`preconnect`, and **crawlable static landing content in `#root`** (hero/features/formats/FAQ). What's left
+is **off-platform** (needs the owner) + a couple of extras:
+- Verify the site in **Google Search Console + Bing Webmaster** and submit `sitemap.xml` (paste a
+  verification token and I'll add the meta tag; the submission itself is yours).
+- **Backlinks:** link nitroviewer.com from the Nds4j README and DS/Pokémon romhacking communities; set the
+  GitHub repo **description + topics**.
+- A **Lighthouse** pass for Core Web Vitals; optionally a `FAQPage` JSON-LD and `softwareVersion` (skipped
+  — package.json is 0.1.0).
