@@ -18,6 +18,30 @@ interface Three {
   ro: ResizeObserver;
 }
 
+// DS models are unlit — the texture + vertex colours are the final look. glTF exports them as PBR,
+// which three.js then shades (washing them out). Swap to unlit MeshBasicMaterial so they render crisp,
+// exactly as the hardware does, preserving the texture, alpha-test, and double-sidedness.
+function makeUnlit(obj: THREE.Object3D) {
+  const convert = (m: THREE.Material) => {
+    const s = m as THREE.MeshStandardMaterial;
+    const basic = new THREE.MeshBasicMaterial({
+      map: s.map ?? null,
+      color: s.color ? s.color.clone() : new THREE.Color(0xffffff),
+      transparent: s.transparent,
+      opacity: s.opacity,
+      alphaTest: s.alphaTest,
+      side: s.side,
+      vertexColors: s.vertexColors,
+    });
+    return basic;
+  };
+  obj.traverse((o) => {
+    if (o instanceof THREE.Mesh) {
+      o.material = Array.isArray(o.material) ? o.material.map(convert) : convert(o.material);
+    }
+  });
+}
+
 function fitCamera(obj: THREE.Object3D, camera: THREE.PerspectiveCamera, controls: OrbitControls) {
   const box = new THREE.Box3().setFromObject(obj);
   const size = box.getSize(new THREE.Vector3());
@@ -80,14 +104,7 @@ export default function ModelViewer() {
     camera.position.set(0, 0, 3);
     const controls = new OrbitControls(camera, renderer.domElement);
 
-    scene.add(new THREE.AmbientLight(0xffffff, 0.9));
-    const keyLight = new THREE.DirectionalLight(0xffffff, 1.0);
-    keyLight.position.set(1, 2, 3);
-    scene.add(keyLight);
-    const fill = new THREE.DirectionalLight(0xffffff, 0.4);
-    fill.position.set(-2, -1, -2);
-    scene.add(fill);
-
+    // No lights needed — models render unlit (see makeUnlit).
     const root = new THREE.Group();
     scene.add(root);
 
@@ -170,6 +187,7 @@ export default function ModelViewer() {
             t.mixer = null;
             t.actions = [];
             while (t.root.children.length) t.root.remove(t.root.children[0]);
+            makeUnlit(gltf.scene);
             t.root.add(gltf.scene);
             fitCamera(gltf.scene, t.camera, t.controls);
             if (gltf.animations.length) {
