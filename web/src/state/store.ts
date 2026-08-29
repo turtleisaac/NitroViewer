@@ -43,8 +43,10 @@ interface AppState {
 
   selection: Selection | null;
   romSiblings: ResourceItem[]; // pairing candidates when a loose ROM file is selected
+  navOpen: boolean; // tree drawer open (only affects narrow screens)
 
   boot: () => Promise<void>;
+  setNavOpen: (open: boolean) => void;
   openRom: (file: File) => Promise<void>;
   toggleFolder: (path: string) => void;
   select: (ref: ResourceRef, name: string) => Promise<void>;
@@ -79,6 +81,9 @@ export const useStore = create<AppState>((set, get) => ({
 
   selection: null,
   romSiblings: [],
+  navOpen: false,
+
+  setNavOpen: (open) => set({ navOpen: open }),
 
   boot: async () => {
     const { client, booted } = get();
@@ -150,7 +155,8 @@ export const useStore = create<AppState>((set, get) => ({
       fmt = await client.detectFormat(romHandle, ref);
       set((s) => ({ formats: { ...s.formats, [key]: fmt! } }));
     }
-    set({ selection: { ref, name, format: fmt.format, compressed: fmt.compressed, size: fmt.size } });
+    // Close the tree drawer on selection so the viewer is visible on small screens.
+    set({ selection: { ref, name, format: fmt.format, compressed: fmt.compressed, size: fmt.size }, navOpen: false });
 
     // Precompute pairing candidates for a loose ROM file (its FNT-folder siblings).
     if (ref.container === ROM_CONTAINER) {

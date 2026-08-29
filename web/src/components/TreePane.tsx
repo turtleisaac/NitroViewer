@@ -42,8 +42,9 @@ function FolderNode({ folder, path }: { folder: TreeFolder; path: string }) {
 
 export function TreePane() {
   const tree = useStore((s) => s.tree);
+  const navOpen = useStore((s) => s.navOpen);
   return (
-    <aside className="pane tree-pane">
+    <aside className={"pane tree-pane" + (navOpen ? " open" : "")}>
       <div className="pane-head">Filesystem</div>
       <div className="tree-scroll">{tree && <FolderNode folder={tree} path="/" />}</div>
     </aside>

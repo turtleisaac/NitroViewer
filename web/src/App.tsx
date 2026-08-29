@@ -11,6 +11,8 @@ export function App() {
   const romHandle = useStore((s) => s.romHandle);
   const romName = useStore((s) => s.romName);
   const openRom = useStore((s) => s.openRom);
+  const navOpen = useStore((s) => s.navOpen);
+  const setNavOpen = useStore((s) => s.setNavOpen);
   const fileRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -20,8 +22,13 @@ export function App() {
   return (
     <div className="app">
       <header className="topbar">
+        {romHandle != null && (
+          <button className="nav-toggle" aria-label="Toggle file list" onClick={() => setNavOpen(!navOpen)}>
+            ☰
+          </button>
+        )}
         <div className="brand">
-          <span className="logo">◆</span> NitroViewer
+          <span className="logo">◆</span> <span className="brand-name">NitroViewer</span>
           <span className="tagline">DS ROM viewer · runs in your browser · nothing is uploaded</span>
         </div>
         <div className="topbar-actions">
@@ -59,9 +66,10 @@ export function App() {
             </div>
           </div>
         ) : (
-          <div className="split">
+          <div className={"split" + (navOpen ? " nav-open" : "")}>
             <TreePane />
             <InspectorPane />
+            {navOpen && <div className="scrim" onClick={() => setNavOpen(false)} />}
           </div>
         )}
       </main>

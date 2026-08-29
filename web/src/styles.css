@@ -21,7 +21,7 @@
 html, body, #root { height: 100%; margin: 0; }
 body { background: var(--bg); color: var(--text); font-size: 13px; }
 
-.app { display: flex; flex-direction: column; height: 100vh; }
+.app { display: flex; flex-direction: column; height: 100vh; height: 100dvh; }
 
 /* Top bar */
 .topbar {
@@ -159,4 +159,60 @@ body { background: var(--bg); color: var(--text); font-size: 13px; }
   flex: 0 0 24px; display: flex; align-items: center; padding: 0 14px;
   font-size: 11px; color: var(--text-faint); background: var(--bg-1); border-top: 1px solid var(--line);
   font-family: ui-monospace, monospace;
+}
+
+/* Hamburger + scrim: only used on narrow screens (hidden by default). */
+.nav-toggle {
+  display: none; align-items: center; justify-content: center;
+  width: 34px; height: 34px; margin-right: 8px; flex: 0 0 auto;
+  background: var(--bg-2); color: var(--text);
+  border: 1px solid var(--line-2); border-radius: 8px; font-size: 16px; cursor: pointer;
+}
+.scrim { display: none; }
+
+/* Don't let a big zoomed sprite push the layout; scroll within the frame instead. */
+.canvas-wrap { overflow: auto; }
+
+/* ---------- Responsive ---------- */
+
+/* Medium: narrower tree, drop the tagline. */
+@media (max-width: 1000px) {
+  .split { grid-template-columns: 280px 1fr; }
+  .tagline { display: none; }
+}
+
+/* Small / portrait: single column, tree becomes a slide-in drawer. */
+@media (max-width: 720px) {
+  .split { grid-template-columns: 1fr; }
+  .nav-toggle { display: inline-flex; }
+  .tree-pane {
+    position: fixed; top: 52px; left: 0; bottom: 0; width: 300px; max-width: 82vw;
+    z-index: 40; transform: translateX(-100%); transition: transform 0.22s ease;
+    box-shadow: 6px 0 24px rgba(0, 0, 0, 0.45); border-right: 1px solid var(--line-2);
+  }
+  .tree-pane.open { transform: translateX(0); }
+  .scrim {
+    display: block; position: fixed; inset: 52px 0 0 0;
+    background: rgba(0, 0, 0, 0.55); z-index: 30;
+  }
+  .inspector-body { padding: 14px; }
+  .insp-name { max-width: 44vw; }
+  .controls { gap: 10px 12px; padding: 10px 12px; }
+}
+
+/* Phone: reclaim topbar space, tighten controls. */
+@media (max-width: 520px) {
+  .topbar { padding: 0 10px; }
+  .status { display: none; }
+  .brand { font-size: 14px; gap: 6px; }
+  .btn { padding: 7px 11px; }
+  .ctrl select { min-width: 92px; }
+  .ctrl input[type="number"] { width: 68px; }
+  .empty-card { padding: 28px 20px; }
+  .swatches { grid-template-columns: repeat(16, 1fr); }
+}
+
+/* Very short landscape (phones on their side): trim vertical chrome. */
+@media (max-height: 460px) and (orientation: landscape) {
+  .canvas-wrap { min-height: 150px; padding: 12px; }
 }
