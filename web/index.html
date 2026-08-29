@@ -61,6 +61,8 @@
         "applicationCategory": "MultimediaApplication",
         "operatingSystem": "Any (modern web browser)",
         "browserRequirements": "Requires a modern browser with WebAssembly",
+        "softwareVersion": "0.1.0",
+        "isAccessibleForFree": true,
         "screenshot": "https://nitroviewer.com/og.png",
         "featureList": [
           "Browse a ROM's filesystem and NARC archives",
@@ -70,6 +72,36 @@
         ],
         "author": { "@type": "Person", "name": "turtleisaac", "url": "https://github.com/turtleisaac" },
         "sameAs": ["https://github.com/turtleisaac/NitroViewer"]
+      }
+    </script>
+
+    <!-- FAQPage structured data — mirrors the visible FAQ below so it's eligible for rich results. -->
+    <script type="application/ld+json">
+      {
+        "@context": "https://schema.org",
+        "@type": "FAQPage",
+        "mainEntity": [
+          {
+            "@type": "Question",
+            "name": "Is NitroViewer open-source?",
+            "acceptedAnswer": { "@type": "Answer", "text": "Yes — it's open-source (GPLv3), built on the Nds4j library." }
+          },
+          {
+            "@type": "Question",
+            "name": "Is it a Tinke replacement?",
+            "acceptedAnswer": { "@type": "Answer", "text": "Yes. NitroViewer is a modern, web-based equivalent of the classic Tinke desktop tool for Nintendo DS files." }
+          },
+          {
+            "@type": "Question",
+            "name": "Which games work with it?",
+            "acceptedAnswer": { "@type": "Answer", "text": "Any Nintendo DS ROM. It's especially useful for Pokémon Generation IV and V ROM hacking — Diamond, Pearl, Platinum, HeartGold, SoulSilver, Black and White." }
+          },
+          {
+            "@type": "Question",
+            "name": "Do I need to install anything?",
+            "acceptedAnswer": { "@type": "Answer", "text": "No. NitroViewer runs in your web browser — there's nothing to download or install." }
+          }
+        ]
       }
     </script>
 

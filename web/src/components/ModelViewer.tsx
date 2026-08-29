@@ -3,7 +3,7 @@ import * as THREE from "three";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
 import { useStore } from "../state/store";
-import { pickNearestAfter } from "../state/pairing";
+import { pickAnimByName } from "../state/pairing";
 import {
   refKey,
   type MaterialColorAnim,
@@ -28,6 +28,8 @@ interface Three {
   mixer: THREE.AnimationMixer | null;
   actions: THREE.AnimationAction[];
   ro: ResizeObserver;
+  grid: THREE.GridHelper | null; // ground grid, sized to the model (toggled from the UI)
+  fit: () => void; // re-fit the camera to the current model (Reset view)
   // Track driving (NSBMA/NSBVA/NSBTP have no glTF path, so they're applied here per frame):
   trackTime: number;
   materialsByName: Map<string, THREE.MeshBasicMaterial[]>;
@@ -120,17 +122,37 @@ function fitCamera(obj: THREE.Object3D, camera: THREE.PerspectiveCamera, control
   controls.update();
 }
 
+// Build a ground grid sized to the model, sitting under its feet (box min-Y), centred on it in X/Z.
+// Two subtly-different line colours read clearly on the dark viewport without competing with the model.
+function buildGrid(obj: THREE.Object3D): THREE.GridHelper {
+  const box = new THREE.Box3().setFromObject(obj);
+  const size = box.getSize(new THREE.Vector3());
+  const center = box.getCenter(new THREE.Vector3());
+  const span = Math.max(size.x, size.z) * 2.5 || 2;
+  const grid = new THREE.GridHelper(span, 20, 0x5b6b8c, 0x30384d);
+  grid.position.set(center.x, box.min.y, center.z);
+  (grid.material as THREE.Material).transparent = true;
+  (grid.material as THREE.Material).opacity = 0.6;
+  grid.renderOrder = -1; // draw behind the model
+  return grid;
+}
+
 export default function ModelViewer() {
   const selection = useStore((s) => s.selection)!;
   const client = useStore((s) => s.client);
   const romHandle = useStore((s) => s.romHandle)!;
   const narcs = useStore((s) => s.narcs);
   const romSiblings = useStore((s) => s.romSiblings);
+  const editVersion = useStore((s) => s.editVersion); // bumped on any import → re-export the model bytes
   const selKey = refKey(selection.ref);
 
+  const importObj = useStore((s) => s.importObj);
   const mountRef = useRef<HTMLDivElement>(null);
   const three = useRef<Three | null>(null);
   const gltfStrRef = useRef<string | null>(null);
+  const objRef = useRef<HTMLInputElement>(null);
+  const showGridRef = useRef(true); // latest showGrid, read by the (non-grid-dependent) model-load effect
+  const [importing, setImporting] = useState(false);
 
   const [info, setInfo] = useState<{ hasEmbeddedTextures: boolean; models: string[] } | null>(null);
   const [modelIndex, setModelIndex] = useState(0);
@@ -141,9 +163,11 @@ export default function ModelViewer() {
   const [nsbva, setNsbva] = useState<ResourceRef | null>(null);
   const [nsbtp, setNsbtp] = useState<ResourceRef | null>(null);
   const [animNames, setAnimNames] = useState<string[]>([]);
+  const [nsbcaNames, setNsbcaNames] = useState<Record<string, string[]>>({}); // refKey -> its NSBCA clip names
   const [tracksTick, setTracksTick] = useState(0); // bumped when track data (re)loads
   const [animIndex, setAnimIndex] = useState(0);
   const [playing, setPlaying] = useState(true);
+  const [showGrid, setShowGrid] = useState(true);
   const [loadTick, setLoadTick] = useState(0);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -197,7 +221,7 @@ export default function ModelViewer() {
     const state: Three = {
       renderer, scene, camera, controls, root, render,
       clock: new THREE.Clock(), mixer: null, actions: [], ro: null as unknown as ResizeObserver,
-      trackTime: 0, materialsByName: new Map(), meshes: [],
+      grid: null, fit: () => {}, trackTime: 0, materialsByName: new Map(), meshes: [],
       matColor: null, vis: null, visNodeByMaterial: new Map(), texPat: null,
     };
 
@@ -224,6 +248,7 @@ export default function ModelViewer() {
       canvas.removeEventListener("webglcontextlost", onLost);
       canvas.removeEventListener("webglcontextrestored", onRestored);
       controls.dispose();
+      if (state.grid) { scene.remove(state.grid); state.grid.geometry.dispose(); (state.grid.material as THREE.Material).dispose(); }
       renderer.dispose();
       if (renderer.domElement.parentNode === mount) mount.removeChild(renderer.domElement);
       three.current = null;
@@ -248,17 +273,44 @@ export default function ModelViewer() {
     return () => {
       alive = false;
     };
-  }, [client, romHandle, selKey]);
+  }, [client, romHandle, selKey, editVersion]); // editVersion → refresh the model list after an import
 
-  // Auto-pair the nearest animation set (first NSBCA at/after the model's index) so models play by
-  // default; the picker lets the user correct it or choose None (static).
+  // Fetch each candidate NSBCA's clip names so pairing can match by name (and the picker can label
+  // them). One serial pass per candidate set; results are cached by refKey across re-selects.
   useEffect(() => {
-    setNsbca(pickNearestAfter(nsbcaItems, selection.ref.id) ?? null);
+    let alive = true;
+    (async () => {
+      for (const it of nsbcaItems) {
+        const key = refKey(it.ref);
+        if (nsbcaNames[key]) continue;
+        try {
+          const info = await client.getAnimationSetInfo(romHandle, it.ref);
+          if (!alive) return;
+          setNsbcaNames((m) => (m[key] ? m : { ...m, [key]: info.animations.map((a) => a.name) }));
+        } catch {
+          /* leave unnamed — pairing falls back to index proximity */
+        }
+      }
+    })();
+    return () => { alive = false; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [client, romHandle, nsbcaItems]);
+
+  // Auto-pair the animation set BY NAME — the lowest-indexed NSBCA whose clips belong to this model
+  // ("manene" ↔ "manene_aruku"), so a model gets its own animations and never a neighbour's. Falls back
+  // to nearest-index when names aren't loaded yet / no match. Re-runs as names arrive and per model.
+  const modelName = info?.models[modelIndex] ?? "";
+  useEffect(() => {
+    setNsbca(pickAnimByName(nsbcaItems, nsbcaNames, modelName, selection.ref.id) ?? null);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selKey, modelIndex, nsbcaItems, nsbcaNames, modelName]);
+
+  // Reset the non-skeletal tracks whenever the selected model changes.
+  useEffect(() => {
     setNsbma(null);
     setNsbva(null);
     setNsbtp(null);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selKey, nsbcaItems]);
+  }, [selKey]);
 
   // Export the chosen model (+ optional NSBCA) to glTF and load it into the scene.
   useEffect(() => {
@@ -284,6 +336,13 @@ export default function ModelViewer() {
             makeUnlit(gltf.scene);
             t.root.add(gltf.scene);
             fitCamera(gltf.scene, t.camera, t.controls);
+            t.fit = () => { fitCamera(gltf.scene, t.camera, t.controls); t.render(); };
+
+            // (Re)build the ground grid for this model and honour the current toggle.
+            if (t.grid) { t.scene.remove(t.grid); t.grid.geometry.dispose(); (t.grid.material as THREE.Material).dispose(); }
+            t.grid = buildGrid(gltf.scene);
+            t.grid.visible = showGridRef.current;
+            t.scene.add(t.grid);
 
             // Index meshes + materials (by DS material name) so the non-skeletal tracks can target them.
             t.materialsByName = new Map();
@@ -338,7 +397,7 @@ export default function ModelViewer() {
       alive = false;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [client, romHandle, selKey, modelIndex, useEmbedded, nsbtx ? refKey(nsbtx) : "", nsbca ? refKey(nsbca) : "", info]);
+  }, [client, romHandle, selKey, modelIndex, useEmbedded, nsbtx ? refKey(nsbtx) : "", nsbca ? refKey(nsbca) : "", info, editVersion]);
 
   // Activate the selected animation clip (a JS-side switch among the baked clips — no re-export).
   useEffect(() => {
@@ -356,6 +415,16 @@ export default function ModelViewer() {
     t.mixer?.update(0);
     t.render();
   }, [animIndex, playing, loadTick]);
+
+  // Toggle the ground grid on demand (the model-load effect reads showGridRef for freshly-loaded models).
+  useEffect(() => {
+    showGridRef.current = showGrid;
+    const t = three.current;
+    if (t?.grid) {
+      t.grid.visible = showGrid;
+      t.render();
+    }
+  }, [showGrid]);
 
   // Load NSBMA (material colour) track data.
   useEffect(() => {
@@ -450,6 +519,24 @@ export default function ModelViewer() {
     return () => clearInterval(id);
   }, [playing, busy, info, animNames.length, loadTick, tracksTick]);
 
+  // Import a Wavefront OBJ over this NSBMD (re-encoded to NSBMD by Nds4j's ModelBuilder). Untextured for
+  // now; the edit is undoable and re-renders via editVersion. Replaces the file's model(s) with the mesh.
+  const onObjChosen = async (file: File) => {
+    setImporting(true);
+    try {
+      const bytes = new Uint8Array(await file.arrayBuffer());
+      const res = await importObj(selection.ref, bytes);
+      setModelIndex(0);
+      setError(null);
+      // eslint-disable-next-line no-console
+      console.info(`OBJ import: ${res.vertices} verts, ${res.triangles} tris (textured=${res.textured}).`);
+    } catch (e) {
+      alert("OBJ import failed: " + (e as Error).message);
+    } finally {
+      setImporting(false);
+    }
+  };
+
   const capturePng = () => {
     const t = three.current;
     if (!t) return;
@@ -524,9 +611,15 @@ export default function ModelViewer() {
               }}
             >
               <option value="">None (static)</option>
-              {nsbcaItems.map((i) => (
-                <option key={refKey(i.ref)} value={refKey(i.ref)}>NSBCA {i.label}</option>
-              ))}
+              {nsbcaItems.map((i) => {
+                const names = nsbcaNames[refKey(i.ref)];
+                const clip = names && names.length ? names[0] : null;
+                return (
+                  <option key={refKey(i.ref)} value={refKey(i.ref)}>
+                    {clip ? `${clip} (${i.label})` : `NSBCA ${i.label}`}
+                  </option>
+                );
+              })}
             </select>
           </label>
         )}
@@ -575,6 +668,21 @@ export default function ModelViewer() {
             </button>
           </label>
         )}
+        <label className="ctrl">
+          <span>View</span>
+          <span className="view-btns">
+            <button
+              className={"chip" + (showGrid ? " chip--on" : "")}
+              title="Toggle the ground grid"
+              onClick={() => setShowGrid((g) => !g)}
+            >
+              Grid
+            </button>
+            <button className="chip" title="Re-centre the camera on the model" onClick={() => three.current?.fit()}>
+              Reset view
+            </button>
+          </span>
+        </label>
       </div>
 
       <div className="viewport" ref={mountRef}>
@@ -587,6 +695,25 @@ export default function ModelViewer() {
           <>
             <button className="link-btn" onClick={capturePng}>Capture PNG ↓</button>
             <button className="link-btn" onClick={saveGltf}>Save glTF ↓</button>
+            <button
+              className="link-btn"
+              disabled={importing}
+              title="Replace this model with a Wavefront OBJ mesh (re-encoded to NSBMD)"
+              onClick={() => objRef.current?.click()}
+            >
+              {importing ? "Importing…" : "Import OBJ ↑"}
+            </button>
+            <input
+              ref={objRef}
+              type="file"
+              accept=".obj,text/plain"
+              hidden
+              onChange={(e) => {
+                const f = e.target.files?.[0];
+                e.target.value = "";
+                if (f) void onObjChosen(f);
+              }}
+            />
           </>
         )}
       </div>

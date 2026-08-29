@@ -345,6 +345,113 @@ public final class CheerpjFacade implements NitroViewerService
         catch (Throwable t) { return err(t); }
     }
 
+    @Override
+    public String exportFile(int romHandle, int container, int id)
+    {
+        try
+        {
+            // The usable, standalone format file: LZ-decompressed if the ROM stored it compressed, so the
+            // extracted bytes open in Tinke/other tools and re-import cleanly (Tinke extracts decompressed).
+            byte[] raw = resolveRaw(rom(romHandle), container, id);
+            byte[] data = maybeDecompress(raw);
+            return "{\"size\":" + data.length
+                    + ",\"format\":" + jstr(formatOf(data))
+                    + ",\"compressed\":" + (data != raw)
+                    + ",\"base64\":" + jstr(base64(data)) + "}";
+        }
+        catch (Throwable t) { return err(t); }
+    }
+
+    @Override
+    public String exportNarcZip(int romHandle, int container, int id)
+    {
+        try
+        {
+            Narc narc = new Narc(maybeDecompress(resolveRaw(rom(romHandle), container, id)));
+            int n = narc.getNumFiles();
+            ByteArrayOutputStream baos = new ByteArrayOutputStream();
+            java.util.zip.ZipOutputStream zip = new java.util.zip.ZipOutputStream(baos);
+            for (int i = 0; i < n; i++)
+            {
+                byte[] data = maybeDecompress(narc.getFile(i)); // extract the usable, decompressed sub-file
+                zip.putNextEntry(new java.util.zip.ZipEntry(String.format("%04d.%s", i, extForFormat(formatOf(data)))));
+                zip.write(data);
+                zip.closeEntry();
+            }
+            zip.close();
+            return "{\"ok\":true,\"count\":" + n + ",\"base64\":" + jstr(base64(baos.toByteArray())) + "}";
+        }
+        catch (Throwable t)
+        {
+            return "{\"ok\":false,\"error\":" + jstr(describe(t)) + "}";
+        }
+    }
+
+    @Override
+    public String importNarcZip(int romHandle, int container, int id, byte[] zipBytes)
+    {
+        try
+        {
+            if (zipBytes == null || zipBytes.length == 0) throw new IllegalArgumentException("no zip data");
+            Narc narc = new Narc(maybeDecompress(resolveRaw(rom(romHandle), container, id)));
+
+            // Collect the zip's files, ordered by the leading integer in each name (so "0000.nscr",
+            // "0001.nscr", … rebuild in order); ties and non-numeric names fall back to zip order.
+            java.util.List<Object[]> got = new java.util.ArrayList<>();
+            java.util.zip.ZipInputStream zis = new java.util.zip.ZipInputStream(new java.io.ByteArrayInputStream(zipBytes));
+            java.util.zip.ZipEntry e;
+            int order = 0;
+            byte[] chunk = new byte[8192];
+            while ((e = zis.getNextEntry()) != null)
+            {
+                if (e.isDirectory()) continue;
+                ByteArrayOutputStream buf = new ByteArrayOutputStream();
+                int r;
+                while ((r = zis.read(chunk)) > 0) buf.write(chunk, 0, r);
+                String base = e.getName().substring(e.getName().lastIndexOf('/') + 1);
+                got.add(new Object[]{leadingInt(base, order), order, buf.toByteArray()});
+                order++;
+            }
+            if (got.isEmpty()) throw new IllegalArgumentException("the zip contained no files");
+            got.sort((a, b) -> {
+                int c = Integer.compare((Integer) a[0], (Integer) b[0]);
+                return c != 0 ? c : Integer.compare((Integer) a[1], (Integer) b[1]);
+            });
+
+            java.util.ArrayList<byte[]> files = new java.util.ArrayList<>();
+            for (int i = 0; i < got.size(); i++)
+            {
+                // Re-compress a rebuilt sub-file if the original at that index was compressed (the zip holds
+                // decompressed files); extra/new files (beyond the original count) are stored uncompressed.
+                byte[] original = i < narc.getNumFiles() ? narc.getFile(i) : null;
+                files.add(matchCompression(original, (byte[]) got.get(i)[2]));
+            }
+            narc.setFiles(files);
+            writeResource(romHandle, container, id, narc.save());
+            return "{\"ok\":true,\"count\":" + files.size() + "}";
+        }
+        catch (Throwable t)
+        {
+            return "{\"ok\":false,\"error\":" + jstr(describe(t)) + "}";
+        }
+    }
+
+    /** Leading run of digits in a filename as an int, else {@code fallback} (keeps foreign zips in order). */
+    private static int leadingInt(String name, int fallback)
+    {
+        int i = 0;
+        while (i < name.length() && Character.isDigit(name.charAt(i))) i++;
+        if (i == 0) return Integer.MAX_VALUE - 1_000_000 + Math.min(fallback, 999_999); // non-numeric names sort last
+        try { return Integer.parseInt(name.substring(0, i)); }
+        catch (NumberFormatException ex) { return fallback; }
+    }
+
+    /** A file extension for a Nitro format name (lower-cased), or "bin" for unknown/raw. */
+    private static String extForFormat(String fmt)
+    {
+        return (fmt == null || fmt.isEmpty()) ? "bin" : fmt.toLowerCase(java.util.Locale.ROOT);
+    }
+
     // --- import / save (write half) ----------------------------------------------------------
 
     @Override
@@ -373,15 +480,40 @@ public final class CheerpjFacade implements NitroViewerService
     {
         if (container < 0)
         {
-            rom(romHandle).setFile(id, bytes);
+            NintendoDsRom rom = rom(romHandle);
+            rom.setFile(id, matchCompression(rom.getFile(id), bytes));
             return;
         }
         Narc narc = narc(container);
-        narc.setFile(id, bytes);
+        narc.setFile(id, matchCompression(narc.getFile(id), bytes));
         int[] parent = narcParent.get(container);
         if (parent == null)
             throw new IllegalStateException("NARC handle " + container + " has no known parent to repack into");
-        writeResource(romHandle, parent[0], parent[1], narc.save()); // recurse up the chain
+        // Recurse up the chain — matchCompression at the parent level keeps a compressed NARC file compressed.
+        writeResource(romHandle, parent[0], parent[1], narc.save());
+    }
+
+    /**
+     * Keep an edited resource in the compression state the ROM stored it in: if the slot held LZ-compressed
+     * bytes, re-compress the new (decompressed) content with the same LZ type, so games that require certain
+     * files compressed keep working. No-op when the slot was uncompressed, or when the new bytes are already
+     * compressed (e.g. re-importing an already-compressed file, or an undo restoring exact prior bytes).
+     * <p>Guards {@link NitroLz#isCompressed}'s false positives by requiring the existing bytes to actually
+     * decompress before committing to re-compression.
+     */
+    private static byte[] matchCompression(byte[] existing, byte[] newBytes)
+    {
+        if (existing == null || newBytes == null || !NitroLz.isCompressed(existing))
+            return newBytes;
+        int type;
+        try { NitroLz.decompress(existing); type = existing[0] & 0xFF; } // real compressed file (not a false positive)
+        catch (Throwable t) { return newBytes; }                          // isCompressed lied — leave as-is
+        if (NitroLz.isCompressed(newBytes))
+        {
+            try { NitroLz.decompress(newBytes); return newBytes; }        // already compressed — don't double-compress
+            catch (Throwable t) { /* false positive on the new bytes; compress below */ }
+        }
+        return type == 0x11 ? NitroLz.compressLz11(newBytes) : NitroLz.compress(newBytes);
     }
 
     @Override
@@ -461,6 +593,123 @@ public final class CheerpjFacade implements NitroViewerService
     }
 
     @Override
+    public String importPalette(int romHandle, int nclrContainer, int nclrId, byte[] imageBytes)
+    {
+        try
+        {
+            if (imageBytes == null) throw new IllegalArgumentException("no bytes");
+            NintendoDsRom rom = rom(romHandle);
+            Palette existing = new Palette(resolve(rom, nclrContainer, nclrId), 0);
+            int count = existing.getColors().length;
+
+            BufferedImage src = ImageIO.read(new java.io.ByteArrayInputStream(imageBytes));
+            if (src == null)
+                throw new IllegalArgumentException("Could not decode the imported file as an image.");
+
+            // Collect the image's colours in first-seen raster order (dedup on RGB). An indexed PNG's
+            // IndexColorModel is honoured naturally: distinct entries appear as distinct pixel colours.
+            java.util.LinkedHashSet<Integer> uniq = new java.util.LinkedHashSet<>();
+            outer:
+            for (int y = 0; y < src.getHeight(); y++)
+                for (int x = 0; x < src.getWidth(); x++)
+                {
+                    uniq.add(src.getRGB(x, y) & 0xFFFFFF);
+                    if (uniq.size() >= count) break outer;
+                }
+
+            // Preserve the palette's length so the paired NCGR's indices stay valid: fill from the image,
+            // pad the tail with black, truncate the excess.
+            Color[] cols = new Color[count];
+            int i = 0;
+            for (int rgb : uniq) { if (i >= count) break; cols[i++] = new Color(rgb); }
+            while (i < count) cols[i++] = Color.BLACK;
+
+            writeResource(romHandle, nclrContainer, nclrId, new Palette(cols).save());
+            return "{\"ok\":true,\"colors\":" + count + ",\"unique\":" + uniq.size() + "}";
+        }
+        catch (Throwable t)
+        {
+            return "{\"ok\":false,\"error\":" + jstr(describe(t)) + "}";
+        }
+    }
+
+    @Override
+    public String importObj(int romHandle, int container, int id, byte[] objBytes)
+    {
+        try
+        {
+            if (objBytes == null || objBytes.length == 0) throw new IllegalArgumentException("no OBJ data");
+            rom(romHandle); // validate handle
+            String objText = new String(objBytes, StandardCharsets.UTF_8);
+            io.github.turtleisaac.nds4j.g3d.ObjImporter obj = io.github.turtleisaac.nds4j.g3d.ObjImporter.parse(objText);
+            float[] pos = obj.getPositions();
+            int[] tris = obj.getTriangles();
+            if (tris.length < 3) throw new IllegalArgumentException("OBJ has no triangles.");
+
+            byte[] nsbmd = io.github.turtleisaac.nds4j.g3d.ModelBuilder.buildUntextured("model", pos, tris);
+            writeResource(romHandle, container, id, nsbmd);
+            return "{\"ok\":true,\"vertices\":" + (pos.length / 3) + ",\"triangles\":" + (tris.length / 3)
+                    + ",\"textured\":false}";
+        }
+        catch (Throwable t)
+        {
+            return "{\"ok\":false,\"error\":" + jstr(describe(t)) + "}";
+        }
+    }
+
+    @Override
+    public String importScreenPng(int romHandle, int nscrContainer, int nscrId, int ncgrContainer, int ncgrId,
+                                  int nclrContainer, int nclrId, boolean dedupFlips, boolean rebuildPalette,
+                                  int numSubPalettes, boolean dryRun, byte[] pngBytes)
+    {
+        try
+        {
+            NintendoDsRom rom = rom(romHandle);
+            Screen screen = new Screen(resolve(rom, nscrContainer, nscrId));
+            // The existing NCGR is the template: it supplies the bit depth and the tileset's storage width.
+            IndexedImage ncgr = ncgr(rom, ncgrContainer, ncgrId, 0);
+            Palette pal = new Palette(resolve(rom, nclrContainer, nclrId), 0);
+
+            BufferedImage src = ImageIO.read(new java.io.ByteArrayInputStream(pngBytes));
+            if (src == null)
+                throw new IllegalArgumentException("Could not decode the imported file as an image.");
+            if (src.getWidth() != screen.getWidth() || src.getHeight() != screen.getHeight())
+                return "{\"ok\":false,\"error\":" + jstr(String.format(
+                        "Imported image is %dx%d but the screen is %dx%d — they must match.",
+                        src.getWidth(), src.getHeight(), screen.getWidth(), screen.getHeight())) + "}";
+
+            Screen.ImportResult result;
+            if (rebuildPalette)
+            {
+                int subs = numSubPalettes > 0 ? numSubPalettes : Math.max(1, pal.getColors().length / 16);
+                result = screen.applyImageRebuildingPalette(src, ncgr, subs, dedupFlips);
+            }
+            else
+            {
+                result = screen.applyImage(src, ncgr, pal, dedupFlips);
+            }
+
+            if (!dryRun)
+            {
+                // Persist the rebuilt tileset, the rewritten tilemap, and (on rebuild) the new palette.
+                writeResource(romHandle, ncgrContainer, ncgrId, result.ncgr.save());
+                writeResource(romHandle, nscrContainer, nscrId, screen.save());
+                if (rebuildPalette)
+                    writeResource(romHandle, nclrContainer, nclrId, result.palette.save());
+            }
+
+            return "{\"ok\":true,\"uniqueTiles\":" + result.uniqueTiles
+                    + ",\"unmatched\":" + result.unmatchedPixels
+                    + ",\"paletteRebuilt\":" + rebuildPalette
+                    + ",\"dryRun\":" + dryRun + "}";
+        }
+        catch (Throwable t)
+        {
+            return "{\"ok\":false,\"error\":" + jstr(describe(t)) + "}";
+        }
+    }
+
+    @Override
     public byte[] saveRom(int romHandle)
     {
         try
@@ -499,6 +748,25 @@ public final class CheerpjFacade implements NitroViewerService
             {
                 if (i > 0) sb.append(',');
                 sb.append(jstr(models.get(i).getName()));
+            }
+            return sb.append("]}").toString();
+        }
+        catch (Throwable t) { return err(t); }
+    }
+
+    @Override
+    public String getAnimationSetInfo(int romHandle, int container, int id)
+    {
+        try
+        {
+            SkeletalAnimationSet set = new SkeletalAnimationSet(resolve(rom(romHandle), container, id));
+            List<SkeletalAnimationSet.Animation> anims = set.getAnimations();
+            StringBuilder sb = new StringBuilder("{\"animations\":[");
+            for (int i = 0; i < anims.size(); i++)
+            {
+                if (i > 0) sb.append(',');
+                sb.append("{\"name\":").append(jstr(anims.get(i).getName()))
+                        .append(",\"frameCount\":").append(anims.get(i).getFrameCount()).append('}');
             }
             return sb.append("]}").toString();
         }

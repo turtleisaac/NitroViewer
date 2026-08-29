@@ -8,10 +8,11 @@ import {
   type NitroViewerClient,
   type ResourceRef,
   type PngImportResult,
+  type ScreenImportResult,
   type RomInfo,
   type TreeFolder,
 } from "../transport";
-import { download } from "../util";
+import { base64ToBytes, download } from "../util";
 
 export interface ResourceItem {
   ref: ResourceRef;
@@ -31,6 +32,12 @@ export interface PairOverride {
   ncgr?: ResourceRef;
   nclr?: ResourceRef;
   ncer?: ResourceRef;
+}
+
+/** A reversible edit: the raw (as-stored, base64) bytes of each resource it changed, before the edit. */
+export interface EditSnapshot {
+  label: string;
+  entries: { ref: ResourceRef; base64: string }[];
 }
 
 interface AppState {
@@ -63,6 +70,11 @@ interface AppState {
   editVersion: number; // bumped on every import so viewers re-decode the changed bytes
   saving: boolean; // a saveRom is in flight
 
+  // Undo/redo: each edit pushes a snapshot of the affected resources' PRIOR raw bytes. Undo restores
+  // them (and snapshots the current bytes onto the redo stack), so edits are reversible before Save ROM.
+  undoStack: EditSnapshot[];
+  redoStack: EditSnapshot[];
+
   boot: () => Promise<void>;
   setNavOpen: (open: boolean) => void;
   revealFolder: (folderPath: string) => void;
@@ -73,6 +85,9 @@ interface AppState {
   select: (ref: ResourceRef, name: string) => Promise<void>;
   ensureNarc: (ref: ResourceRef) => Promise<{ narcHandle: number; entries: NarcEntry[] }>;
   containerItems: (container: number) => ResourceItem[];
+  /** Full FNT path of the NARC opened at `container` (a narc-handle), for game-DB lookups. Top-level
+   *  NARCs resolve via idToPath; nested NARCs return null (unlisted → heuristic fallback). */
+  narcPathOf: (container: number) => string | null;
   importFile: (ref: ResourceRef, bytes: Uint8Array) => Promise<void>;
   importPng: (
     ncgr: ResourceRef,
@@ -84,6 +99,23 @@ interface AppState {
     bytes: Uint8Array
   ) => Promise<PngImportResult>;
   saveRom: () => Promise<void>;
+  importPalette: (nclr: ResourceRef, bytes: Uint8Array) => Promise<{ colors: number; unique: number }>;
+  importObj: (
+    nsbmd: ResourceRef,
+    objBytes: Uint8Array
+  ) => Promise<{ vertices: number; triangles: number; textured: boolean }>;
+  importScreenPng: (
+    nscr: ResourceRef,
+    ncgr: ResourceRef,
+    nclr: ResourceRef,
+    dedupFlips: boolean,
+    rebuildPalette: boolean,
+    dryRun: boolean,
+    bytes: Uint8Array
+  ) => Promise<ScreenImportResult>;
+  importNarcZip: (narc: ResourceRef, zipBytes: Uint8Array) => Promise<{ count: number }>;
+  undo: () => Promise<void>;
+  redo: () => Promise<void>;
 }
 
 function findFolder(folder: TreeFolder, id: number): TreeFolder | null {
@@ -107,6 +139,22 @@ function buildPathMap(root: TreeFolder): Record<number, string> {
   return map;
 }
 
+// Capture the current raw (as-stored) bytes of each ref, so an edit about to overwrite them can be
+// undone. Uses exportRaw (base64) — the exact bytes importRaw would restore.
+async function snapshot(
+  client: NitroViewerClient,
+  romHandle: number,
+  refs: ResourceRef[],
+  label: string
+): Promise<EditSnapshot> {
+  const entries = [];
+  for (const ref of refs) {
+    const { base64 } = await client.exportRaw(romHandle, ref);
+    entries.push({ ref, base64 });
+  }
+  return { label, entries };
+}
+
 // After an edit persists new bytes for one or more resources: refresh each ref's cached format (size
 // and format may have changed) and its NARC listing, keep the selection's displayed metadata in sync,
 // then mark the ROM dirty and bump editVersion (which re-keys the open viewer so it re-decodes).
@@ -127,6 +175,18 @@ async function refreshAfterEdit(
         const entries = await client.listNarc(ref.container);
         set((s) => ({ narcs: { ...s.narcs, [ref.container]: { ...narc, entries } } }));
       }
+    }
+    // If this ref is itself an open NARC whose whole file was replaced (e.g. a folder/zip import), drop its
+    // cached handle so it re-opens fresh — the facade's open Narc object for it is now stale.
+    const openHandle = get().narcByRef[key];
+    if (openHandle != null) {
+      set((s) => {
+        const narcByRef = { ...s.narcByRef };
+        delete narcByRef[key];
+        const narcs = { ...s.narcs };
+        delete narcs[openHandle];
+        return { narcByRef, narcs };
+      });
     }
     set((s) => ({
       selection:
@@ -166,6 +226,8 @@ export const useStore = create<AppState>((set, get) => ({
   dirty: false,
   editVersion: 0,
   saving: false,
+  undoStack: [],
+  redoStack: [],
 
   setNavOpen: (open) => set({ navOpen: open }),
 
@@ -225,6 +287,8 @@ export const useStore = create<AppState>((set, get) => ({
         narcScroll: {},
         dirty: false,
         editVersion: 0,
+        undoStack: [],
+        redoStack: [],
         status: `${romInfo.title.trim() || file.name} · ${romInfo.numFiles} files`,
       });
     } catch (e) {
@@ -296,19 +360,72 @@ export const useStore = create<AppState>((set, get) => ({
   importFile: async (ref, bytes) => {
     const { client, romHandle } = get();
     if (romHandle == null) throw new Error("no ROM open");
+    const snap = await snapshot(client, romHandle, [ref], "Import file");
     await client.importRaw(romHandle, ref, bytes);
+    set((s) => ({ undoStack: [...s.undoStack, snap], redoStack: [] }));
     await refreshAfterEdit(get, set, romHandle, [ref]);
   },
 
   importPng: async (ncgr, nclr, paletteIndex, tilesWidth, rebuildPalette, dryRun, bytes) => {
     const { client, romHandle } = get();
     if (romHandle == null) throw new Error("no ROM open");
+    const touched = rebuildPalette ? [ncgr, nclr] : [ncgr];
+    // Snapshot the affected resources' prior bytes BEFORE the facade re-encodes them (real runs only).
+    const snap = dryRun ? null : await snapshot(client, romHandle, touched, "Import PNG");
     const res = await client.importPng(romHandle, ncgr, nclr, paletteIndex, tilesWidth, rebuildPalette, dryRun, bytes);
     if (!dryRun) {
+      if (snap) set((s) => ({ undoStack: [...s.undoStack, snap], redoStack: [] }));
       // A real import touched the NCGR (and the NCLR too, when the palette was rebuilt).
-      await refreshAfterEdit(get, set, romHandle, rebuildPalette ? [ncgr, nclr] : [ncgr]);
+      await refreshAfterEdit(get, set, romHandle, touched);
     }
     return res;
+  },
+
+  importPalette: async (nclr, bytes) => {
+    const { client, romHandle } = get();
+    if (romHandle == null) throw new Error("no ROM open");
+    const snap = await snapshot(client, romHandle, [nclr], "Import palette");
+    const res = await client.importPalette(romHandle, nclr, bytes);
+    set((s) => ({ undoStack: [...s.undoStack, snap], redoStack: [] }));
+    await refreshAfterEdit(get, set, romHandle, [nclr]);
+    return res;
+  },
+
+  importObj: async (nsbmd, objBytes) => {
+    const { client, romHandle } = get();
+    if (romHandle == null) throw new Error("no ROM open");
+    const snap = await snapshot(client, romHandle, [nsbmd], "Import OBJ");
+    const res = await client.importObj(romHandle, nsbmd, objBytes);
+    set((s) => ({ undoStack: [...s.undoStack, snap], redoStack: [] }));
+    await refreshAfterEdit(get, set, romHandle, [nsbmd]);
+    return res;
+  },
+
+  importScreenPng: async (nscr, ncgr, nclr, dedupFlips, rebuildPalette, dryRun, bytes) => {
+    const { client, romHandle } = get();
+    if (romHandle == null) throw new Error("no ROM open");
+    // A real import rewrites the tilemap (NSCR) + tileset (NCGR), and the palette (NCLR) when rebuilding.
+    const touched = rebuildPalette ? [ncgr, nscr, nclr] : [ncgr, nscr];
+    const snap = dryRun ? null : await snapshot(client, romHandle, touched, "Import background");
+    const res = await client.importScreenPng(romHandle, nscr, ncgr, nclr, dedupFlips, rebuildPalette, 0, dryRun, bytes);
+    if (!dryRun && res.ok) {
+      if (snap) set((s) => ({ undoStack: [...s.undoStack, snap], redoStack: [] }));
+      await refreshAfterEdit(get, set, romHandle, touched);
+    }
+    return res;
+  },
+
+  importNarcZip: async (narc, zipBytes) => {
+    const { client, romHandle } = get();
+    if (romHandle == null) throw new Error("no ROM open");
+    const snap = await snapshot(client, romHandle, [narc], "Import NARC folder");
+    const res = await client.importNarcZip(romHandle, narc, zipBytes);
+    if (res.ok) {
+      set((s) => ({ undoStack: [...s.undoStack, snap], redoStack: [] }));
+      // refreshAfterEdit drops the stale open handle for this NARC so the browser re-opens it fresh.
+      await refreshAfterEdit(get, set, romHandle, [narc]);
+    }
+    return { count: res.count };
   },
 
   saveRom: async () => {
@@ -328,6 +445,31 @@ export const useStore = create<AppState>((set, get) => ({
     }
   },
 
+  // Restore the most recent edit's prior bytes, moving it to the redo stack (snapshotting the current
+  // bytes first, so redo can re-apply). Writing through importRaw repacks NARCs/nested chains as usual.
+  undo: async () => {
+    const { client, romHandle, undoStack } = get();
+    if (romHandle == null || undoStack.length === 0) return;
+    const snap = undoStack[undoStack.length - 1];
+    const refs = snap.entries.map((e) => e.ref);
+    const redo = await snapshot(client, romHandle, refs, snap.label);
+    for (const e of snap.entries) await client.importRaw(romHandle, e.ref, base64ToBytes(e.base64));
+    set((s) => ({ undoStack: s.undoStack.slice(0, -1), redoStack: [...s.redoStack, redo] }));
+    await refreshAfterEdit(get, set, romHandle, refs);
+    set({ dirty: get().undoStack.length > 0 }); // back to pristine when nothing is left to undo
+  },
+
+  redo: async () => {
+    const { client, romHandle, redoStack } = get();
+    if (romHandle == null || redoStack.length === 0) return;
+    const snap = redoStack[redoStack.length - 1];
+    const refs = snap.entries.map((e) => e.ref);
+    const undo = await snapshot(client, romHandle, refs, snap.label);
+    for (const e of snap.entries) await client.importRaw(romHandle, e.ref, base64ToBytes(e.base64));
+    set((s) => ({ redoStack: s.redoStack.slice(0, -1), undoStack: [...s.undoStack, undo] }));
+    await refreshAfterEdit(get, set, romHandle, refs);
+  },
+
   containerItems: (container) => {
     if (container >= 0) {
       const narc = get().narcs[container];
@@ -339,6 +481,14 @@ export const useStore = create<AppState>((set, get) => ({
       }));
     }
     return get().romSiblings;
+  },
+
+  narcPathOf: (container) => {
+    if (container < 0) return null;
+    const narc = get().narcs[container];
+    // Only top-level NARCs (opened from a ROM file) have a stable FNT path; nested ones fall through.
+    if (!narc || narc.ref.container !== ROM_CONTAINER) return null;
+    return get().idToPath[narc.ref.id] ?? null;
   },
 }));
 

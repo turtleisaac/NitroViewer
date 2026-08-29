@@ -1,7 +1,7 @@
 import { lazy, Suspense, useRef, useState, type ReactNode } from "react";
 import { useStore } from "../state/store";
 import { refKey, type ResourceRef } from "../transport";
-import { base64ToBytes, download } from "../util";
+import { base64ToBytes, download, exportFileName } from "../util";
 import { NarcBrowser } from "./NarcBrowser";
 import { PaletteViewer } from "./PaletteViewer";
 import { SpriteViewer } from "./SpriteViewer";
@@ -21,12 +21,12 @@ function ExportButton() {
     <button
       className="btn btn--sm"
       disabled={busy}
+      title="Extract this file (decompressed) to disk"
       onClick={async () => {
         setBusy(true);
         try {
-          const r = await client.exportRaw(romHandle, selection.ref);
-          const base = (selection.name.split(/[\/:]/).pop() || "file").replace(/[^\w.\-]+/g, "_");
-          download(`${base}.bin`, base64ToBytes(r.base64));
+          const r = await client.exportFile(romHandle, selection.ref);
+          download(exportFileName(selection.name, r.format || selection.format), base64ToBytes(r.base64));
         } catch (e) {
           alert("Export failed: " + (e as Error).message);
         } finally {

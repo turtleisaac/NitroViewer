@@ -1,3 +1,18 @@
+// Nitro format → file extension, for naming extracted files like Tinke (numbered/nameless entries get the
+// format's extension; a resource that already carries a real FNT filename with an extension keeps it).
+const FORMAT_EXT: Record<string, string> = {
+  NARC: "narc", NCGR: "ncgr", NCLR: "nclr", NSCR: "nscr", NCER: "ncer", NANR: "nanr",
+  NSBMD: "nsbmd", NSBTX: "nsbtx", NSBCA: "nsbca", NSBTP: "nsbtp", NSBTA: "nsbta",
+  NSBVA: "nsbva", NSBMA: "nsbma", SPA: "spa",
+};
+
+/** A download filename for an extracted file: keeps a real FNT name (with extension), else `<base>.<ext>`. */
+export function exportFileName(name: string, format: string): string {
+  const base = ((name.split(/[/:]/).pop() || "file").trim().replace(/^#/, "").replace(/[^\w.\-]+/g, "_")) || "file";
+  if (/\.[a-z0-9]{2,5}$/i.test(base)) return base; // already a real filename like "pl_pokegra.narc"
+  return `${base}.${FORMAT_EXT[format] || "bin"}`;
+}
+
 export function base64ToBytes(b64: string): Uint8Array {
   const bin = atob(b64);
   const out = new Uint8Array(bin.length);

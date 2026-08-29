@@ -4,11 +4,21 @@
 
 package com.nitroviewer.core;
 
+import io.github.turtleisaac.nds4j.Narc;
+import io.github.turtleisaac.nds4j.NintendoDsRom;
+import io.github.turtleisaac.nds4j.framework.NitroLz;
+import io.github.turtleisaac.nds4j.images.IndexedImage;
+import io.github.turtleisaac.nds4j.images.Palette;
+import io.github.turtleisaac.nds4j.images.Screen;
 import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
+import javax.imageio.ImageIO;
+import java.awt.Color;
+import java.awt.image.BufferedImage;
+import java.io.ByteArrayOutputStream;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.regex.Matcher;
@@ -680,6 +690,218 @@ class CheerpjFacadeTest
             if (m.group(2).equals(fmt))
                 out.add(Integer.parseInt(m.group(1)));
         return out;
+    }
+
+    private static final String CUBE_OBJ =
+            "v -1 -1 -1\nv 1 -1 -1\nv 1 1 -1\nv -1 1 -1\nv -1 -1 1\nv 1 -1 1\nv 1 1 1\nv -1 1 1\n" +
+            "f 1 2 3\nf 1 3 4\nf 5 7 6\nf 5 8 7\nf 1 5 6\nf 1 6 2\n" +
+            "f 2 6 7\nf 2 7 3\nf 3 7 8\nf 3 8 4\nf 4 8 5\nf 4 5 1\n";
+
+    @Test
+    @DisplayName("importObj re-encodes a Wavefront OBJ into a parsable NSBMD (write path)")
+    void importObjRoundTrip()
+    {
+        // Replace a ROM file's bytes with the cube mesh, then read it back through the model parser.
+        byte[] objBytes = CUBE_OBJ.getBytes(java.nio.charset.StandardCharsets.UTF_8);
+        String res = svc.importObj(rom, -1, 200, objBytes);
+        assertThat(res).contains("\"ok\":true");
+        assertThat(intField(res, "triangles")).isEqualTo(12); // a cube = 12 triangles
+        assertThat(intField(res, "vertices")).isEqualTo(8);   // ObjImporter dedups to 8 unique corners
+
+        // The written bytes must parse as an NSBMD holding one model named "model".
+        String info = svc.getModelSetInfo(rom, -1, 200);
+        assertThat(info).contains("\"models\":[\"model\"]");
+
+        // And it survives a full ROM save → reopen (the real edit-then-download flow).
+        byte[] saved = svc.saveRom(rom);
+        assertThat(saved.length).isGreaterThan(0);
+        String reopen = svc.openRom(saved);
+        int rom2 = intField(reopen, "handle");
+        assertThat(svc.getModelSetInfo(rom2, -1, 200)).contains("\"models\":[\"model\"]");
+    }
+
+    @Test
+    @DisplayName("importObj rejects empty/garbage input with a structured error")
+    void importObjBad()
+    {
+        assertThat(svc.importObj(rom, -1, 200, new byte[0])).contains("\"ok\":false");
+        assertThat(svc.importObj(rom, -1, 200, "not an obj".getBytes())).contains("\"ok\":false");
+    }
+
+    @Test
+    @DisplayName("importScreenPng decomposes a background into NSCR+NCGR, survives save→reopen")
+    void importScreenPngWritesTilemap() throws Exception
+    {
+        // Build a self-contained NSCR/NCGR/NCLR triple and stage it into a fresh ROM handle, so the test
+        // doesn't depend on locating a matching trio in the game.
+        int rom2 = intField(svc.openRom(romBytes), "handle");
+
+        Color[] colors = new Color[16];
+        for (int i = 0; i < 16; i++) colors[i] = new Color(i * 16, (i * 7) & 0xFF, 255 - i * 16);
+        Palette pal = new Palette(colors);
+        byte[] nclrBytes = pal.save();
+        IndexedImage template = new IndexedImage(8, 8, 4, pal); // 4bpp, 1 tile per row
+        Screen blank = new Screen(16, 16, 0);
+
+        int nscrId = 100, ncgrId = 101, nclrId = 102;
+        assertThat(svc.importRaw(rom2, -1, nscrId, blank.save())).contains("\"ok\":true");
+        assertThat(svc.importRaw(rom2, -1, ncgrId, template.save())).contains("\"ok\":true");
+        assertThat(svc.importRaw(rom2, -1, nclrId, nclrBytes)).contains("\"ok\":true");
+
+        // Paint with the palette's POST-SAVE colours (DS palettes quantise to BGR555), so the match is exact.
+        Color[] realColors = new Palette(nclrBytes, 0).getColors();
+        BufferedImage bg = new BufferedImage(16, 16, BufferedImage.TYPE_INT_RGB);
+        for (int y = 0; y < 16; y++)
+            for (int x = 0; x < 16; x++)
+                bg.setRGB(x, y, realColors[(x + y * 16) % 16].getRGB());
+        ByteArrayOutputStream png = new ByteArrayOutputStream();
+        ImageIO.write(bg, "png", png);
+        byte[] pngBytes = png.toByteArray();
+
+        // Dry run: perfect fit, and it must NOT write (the NSCR bytes stay the blank we staged).
+        String nscrBefore = strField(svc.exportRaw(rom2, -1, nscrId), "base64");
+        String dry = svc.importScreenPng(rom2, -1, nscrId, -1, ncgrId, -1, nclrId, true, false, 0, true, pngBytes);
+        assertThat(dry).contains("\"ok\":true").contains("\"unmatched\":0").contains("\"dryRun\":true");
+        assertThat(strField(svc.exportRaw(rom2, -1, nscrId), "base64"))
+                .as("dry run must not modify the NSCR")
+                .isEqualTo(nscrBefore);
+
+        // Real import (match mode): writes the tileset + tilemap.
+        String res = svc.importScreenPng(rom2, -1, nscrId, -1, ncgrId, -1, nclrId, true, false, 0, false, pngBytes);
+        assertThat(res).contains("\"ok\":true").contains("\"unmatched\":0");
+        assertThat(intField(res, "uniqueTiles")).isGreaterThan(0);
+
+        // Save the whole ROM, reopen, and decode the screen — it must still render at 16x16.
+        byte[] saved = svc.saveRom(rom2);
+        assertThat(saved.length).isGreaterThan(0);
+        int rom3 = intField(svc.openRom(saved), "handle");
+        String decoded = svc.decodeNscr(rom3, -1, nscrId, -1, ncgrId, -1, nclrId, false);
+        assertThat(decoded).doesNotContain("\"error\"");
+        assertThat(intField(decoded, "width")).isEqualTo(16);
+        assertThat(intField(decoded, "height")).isEqualTo(16);
+    }
+
+    @Test
+    @DisplayName("importScreenPng with rebuildPalette rewrites the NCLR too")
+    void importScreenPngRebuildsPalette() throws Exception
+    {
+        int rom2 = intField(svc.openRom(romBytes), "handle");
+
+        Color[] colors = new Color[16];
+        for (int i = 0; i < 16; i++) colors[i] = Color.BLACK; // start all-black so a rebuild must change it
+        Palette pal = new Palette(colors);
+        IndexedImage template = new IndexedImage(8, 8, 4, pal);
+        Screen blank = new Screen(16, 16, 0);
+
+        int nscrId = 110, ncgrId = 111, nclrId = 112;
+        svc.importRaw(rom2, -1, nscrId, blank.save());
+        svc.importRaw(rom2, -1, ncgrId, template.save());
+        svc.importRaw(rom2, -1, nclrId, pal.save());
+
+        // A colourful background the all-black palette can't match — rebuild must synthesise a new NCLR.
+        BufferedImage bg = new BufferedImage(16, 16, BufferedImage.TYPE_INT_RGB);
+        for (int y = 0; y < 16; y++)
+            for (int x = 0; x < 16; x++)
+                bg.setRGB(x, y, new Color((x * 16) & 0xFF, (y * 16) & 0xFF, 128).getRGB());
+        ByteArrayOutputStream png = new ByteArrayOutputStream();
+        ImageIO.write(bg, "png", png);
+
+        String nclrBefore = strField(svc.exportRaw(rom2, -1, nclrId), "base64");
+        String res = svc.importScreenPng(rom2, -1, nscrId, -1, ncgrId, -1, nclrId, true, true, 1, false, png.toByteArray());
+        assertThat(res).contains("\"ok\":true").contains("\"paletteRebuilt\":true");
+        assertThat(strField(svc.exportRaw(rom2, -1, nclrId), "base64"))
+                .as("rebuild must rewrite the NCLR")
+                .isNotEqualTo(nclrBefore);
+    }
+
+    @Test
+    @DisplayName("exportNarcZip/importNarcZip round-trips a whole NARC's contents, through save→reopen")
+    void narcZipRoundTrip() throws Exception
+    {
+        // Find a real NARC with a couple of files to exercise the folder export/import.
+        NintendoDsRom probe = new NintendoDsRom(romBytes);
+        int narcId = -1;
+        for (int i = 0; i < probe.getNumFiles(); i++)
+        {
+            byte[] f = probe.getFile(i);
+            if (f.length >= 4 && new String(f, 0, 4, java.nio.charset.StandardCharsets.ISO_8859_1).equals("NARC"))
+            {
+                try { if (new Narc(f).getNumFiles() >= 2) { narcId = i; break; } }
+                catch (RuntimeException ignored) { }
+            }
+        }
+        Assumptions.assumeTrue(narcId >= 0, "no multi-file NARC found in the test ROM");
+
+        int rom2 = intField(svc.openRom(romBytes), "handle");
+        List<byte[]> before = unzip(base64Field(svc.exportNarcZip(rom2, -1, narcId)));
+        assertThat(before.size()).isGreaterThanOrEqualTo(2);
+
+        // Re-import the exact zip; a re-export must yield byte-identical contents (content round-trip).
+        String imp = svc.importNarcZip(rom2, -1, narcId, base64Field(svc.exportNarcZip(rom2, -1, narcId)));
+        assertThat(imp).contains("\"ok\":true").contains("\"count\":" + before.size());
+        List<byte[]> after = unzip(base64Field(svc.exportNarcZip(rom2, -1, narcId)));
+        assertThat(after.size()).isEqualTo(before.size());
+        for (int i = 0; i < before.size(); i++)
+            assertThat(after.get(i)).as("sub-file #%d after round-trip", i).isEqualTo(before.get(i));
+
+        // And the contents survive a whole-ROM save → reopen.
+        int rom3 = intField(svc.openRom(svc.saveRom(rom2)), "handle");
+        List<byte[]> saved = unzip(base64Field(svc.exportNarcZip(rom3, -1, narcId)));
+        assertThat(saved.size()).isEqualTo(before.size());
+        assertThat(saved.get(0)).isEqualTo(before.get(0));
+    }
+
+    /** Decode a facade result's base64 field to bytes. */
+    private static byte[] base64Field(String json)
+    {
+        return java.util.Base64.getDecoder().decode(strField(json, "base64"));
+    }
+
+    /** Unpack a ZIP's entries (in stored order) to a list of byte[]. */
+    private static List<byte[]> unzip(byte[] zip) throws Exception
+    {
+        List<byte[]> out = new ArrayList<>();
+        java.util.zip.ZipInputStream zis = new java.util.zip.ZipInputStream(new java.io.ByteArrayInputStream(zip));
+        java.util.zip.ZipEntry e;
+        byte[] chunk = new byte[8192];
+        while ((e = zis.getNextEntry()) != null)
+        {
+            if (e.isDirectory()) continue;
+            java.io.ByteArrayOutputStream buf = new java.io.ByteArrayOutputStream();
+            int r;
+            while ((r = zis.read(chunk)) > 0) buf.write(chunk, 0, r);
+            out.add(buf.toByteArray());
+        }
+        return out;
+    }
+
+    @Test
+    @DisplayName("a compressed file stays compressed on write, but exports decompressed")
+    void writePreservesCompression() throws Exception
+    {
+        int rom2 = intField(svc.openRom(romBytes), "handle");
+        int fileId = 300;
+
+        // Stage a compressed file into the slot (its bytes carry an LZ header).
+        byte[] contentA = "the original decompressed contents of a compressed file".getBytes();
+        byte[] compressedA = NitroLz.compress(contentA);
+        assertThat(NitroLz.isCompressed(compressedA)).isTrue();
+        assertThat(svc.importRaw(rom2, -1, fileId, compressedA)).contains("\"ok\":true");
+        assertThat(svc.detectFormat(rom2, -1, fileId)).contains("\"compressed\":true");
+
+        // Import NEW, decompressed content over it. It must be RE-COMPRESSED on write…
+        byte[] contentB = "TEST edited replacement contents, clearly not a compressed stream".getBytes();
+        assertThat(NitroLz.isCompressed(contentB)).isFalse();
+        assertThat(svc.importRaw(rom2, -1, fileId, contentB)).contains("\"ok\":true");
+
+        byte[] stored = java.util.Base64.getDecoder().decode(strField(svc.exportRaw(rom2, -1, fileId), "base64"));
+        assertThat(NitroLz.isCompressed(stored)).as("edited compressed file stays compressed on disk").isTrue();
+        assertThat(NitroLz.decompress(stored)).as("…and decompresses to the new content").isEqualTo(contentB);
+
+        // …and exportFile hands back the decompressed content, through a save→reopen.
+        assertThat(base64Field(svc.exportFile(rom2, -1, fileId))).isEqualTo(contentB);
+        int rom3 = intField(svc.openRom(svc.saveRom(rom2)), "handle");
+        assertThat(base64Field(svc.exportFile(rom3, -1, fileId))).isEqualTo(contentB);
     }
 
     // --- tiny JSON field readers (avoids a JSON dependency in tests) --------------------------

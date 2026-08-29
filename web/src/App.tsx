@@ -16,6 +16,10 @@ export function App() {
   const dirty = useStore((s) => s.dirty);
   const saving = useStore((s) => s.saving);
   const saveRom = useStore((s) => s.saveRom);
+  const undo = useStore((s) => s.undo);
+  const redo = useStore((s) => s.redo);
+  const canUndo = useStore((s) => s.undoStack.length > 0);
+  const canRedo = useStore((s) => s.redoStack.length > 0);
   const fileRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -53,14 +57,32 @@ export function App() {
             </span>
           )}
           {romHandle != null && (
-            <button
-              className="btn btn--save"
-              disabled={saving || !dirty}
-              title={dirty ? "Download the edited .nds" : "No edits to save"}
-              onClick={() => void saveRom()}
-            >
-              {saving ? "Saving…" : "Save ROM"}
-            </button>
+            <>
+              <button
+                className="btn btn--icon"
+                disabled={!canUndo}
+                title={canUndo ? "Undo the last edit" : "Nothing to undo"}
+                onClick={() => void undo()}
+              >
+                ↶ Undo
+              </button>
+              <button
+                className="btn btn--icon"
+                disabled={!canRedo}
+                title={canRedo ? "Redo the undone edit" : "Nothing to redo"}
+                onClick={() => void redo()}
+              >
+                ↷ Redo
+              </button>
+              <button
+                className="btn btn--save"
+                disabled={saving || !dirty}
+                title={dirty ? "Download the edited .nds" : "No edits to save"}
+                onClick={() => void saveRom()}
+              >
+                {saving ? "Saving…" : "Save ROM"}
+              </button>
+            </>
           )}
           <button className="btn" disabled={!booted || loading} onClick={() => fileRef.current?.click()}>
             {romHandle == null ? "Open ROM…" : "Open another…"}

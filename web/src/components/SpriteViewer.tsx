@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useStore, type ResourceItem } from "../state/store";
 import { pickSibling } from "../state/pairing";
+import { resolveNarcInfo, resolveRenderHints, resolveSpriteUnit } from "../state/grouping";
 import { refKey, type DecodedImage, type ResourceRef } from "../transport";
 import { base64ToBytes, download } from "../util";
 
@@ -77,11 +78,26 @@ export function SpriteViewer() {
   const romSiblings = useStore((s) => s.romSiblings);
   const setPairingOverride = useStore((s) => s.setPairingOverride);
   const importPng = useStore((s) => s.importPng);
+  const importScreenPng = useStore((s) => s.importScreenPng);
   const editVersion = useStore((s) => s.editVersion); // bumped on import → triggers an in-place re-decode
 
   const fmt = selection.format;
   const container = selection.ref.container;
   const selKey = refKey(selection.ref);
+
+  // Game-DB (§8) resolution for this NARC: a badge + render hints, manifest-first. `narcs` is a dep so
+  // the path resolves once the container's NARC is open.
+  const gdb = useMemo(() => {
+    const st = useStore.getState();
+    const narcPath = st.narcPathOf(container);
+    const gameCode = st.romInfo?.gameCode;
+    return {
+      narcPath,
+      gameCode,
+      info: resolveNarcInfo(gameCode, narcPath),
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [container, narcs]);
 
   const items: ResourceItem[] = useMemo(() => {
     if (container >= 0) {
@@ -114,10 +130,14 @@ export function SpriteViewer() {
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
-  // PNG-import state (NCGR only): a pending match-vs-rebuild choice when the image doesn't fit.
+  // PNG-import state (NCGR sprite or NSCR background): a pending match-vs-rebuild choice when the image
+  // doesn't fit the current palette. `kind` routes the apply to the sprite vs. tilemap importer.
   const pngRef = useRef<HTMLInputElement>(null);
   const [impBusy, setImpBusy] = useState(false);
-  const [pending, setPending] = useState<{ bytes: Uint8Array; unmatched: number; w: number; h: number } | null>(null);
+  const [dedupFlips, setDedupFlips] = useState(true);
+  const [pending, setPending] = useState<
+    { bytes: Uint8Array; unmatched: number; w: number; h: number; kind: "ncgr" | "screen" } | null
+  >(null);
 
   // All resources of the selected file's own format, ordered by container index.
   const selfPeers = useMemo(
@@ -130,10 +150,13 @@ export function SpriteViewer() {
   useEffect(() => {
     const pick = (cands: ResourceItem[]) => pickSibling(cands, selfPeers, selection.ref.id);
     const saved = useStore.getState().pairingOverrides[selKey] ?? {};
+    // Manifest-first (§8): a declared grouping resolves the exact sibling unit; else the heuristic.
+    const entryLikes = items.map((i) => ({ index: i.ref.id, format: i.format }));
+    const unit = resolveSpriteUnit(gdb.gameCode, gdb.narcPath, container, entryLikes, selection.ref.id);
     setPair({
-      ncgr: saved.ncgr ?? pick(ncgrs),
-      nclr: saved.nclr ?? pick(nclrs),
-      ncer: saved.ncer ?? pick(ncers),
+      ncgr: saved.ncgr ?? unit?.ncgr ?? pick(ncgrs),
+      nclr: saved.nclr ?? unit?.nclr ?? pick(nclrs),
+      ncer: saved.ncer ?? unit?.ncer ?? pick(ncers),
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selKey, items]);
@@ -142,12 +165,17 @@ export function SpriteViewer() {
   // are edited in place (an import bumps editVersion but keeps selKey), so the tile width / palette /
   // zoom the user dialed in survive the edit.
   useEffect(() => {
+    // Seed the view controls from the game-DB render hints when the NARC is listed (manifest-first),
+    // else the neutral defaults. tileWidth is declared in pixels; the control works in 8px tiles.
+    const st = useStore.getState();
+    const hints = resolveRenderHints(st.romInfo?.gameCode, st.narcPathOf(container), selection.ref.id);
     setCellIndex(0);
     setAnimIndex(0);
     setFrameIndex(0);
-    setPaletteIndex(0);
+    setPaletteIndex(hints?.paletteIndex ?? 0);
     setSubPalettes(1);
-    setTilesWidth(0);
+    setTilesWidth(hints?.tileWidth ? Math.max(1, Math.round(hints.tileWidth / 8)) : 0);
+    setTransparent(hints?.transparent ?? true);
     setPlaying(false);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selKey]);
@@ -274,7 +302,7 @@ export function SpriteViewer() {
       if (dry.unmatched === 0) {
         await importPng(selection.ref, pair.nclr, paletteIndex, tilesWidth, false, false, bytes);
       } else {
-        setPending({ bytes, unmatched: dry.unmatched, w: dry.width, h: dry.height });
+        setPending({ bytes, unmatched: dry.unmatched, w: dry.width, h: dry.height, kind: "ncgr" });
       }
     } catch (e) {
       alert("PNG import failed: " + (e as Error).message);
@@ -283,14 +311,44 @@ export function SpriteViewer() {
     }
   };
 
-  const applyPending = async (rebuild: boolean) => {
-    if (!pending || !pair.nclr) return;
+  // Import a background image over this NSCR — decomposes it into the paired NCGR tileset + this tilemap
+  // (and the NCLR when rebuilding). Dry-run first: if every colour fits, apply the match; else prompt.
+  const onScreenPngChosen = async (file: File) => {
+    if (!pair.ncgr || !pair.nclr) {
+      alert("A screen import needs both a tileset (NCGR) and a palette (NCLR) — pick them first.");
+      return;
+    }
     setImpBusy(true);
     try {
-      await importPng(selection.ref, pair.nclr, paletteIndex, tilesWidth, rebuild, false, pending.bytes);
+      const bytes = new Uint8Array(await file.arrayBuffer());
+      const dry = await importScreenPng(selection.ref, pair.ncgr, pair.nclr, dedupFlips, false, true, bytes);
+      if (!dry.ok) throw new Error("import failed");
+      if (dry.unmatched === 0) {
+        await importScreenPng(selection.ref, pair.ncgr, pair.nclr, dedupFlips, false, false, bytes);
+      } else {
+        setPending({ bytes, unmatched: dry.unmatched, w: 0, h: 0, kind: "screen" });
+      }
+    } catch (e) {
+      alert("Background import failed: " + (e as Error).message);
+    } finally {
+      setImpBusy(false);
+    }
+  };
+
+  const applyPending = async (rebuild: boolean) => {
+    if (!pending) return;
+    setImpBusy(true);
+    try {
+      if (pending.kind === "screen") {
+        if (!pair.ncgr || !pair.nclr) return;
+        await importScreenPng(selection.ref, pair.ncgr, pair.nclr, dedupFlips, rebuild, false, pending.bytes);
+      } else {
+        if (!pair.nclr) return;
+        await importPng(selection.ref, pair.nclr, paletteIndex, tilesWidth, rebuild, false, pending.bytes);
+      }
       setPending(null); // (the viewer also remounts on editVersion bump)
     } catch (e) {
-      alert("PNG import failed: " + (e as Error).message);
+      alert("Import failed: " + (e as Error).message);
     } finally {
       setImpBusy(false);
     }
@@ -298,6 +356,12 @@ export function SpriteViewer() {
 
   return (
     <div className="sprite">
+      {gdb.info && (
+        <div className="gamedb-badge" title="Grouping and render hints came from the game DB, not a heuristic">
+          <span className="gamedb-dot">◆</span> Game DB · {gdb.info.title}
+          {gdb.info.role ? ` · ${gdb.info.role.replace(/-/g, " ")}` : ""}
+        </div>
+      )}
       <div className="controls">
         {fmt !== "NCGR" && <RefSelect label="Tileset (NCGR)" items={ncgrs} value={pair.ncgr} onChange={(r) => { setPair((p) => ({ ...p, ncgr: r })); setPairingOverride(selKey, { ncgr: r }); }} />}
         {fmt === "NANR" && <RefSelect label="Cells (NCER)" items={ncers} value={pair.ncer} onChange={(r) => { setPair((p) => ({ ...p, ncer: r })); setPairingOverride(selKey, { ncer: r }); }} />}
@@ -306,8 +370,18 @@ export function SpriteViewer() {
         {fmt === "NCGR" && (
           <>
             <label className="ctrl">
-              <span>Tile width</span>
-              <input type="number" min={0} value={tilesWidth} onChange={(e) => setTilesWidth(Math.max(0, +e.target.value | 0))} />
+              <span>Width (px)</span>
+              {/* Users think in pixels; the NCGR geometry is in 8px tiles, so accept pixels (step 8) and
+                  convert. 0 = auto (read the width from the NCGR header). */}
+              <input
+                type="number"
+                min={0}
+                step={8}
+                placeholder="auto"
+                title="Sprite width in pixels (multiples of 8). Leave 0 for auto."
+                value={tilesWidth ? tilesWidth * 8 : 0}
+                onChange={(e) => setTilesWidth(Math.max(0, Math.round((+e.target.value | 0) / 8)))}
+              />
             </label>
             <Stepper label="Palette" value={paletteIndex} max={subPalettes - 1} onChange={setPaletteIndex} />
           </>
@@ -343,13 +417,24 @@ export function SpriteViewer() {
           </select>
         </label>
 
-        {fmt === "NCGR" && (
+        {fmt === "NSCR" && (
+          <label className="ctrl ctrl--inline">
+            <input type="checkbox" checked={dedupFlips} onChange={(e) => setDedupFlips(e.target.checked)} />
+            <span>Share flipped tiles</span>
+          </label>
+        )}
+
+        {(fmt === "NCGR" || fmt === "NSCR") && (
           <label className="ctrl">
             <span>Edit</span>
             <button
               className="play-btn"
-              disabled={impBusy || !pair.nclr}
-              title={pair.nclr ? "Replace this sprite's pixels from an image file" : "Pick a palette first"}
+              disabled={impBusy || (fmt === "NCGR" ? !pair.nclr : !pair.ncgr || !pair.nclr)}
+              title={
+                fmt === "NCGR"
+                  ? pair.nclr ? "Replace this sprite's pixels from an image file" : "Pick a palette first"
+                  : pair.ncgr && pair.nclr ? "Import a background image into this tilemap (rebuilds the tileset)" : "Pick a tileset + palette first"
+              }
               onClick={() => pngRef.current?.click()}
             >
               {impBusy ? "…" : "Import PNG…"}
@@ -362,7 +447,7 @@ export function SpriteViewer() {
               onChange={(e) => {
                 const f = e.target.files?.[0];
                 e.target.value = "";
-                if (f) void onPngChosen(f);
+                if (f) void (fmt === "NSCR" ? onScreenPngChosen(f) : onPngChosen(f));
               }}
             />
           </label>
@@ -372,8 +457,10 @@ export function SpriteViewer() {
       {pending && (
         <div className="import-choice">
           <span>
-            {pending.unmatched.toLocaleString()} of {(pending.w * pending.h).toLocaleString()} pixels don't
-            match the current palette.
+            {pending.unmatched.toLocaleString()}
+            {pending.kind === "screen"
+              ? " pixels don't match the current palette."
+              : ` of ${(pending.w * pending.h).toLocaleString()} pixels don't match the current palette.`}
           </span>
           <button className="btn btn--sm" disabled={impBusy} onClick={() => void applyPending(false)}>
             Match to palette

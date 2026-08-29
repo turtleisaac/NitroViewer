@@ -61,6 +61,14 @@ export interface PngImportResult {
   dryRun: boolean;
 }
 
+export interface ScreenImportResult {
+  ok: boolean;
+  uniqueTiles: number; // distinct tiles the background reduced to (= the rebuilt NCGR's tile count)
+  unmatched: number; // pixels not exactly in the (sub-)palette (match mode)
+  paletteRebuilt: boolean;
+  dryRun: boolean;
+}
+
 export interface ModelRig {
   nodeCount: number;
   meshes: { material: string; node: number }[];
@@ -92,6 +100,10 @@ export interface NitroViewerClient {
   /** Open a NARC from any resource — a ROM file (container < 0) or a sub-file of an open NARC (nested). */
   openNarcAt(handle: number, ref: ResourceRef): Promise<{ narcHandle: number; numFiles: number }>;
   listNarc(narcHandle: number): Promise<NarcEntry[]>;
+  /** Export a whole NARC (addressed as a resource) as a ZIP of its decompressed sub-files. */
+  exportNarcZip(handle: number, ref: ResourceRef): Promise<{ ok: boolean; count: number; base64: string }>;
+  /** Rebuild a NARC from a ZIP of files and write it back (the "import a folder as a NARC" op). */
+  importNarcZip(handle: number, ref: ResourceRef, zipBytes: Uint8Array): Promise<{ ok: boolean; count: number }>;
 
   decodeNcgr(
     handle: number,
@@ -131,11 +143,44 @@ export interface NitroViewerClient {
   ): Promise<DecodedImage>;
 
   exportRaw(handle: number, ref: ResourceRef): Promise<{ size: number; base64: string }>;
+  /** Export the usable, standalone format file (LZ-decompressed) + its detected format, for extraction. */
+  exportFile(
+    handle: number,
+    ref: ResourceRef
+  ): Promise<{ size: number; format: string; compressed: boolean; base64: string }>;
 
   /** Replace the bytes of a resource (ROM file or NARC sub-file, which is repacked into its ROM file). */
   importRaw(handle: number, ref: ResourceRef, bytes: Uint8Array): Promise<{ size: number }>;
   /** Serialise the (edited) ROM to a complete .nds image. */
   saveRom(handle: number): Promise<Uint8Array>;
+  /**
+   * Import a background image over an NSCR, decomposing it back into the NCGR tileset + NSCR tilemap
+   * (and a new NCLR when rebuildPalette). dedupFlips shares mirrored tiles; numSubPalettes<=0 derives the
+   * sub-palette count from the NCLR; dryRun computes the fit without writing.
+   */
+  importScreenPng(
+    handle: number,
+    nscr: ResourceRef,
+    ncgr: ResourceRef,
+    nclr: ResourceRef,
+    dedupFlips: boolean,
+    rebuildPalette: boolean,
+    numSubPalettes: number,
+    dryRun: boolean,
+    pngBytes: Uint8Array
+  ): Promise<ScreenImportResult>;
+  /** Replace an NCLR's colours from an image (swatch strip / indexed PNG / any image). Count preserved. */
+  importPalette(
+    handle: number,
+    nclr: ResourceRef,
+    imageBytes: Uint8Array
+  ): Promise<{ ok: boolean; colors: number; unique: number }>;
+  /** Re-encode a Wavefront OBJ mesh (UTF-8 bytes) over an NSBMD (untextured). Returns the mesh stats. */
+  importObj(
+    handle: number,
+    nsbmd: ResourceRef,
+    objBytes: Uint8Array
+  ): Promise<{ ok: boolean; vertices: number; triangles: number; textured: boolean }>;
   /**
    * Import an image over an NCGR sprite (propagates down into the NCGR, and the NCLR when rebuilding).
    * rebuildPalette=false matches to the existing (sub-)palette; dryRun computes the fit without writing.
@@ -155,6 +200,11 @@ export interface NitroViewerClient {
     handle: number,
     ref: ResourceRef
   ): Promise<{ hasEmbeddedTextures: boolean; models: string[] }>;
+  /** An NSBCA's named clips — used for by-name model↔animation pairing and richer clip labels. */
+  getAnimationSetInfo(
+    handle: number,
+    ref: ResourceRef
+  ): Promise<{ animations: { name: string; frameCount: number }[] }>;
   getTextureSet(
     handle: number,
     ref: ResourceRef

@@ -14,6 +14,7 @@ import type {
   PngImportResult,
   ResourceRef,
   RomInfo,
+  ScreenImportResult,
   TexturePatternAnim,
   TreeFolder,
   VisibilityAnim,
@@ -31,7 +32,12 @@ declare global {
 // subdirectory the page is served from (root "/" at nitroviewer.com, "/NitroViewer/" on GitHub
 // project pages). Derive that prefix from the current page location.
 const APP_DIR = typeof location !== "undefined" ? location.pathname.replace(/[^/]*$/, "") : "/";
-const CLASSPATH = `/app${APP_DIR}jars/nitroviewer-core.jar:/app${APP_DIR}jars/Nds4j.jar`;
+// Cache-bust the jar URLs so a rebuilt/redeployed jar isn't shadowed by CheerpJ's URL-keyed jar cache
+// (which otherwise loads a stale class — an old facade method is silently missing → NoSuchMethodError).
+// Dev changes every load (jars change constantly); prod uses a fixed version, bumped when a jar changes.
+const JAR_VERSION = import.meta.env.DEV ? String(Date.now()) : "2";
+const jar = (name: string) => `/app${APP_DIR}jars/${name}?v=${JAR_VERSION}`;
+const CLASSPATH = `${jar("nitroviewer-core.jar")}:${jar("Nds4j.jar")}`;
 
 /** Java exceptions never cross the boundary; the facade returns {"error":...} instead. */
 function unwrap<T>(json: string): T {
@@ -74,6 +80,8 @@ export class CheerpjTransport implements NitroViewerClient {
     const lib = await cheerpjRunLibrary(CLASSPATH);
     const Facade = await lib.com.nitroviewer.core.CheerpjFacade;
     this.facade = await new Facade();
+    // Dev affordance (mirrors window.__store): lets a driver poke the raw Java facade directly.
+    if (typeof window !== "undefined") (window as unknown as { __nvFacade: unknown }).__nvFacade = this.facade;
     onProgress?.("Ready");
   }
 
@@ -115,6 +123,15 @@ export class CheerpjTransport implements NitroViewerClient {
 
   listNarc(narcHandle: number): Promise<NarcEntry[]> {
     return this.enqueue(async () => unwrap<{ files: NarcEntry[] }>(await this.f.listNarc(narcHandle)).files);
+  }
+
+  exportNarcZip(handle: number, ref: ResourceRef): Promise<{ ok: boolean; count: number; base64: string }> {
+    return this.enqueue(async () => unwrap(await this.f.exportNarcZip(handle, ref.container, ref.id)));
+  }
+
+  importNarcZip(handle: number, ref: ResourceRef, zipBytes: Uint8Array): Promise<{ ok: boolean; count: number }> {
+    const signed = new Int8Array(zipBytes.buffer, zipBytes.byteOffset, zipBytes.byteLength);
+    return this.enqueue(async () => unwrap(await this.f.importNarcZip(handle, ref.container, ref.id, signed)));
   }
 
   decodeNcgr(
@@ -203,6 +220,13 @@ export class CheerpjTransport implements NitroViewerClient {
     return this.enqueue(async () => unwrap(await this.f.exportRaw(handle, ref.container, ref.id)));
   }
 
+  exportFile(
+    handle: number,
+    ref: ResourceRef
+  ): Promise<{ size: number; format: string; compressed: boolean; base64: string }> {
+    return this.enqueue(async () => unwrap(await this.f.exportFile(handle, ref.container, ref.id)));
+  }
+
   importRaw(handle: number, ref: ResourceRef, bytes: Uint8Array): Promise<{ size: number }> {
     // Same signed-byte marshalling rule as openRom: Java byte[] needs an Int8Array.
     const signed = new Int8Array(bytes.buffer, bytes.byteOffset, bytes.byteLength);
@@ -232,6 +256,50 @@ export class CheerpjTransport implements NitroViewerClient {
     );
   }
 
+  importScreenPng(
+    handle: number,
+    nscr: ResourceRef,
+    ncgr: ResourceRef,
+    nclr: ResourceRef,
+    dedupFlips: boolean,
+    rebuildPalette: boolean,
+    numSubPalettes: number,
+    dryRun: boolean,
+    pngBytes: Uint8Array
+  ): Promise<ScreenImportResult> {
+    const signed = new Int8Array(pngBytes.buffer, pngBytes.byteOffset, pngBytes.byteLength);
+    return this.enqueue(async () =>
+      unwrap<ScreenImportResult>(
+        await this.f.importScreenPng(
+          handle, nscr.container, nscr.id, ncgr.container, ncgr.id, nclr.container, nclr.id,
+          dedupFlips, rebuildPalette, numSubPalettes, dryRun, signed
+        )
+      )
+    );
+  }
+
+  importPalette(
+    handle: number,
+    nclr: ResourceRef,
+    imageBytes: Uint8Array
+  ): Promise<{ ok: boolean; colors: number; unique: number }> {
+    const signed = new Int8Array(imageBytes.buffer, imageBytes.byteOffset, imageBytes.byteLength);
+    return this.enqueue(async () =>
+      unwrap(await this.f.importPalette(handle, nclr.container, nclr.id, signed))
+    );
+  }
+
+  importObj(
+    handle: number,
+    nsbmd: ResourceRef,
+    objBytes: Uint8Array
+  ): Promise<{ ok: boolean; vertices: number; triangles: number; textured: boolean }> {
+    const signed = new Int8Array(objBytes.buffer, objBytes.byteOffset, objBytes.byteLength);
+    return this.enqueue(async () =>
+      unwrap(await this.f.importObj(handle, nsbmd.container, nsbmd.id, signed))
+    );
+  }
+
   saveRom(handle: number): Promise<Uint8Array> {
     return this.enqueue(async () => {
       // saveRom returns the raw byte[] (an Int8Array in JS), or a zero-length array on failure —
@@ -250,6 +318,13 @@ export class CheerpjTransport implements NitroViewerClient {
     ref: ResourceRef
   ): Promise<{ hasEmbeddedTextures: boolean; models: string[] }> {
     return this.enqueue(async () => unwrap(await this.f.getModelSetInfo(handle, ref.container, ref.id)));
+  }
+
+  getAnimationSetInfo(
+    handle: number,
+    ref: ResourceRef
+  ): Promise<{ animations: { name: string; frameCount: number }[] }> {
+    return this.enqueue(async () => unwrap(await this.f.getAnimationSetInfo(handle, ref.container, ref.id)));
   }
 
   getTextureSet(

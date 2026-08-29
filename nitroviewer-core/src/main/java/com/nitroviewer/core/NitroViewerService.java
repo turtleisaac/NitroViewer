@@ -54,6 +54,22 @@ public interface NitroViewerService
     /** @return {"files":[{"index","size","format"}]} */
     String listNarc(int narcHandle);
 
+    /**
+     * Export a whole NARC as a ZIP of its (decompressed) sub-files, named {@code 0000.<ext>} in order —
+     * the "extract NARC to a folder" operation. The NARC is addressed as a resource (a ROM file, or a
+     * sub-file of an open NARC), NOT a narc-handle.
+     * @return {"ok":true,"count":int,"base64":str} | {"ok":false,"error":str}
+     */
+    String exportNarcZip(int romHandle, int container, int id);
+
+    /**
+     * Rebuild a NARC from a ZIP of files, replacing its contents in order (leading integer in each name
+     * decides order), then write it back into the ROM — the "import a folder as a NARC" operation. The
+     * file count may differ from the original. Endianness/filename table are preserved from the target.
+     * @return {"ok":true,"count":int} | {"ok":false,"error":str}
+     */
+    String importNarcZip(int romHandle, int container, int id, byte[] zipBytes);
+
     // --- 2D graphics decode (each returns {"width","height","png"} | {"error"}) ---
     String decodeNcgr(int romHandle,
                       int ncgrContainer, int ncgrId, int nclrContainer, int nclrId,
@@ -82,8 +98,16 @@ public interface NitroViewerService
                       int animIndex, int frameIndex, boolean transparent);
 
     // --- export ---
-    /** @return {"name":str,"size":int,"base64":str} raw (as-stored) bytes | {"error"} */
+    /** @return {"size":int,"base64":str} raw (as-stored, possibly LZ-compressed) bytes | {"error"} */
     String exportRaw(int romHandle, int container, int id);
+
+    /**
+     * Export the usable, standalone format file: the resource's bytes LZ-decompressed if the ROM stored
+     * them compressed (so the extracted file opens in other tools and re-imports cleanly). Includes the
+     * detected format so the caller can pick a file extension for numbered/nameless entries.
+     * @return {"size":int,"format":str,"compressed":bool,"base64":str} | {"error"}
+     */
+    String exportFile(int romHandle, int container, int id);
 
     // --- import / save (the write half) ---
     /**
@@ -95,6 +119,17 @@ public interface NitroViewerService
      * @return {"ok":true,"size":int} | {"ok":false,"error":str}
      */
     String importRaw(int romHandle, int container, int id, byte[] bytes);
+
+    /**
+     * Import a mesh from Wavefront OBJ text (passed as UTF-8 bytes) over an existing NSBMD, re-encoding it
+     * to NSBMD bytes via Nds4j's {@code ObjImporter} + {@code ModelBuilder} (byte-exact-tested against
+     * g3dcvtr). Authors an untextured single-node model from the OBJ's positions + triangles.
+     * <p>OBJ text crosses as a {@code byte[]} (not a {@code String} param) to stay on the proven CheerpJ
+     * marshalling path — a single trailing {@code byte[]}, like {@link #importPalette}.
+     *
+     * @return {"ok":true,"vertices":int,"triangles":int,"textured":false} | {"ok":false,"error":str}
+     */
+    String importObj(int romHandle, int container, int id, byte[] objBytes);
 
     /**
      * Serialise the (possibly edited) ROM to a complete {@code .nds} image. Returns the raw
@@ -132,9 +167,38 @@ public interface NitroViewerService
                      int paletteIndex, int tilesWidth, boolean rebuildPalette, boolean dryRun,
                      byte[] pngBytes);
 
+    /**
+     * Replace an NCLR's colours from an image (a swatch strip, an indexed PNG's palette, or any image's
+     * colours in raster order). The NCLR's colour COUNT is preserved — the image's first-seen unique
+     * colours fill the palette, padded with black or truncated to fit — so the paired NCGR's indices stay
+     * valid. Use {@link IndexColorModel} entries directly when the PNG is indexed.
+     *
+     * @return {"ok":true,"colors":int,"unique":int} | {"ok":false,"error":str}
+     */
+    String importPalette(int romHandle, int nclrContainer, int nclrId, byte[] imageBytes);
+
+    /**
+     * Import a background image over an NSCR "screen", decomposing it back into its NCGR tileset and NSCR
+     * tilemap (and, when {@code rebuildPalette}, a new NCLR) — the tilemap analog of {@link #importPng}.
+     * The image must match the screen's pixel dimensions. Tiles are deduplicated (shared across H/V mirrors
+     * when {@code dedupFlips}); colours are matched to the existing NCLR unless {@code rebuildPalette}, which
+     * builds a fresh palette from the image ({@code numSubPalettes} 16-colour sub-palettes for 4bpp, or
+     * {@code <=0} to derive it from the NCLR; a single 256-colour palette for 8bpp). {@code dryRun} computes
+     * the fit (unmatched-pixel count) without writing.
+     *
+     * @return {"ok":true,"uniqueTiles":int,"unmatched":int,"paletteRebuilt":bool,"dryRun":bool}
+     *         | {"ok":false,"error":str}
+     */
+    String importScreenPng(int romHandle, int nscrContainer, int nscrId, int ncgrContainer, int ncgrId,
+                           int nclrContainer, int nclrId, boolean dedupFlips, boolean rebuildPalette,
+                           int numSubPalettes, boolean dryRun, byte[] pngBytes);
+
     // --- 3D (static models) ---
     /** @return {"hasEmbeddedTextures":bool,"models":["name",...]} | {"error"} for an NSBMD */
     String getModelSetInfo(int romHandle, int container, int id);
+
+    /** @return {"animations":[{"name":str,"frameCount":int}]} | {"error"} for an NSBCA (its named clips) */
+    String getAnimationSetInfo(int romHandle, int container, int id);
 
     /** @return {"textures":[{"name","width","height","png"}]} | {"error"} for an NSBTX */
     String decodeTextureSet(int romHandle, int container, int id);

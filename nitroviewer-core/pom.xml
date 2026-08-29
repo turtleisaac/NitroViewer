@@ -18,9 +18,11 @@
 
     <properties>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
-        <!-- Java 8 to match Nds4j and CheerpJ's best-supported bytecode target. -->
-        <maven.compiler.source>8</maven.compiler.source>
-        <maven.compiler.target>8</maven.compiler.target>
+        <!-- release 8 (not just source/target) so the facade compiles against the Java 8 API surface:
+             CheerpJ's JRE is Java 8, and a Java 9+ API CALL (e.g. List.of, Optional.isEmpty) compiles
+             fine under source/target 8 but throws NoSuchMethodError in the browser. This guard turns that
+             into a build error HERE. Scoped to NitroViewer only — Nds4j keeps its own build config. -->
+        <maven.compiler.release>8</maven.compiler.release>
     </properties>
 
     <dependencies>

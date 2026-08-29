@@ -1,0 +1,90 @@
+{
+  "version": 1,
+  "_source": "Layouts/paths verified against PokEditor-Core (formats/pokemon_sprites/PokemonSpriteParser + gamedata/GameFiles) and the retail ROMs.",
+  "games": {
+    "CPU*": {
+      "title": "Pokémon Platinum",
+      "narcs": {
+        "/poketool/pokegra/pl_pokegra.narc": {
+          "role": "pokemon-battle-sprites",
+          "comment": "494 species × 6 files: femaleBack, maleBack, femaleFront, maleFront, palette, shinyPalette. Each NCGR is 160×80 = two 80×80 idle-animation frames (correct, not doubled). Pt/HG/SS scan front-to-back, which the decoder already does — no render fix needed here.",
+          "grouping": { "strategy": "interleaved", "order": ["NCGR", "NCGR", "NCGR", "NCGR", "NCLR", "NCLR"] },
+          "render": { "scanDirection": "front-to-back" }
+        },
+        "/poketool/icongra/pl_poke_icon.narc": {
+          "role": "party-icons",
+          "comment": "7 leading files, then one 32×32 4bpp icon per species; palettes shared via an arm9 table.",
+          "render": { "tileWidth": 32, "bitDepth": 4 }
+        },
+        "/poketool/trgra/trfgra.narc": {
+          "role": "trainer-front-sprites",
+          "render": { "transparent": true }
+        },
+        "/poketool/trgra/trbgra.narc": {
+          "role": "trainer-back-sprites",
+          "render": { "transparent": true, "scanned": true }
+        },
+        "/arc/manene.narc": {
+          "role": "field-model-set",
+          "sets": [
+            {
+              "role": "model-set",
+              "align": "by-name",
+              "members": {
+                "model": { "format": "NSBMD" },
+                "anim": { "format": "NSBCA" }
+              },
+              "render": { "unlit": true }
+            }
+          ]
+        }
+      }
+    },
+    "IPK*": {
+      "title": "Pokémon HeartGold",
+      "narcs": {
+        "/a/0/0/4": {
+          "role": "pokemon-battle-sprites",
+          "grouping": { "strategy": "interleaved", "order": ["NCGR", "NCGR", "NCGR", "NCGR", "NCLR", "NCLR"] },
+          "render": { "scanned": true, "scanDirection": "front-to-back" }
+        },
+        "/a/0/2/0": { "role": "party-icons", "render": { "tileWidth": 32, "bitDepth": 4 } },
+        "/a/0/5/8": { "role": "trainer-sprites" }
+      }
+    },
+    "IPG*": {
+      "title": "Pokémon SoulSilver",
+      "narcs": {
+        "/a/0/0/4": {
+          "role": "pokemon-battle-sprites",
+          "grouping": { "strategy": "interleaved", "order": ["NCGR", "NCGR", "NCGR", "NCGR", "NCLR", "NCLR"] },
+          "render": { "scanned": true, "scanDirection": "front-to-back" }
+        },
+        "/a/0/2/0": { "role": "party-icons", "render": { "tileWidth": 32, "bitDepth": 4 } },
+        "/a/0/5/8": { "role": "trainer-sprites" }
+      }
+    },
+    "ADA*": {
+      "title": "Pokémon Diamond",
+      "narcs": {
+        "/poketool/pokegra/pokegra.narc": {
+          "role": "pokemon-battle-sprites",
+          "comment": "Same 6-file layout as Platinum (file 337, 494 species). D/P scan BACK-to-front; the decoder hardcodes front-to-back, so these currently decode as garbled static until scanDirection is threaded into decodeNcgr.",
+          "grouping": { "strategy": "interleaved", "order": ["NCGR", "NCGR", "NCGR", "NCGR", "NCLR", "NCLR"] },
+          "render": { "scanDirection": "back-to-front" }
+        }
+      }
+    },
+    "APA*": {
+      "title": "Pokémon Pearl",
+      "narcs": {
+        "/poketool/pokegra/pokegra.narc": {
+          "role": "pokemon-battle-sprites",
+          "comment": "D/P scan back-to-front (see Diamond note) — needs scanDirection wired into decodeNcgr to render.",
+          "grouping": { "strategy": "interleaved", "order": ["NCGR", "NCGR", "NCGR", "NCGR", "NCLR", "NCLR"] },
+          "render": { "scanDirection": "back-to-front" }
+        }
+      }
+    }
+  }
+}

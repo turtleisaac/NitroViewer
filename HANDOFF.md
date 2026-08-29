@@ -129,6 +129,20 @@ frames' buffers to detect animation. Keep throwaway driver scripts in a scratch 
   COOP/COEP** — `require-corp` blocks CheerpJ's own `c.html` iframe.
 - Base64/PNG data crosses fine as strings. To read huge JSON string fields in Java tests, use `indexOf`,
   **not a backtracking regex** (`"key":"((?:[^"\\]|\\.)*)"` StackOverflows on multi-KB base64).
+- **CheerpJ's JRE is Java 8** (`java.version` = `1.8.0_492`). A **Java 9+ API *call*** compiles fine under
+  `source/target 8` but throws a bare **`NoSuchMethodError` (null message, empty stack)** in the browser —
+  it worked in JUnit (JDK 20) and only died in CheerpJ. This bit the model-write path: Nds4j's
+  `ModelBuilder` used `List.of()` (Java 9), so `importObj` failed in-browser while passing every JUnit.
+  Fixed by making `ModelBuilder` Java-8-clean (`List.of`→`Arrays.asList`, byte-exact preserved) and
+  guarding **nitroviewer-core with `maven.compiler.release=8`** (not just source/target) so any Java 9+ API
+  is a *build* error here, not a browser-only surprise. **Latent elsewhere:** `SkeletalAnimationSet.encode`
+  uses `ByteArrayOutputStream.writeBytes` (Java 11) — the next write path to wire will hit the same wall.
+- Prefer a **single trailing `byte[]` and no `String`/mixed object params** for facade methods: a method
+  with `(…,String,byte[],String)` failed CheerpJ overload resolution (`NoSuchMethodError`); reshaping
+  `importObj` to `(int,int,int,byte[])` (OBJ text as UTF-8 bytes) fixed it. `int,int,int,byte[]` (like
+  `importPalette`/`importObj`) is the proven shape.
+- Jar URLs are **cache-busted** (`?v=…`): dev uses a per-load timestamp, prod a fixed `JAR_VERSION`
+  (bump when a jar changes) so a redeployed jar isn't shadowed by the browser cache.
 
 ### three.js
 - **A perpetual `requestAnimationFrame` loop STARVES CheerpJ** (cooperative main-thread execution) and *hangs*
@@ -413,44 +427,47 @@ Per-unit or per-entry: **`tileWidth`** (the big one — kills the "linear strip"
 
 ## 9. Open items (snapshot)
 
-A single up-to-date list of what's left. Details live in the referenced sections.
+A single up-to-date list of what's left. Details live in the referenced sections. **Much of the 2026-08-29
+batch below is now done** (marked ✅); the residual work is called out under each.
 
-**Write/edit (finish the flagship — §6.2/§6.4).** PNG→NCGR/NCLR is done. Remaining:
-- glTF/OBJ → NSBMD import (facade write path exists; `ObjImporter`/`ImdImporter`/`ModelBuilder` are the
-  encoders). Palette import (NCLR). Per-format import UIs.
-- Undo/redo (snapshot edited bytes), batch import from an unpacked folder.
+**Write/edit (§6.2/§6.4).** PNG→NCGR/NCLR ✅. Now also: **✅ Palette import (NCLR)** (`importPalette` +
+PaletteViewer Export/Import swatch strip), **✅ OBJ → NSBMD import** (`importObj` via `ObjImporter` +
+`ModelBuilder`; untextured; ModelViewer "Import OBJ ↑"), **✅ Undo/redo** (per-edit prior-byte snapshots in
+the store; header ↶/↷; dirty clears when the stack empties). Remaining:
+- **glTF → NSBMD** import (the app *exports* glTF; import needs a glTF **mesh reader** — accessors → the
+  same `ModelBuilder` path). **Textured** OBJ import (facade + `buildTextured` exist; wire a texture picker).
+  Batch import from an unpacked folder. Per-format import UIs.
 
-**Per-game asset manifest / "game DB" (§8) — not built.** A resolver (`state/grouping.ts`) + `gamedb/*.json`
-so groupings/tile-widths/scanned flags come from data, not heuristics — incl. **cross-NARC** sets (model in
-one NARC, textures in another). Manifest-first, `pairing.ts` heuristics fall back. Highest-leverage
-correctness win; would retire most of the read-side pairing guesswork below.
+**✅ Per-game asset manifest / "game DB" (§8) — built.** `state/grouping.ts` (`resolveGame`/`resolveNarcInfo`/
+`resolveRenderHints`/`resolveSpriteUnit`+`groupUnit`) + `gamedb/gamedb.json`, keyed by game code with `*`
+wildcards. **Manifest-first, `pairing.ts` heuristic-fallback.** Wired into SpriteViewer: a **"◆ Game DB"
+badge**, render hints (transparent/scanned/tileWidth/paletteIndex) seed the view, and declared groupings
+resolve the sibling unit. Seeded with Platinum trainer/pokemon sprite NARCs (`grouping.test.ts` covers the
+strategies). **Residual:** grow coverage (only render-hint entries seeded; irregular NARCs still use the
+heuristic), cross-NARC `sets` resolution (schema + resolver stubs exist; not yet consumed by ModelViewer),
+and the "export overrides → manifest stub" dev action.
 
-**Model↔NSBCA/track pairing is the biggest read-side wart.** The auto-pair is "nearest NSBCA at/after the
-model index" and is **often wrong** — e.g. even manene's documented walk is narc-142 **model #51 →
-animation #53** (Nds4j `SoftwareRendererTest`/`GltfAnimationTest`), but the heuristic picks #52; and a
-model's real anims can sit *before* it. A model owns a small group of NSBCAs; the right mapping is
-per-game data. The **game DB (§8) is the fix**; until then, users pick the animation set manually.
-*(Note: Nds4j exports NSBMD as rigid **node** animation, never glTF skins — there are no vertex-skinned
-models, so don't chase GPU/CPU skinning.)*
+**✅ Model↔NSBCA pairing — by-name.** New facade `getAnimationSetInfo` exposes NSBCA clip names; ModelViewer
+fetches them and `pickAnimByName` picks the lowest-index NSBCA whose clips share the model's base name
+("manene" ↔ "manene_aruku"), never a neighbour's ("kami_pur"), falling back to nearest-index. The picker now
+**labels each NSBCA by its clip name**. *(Nds4j exports NSBMD as rigid **node** animation, never glTF skins —
+no vertex-skinned models, so don't chase GPU/CPU skinning.)*
 
-**Other read-side polish (§5).** Model lighting/material polish + a ground grid; SPA emitter isolation /
-adjustable frame count/size / background toggle; NANR default-clip edge cases.
+**Read-side polish (§5).** ✅ **Ground grid** + Reset-view in ModelViewer (Grid toggle; grid sized to the
+model). Remaining: SPA emitter isolation / adjustable frame count/size / background toggle; NANR default-clip
+edge cases. (DS models are unlit by design — no lighting to add.)
 
 **Nds4j-blocked.** Bitmap-OBJ NCER composition (so scanned sprites compose per-cell instead of the raw-
 bitmap fallback) — a reverse-engineering task. New formats need parsers first: **NFTR** (fonts),
 **NMCR/NMAR** (multi-cell).
 
-**UX niceties.** The **Tile width** control is in *tiles* but users think in *pixels* (64px = 8) — consider
-relabelling or accepting pixels. Cross-file live invalidation: editing an NCGR while a paired NCER/NANR
-viewer is open doesn't refresh that view until reselect (in-container edits already refresh).
+**UX niceties.** ✅ **Tile width control is now in pixels** ("Width (px)", step 8; converts to 8px tiles).
+✅ Cross-file live invalidation improved: `editVersion` re-decodes the SpriteViewer/ModelViewer/PaletteViewer
+after any import (in-place edits refresh without reselect).
 
-**SEO / discoverability.** On-page is **done**: full meta + OG/Twitter (+ `og:image:alt`/`og:locale`) +
-JSON-LD (`featureList`/`screenshot`/`author`/`sameAs`) + favicon set + manifest + robots + sitemap +
-`preconnect`, and **crawlable static landing content in `#root`** (hero/features/formats/FAQ). What's left
-is **off-platform** (needs the owner) + a couple of extras:
+**SEO / discoverability.** On-page is **done**, now incl. ✅ **`FAQPage` JSON-LD** (mirrors the visible FAQ)
++ ✅ **`softwareVersion`**/`isAccessibleForFree`. What's left is **off-platform** (needs the owner):
 - Verify the site in **Google Search Console + Bing Webmaster** and submit `sitemap.xml` (paste a
   verification token and I'll add the meta tag; the submission itself is yours).
 - **Backlinks:** link nitroviewer.com from the Nds4j README and DS/Pokémon romhacking communities; set the
-  GitHub repo **description + topics**.
-- A **Lighthouse** pass for Core Web Vitals; optionally a `FAQPage` JSON-LD and `softwareVersion` (skipped
-  — package.json is 0.1.0).
+  GitHub repo **description + topics**. A **Lighthouse** pass for Core Web Vitals.
