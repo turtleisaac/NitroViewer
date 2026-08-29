@@ -283,6 +283,45 @@ export class CheerpjTransport implements NitroViewerClient {
     );
   }
 
+  importCellPng(
+    handle: number,
+    ncer: ResourceRef,
+    ncgr: ResourceRef,
+    nclr: ResourceRef,
+    cellIndex: number,
+    pngBytes: Uint8Array
+  ): Promise<{ ok: boolean; unmatched: number }> {
+    const signed = new Int8Array(pngBytes.buffer, pngBytes.byteOffset, pngBytes.byteLength);
+    return this.enqueue(async () =>
+      unwrap(
+        await this.f.importCellPng(
+          handle, ncer.container, ncer.id, ncgr.container, ncgr.id, nclr.container, nclr.id, cellIndex, signed
+        )
+      )
+    );
+  }
+
+  importNanrPng(
+    handle: number,
+    nanr: ResourceRef,
+    ncer: ResourceRef,
+    ncgr: ResourceRef,
+    nclr: ResourceRef,
+    animIndex: number,
+    frameIndex: number,
+    pngBytes: Uint8Array
+  ): Promise<{ ok: boolean; unmatched: number; cellIndex: number }> {
+    const signed = new Int8Array(pngBytes.buffer, pngBytes.byteOffset, pngBytes.byteLength);
+    return this.enqueue(async () =>
+      unwrap(
+        await this.f.importNanrPng(
+          handle, nanr.container, nanr.id, ncer.container, ncer.id, ncgr.container, ncgr.id,
+          nclr.container, nclr.id, animIndex, frameIndex, signed
+        )
+      )
+    );
+  }
+
   importPalette(
     handle: number,
     nclr: ResourceRef,

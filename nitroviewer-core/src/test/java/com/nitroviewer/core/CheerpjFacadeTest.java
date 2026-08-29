@@ -848,6 +848,53 @@ class CheerpjFacadeTest
     }
 
     @Test
+    @DisplayName("importCellPng writes a rendered NCER cell back to the NCGR, reproducing it exactly")
+    void importCellPngRoundTrip()
+    {
+        // Find a NARC with a coherent NCER+NCGR+NCLR bundle whose cell composes (non-scanned NCGR).
+        NintendoDsRom probe = new NintendoDsRom(romBytes);
+        int romFileId = -1, ncerI = -1, ncgrI = -1, nclrI = -1;
+        outer:
+        for (int f = 0; f < probe.getNumFiles(); f++)
+        {
+            byte[] file = probe.getFile(f);
+            if (file.length < 4 || !new String(file, 0, 4, java.nio.charset.StandardCharsets.ISO_8859_1).equals("NARC"))
+                continue;
+            Narc narc;
+            try { narc = new Narc(file); } catch (RuntimeException e) { continue; }
+            int ce = -1, cg = -1, cl = -1;
+            for (int i = 0; i < narc.getNumFiles(); i++)
+            {
+                byte[] sub = narc.getFile(i);
+                String m = sub.length >= 4 ? new String(sub, 0, 4, java.nio.charset.StandardCharsets.ISO_8859_1) : "";
+                if (m.equals("RECN") && ce < 0) ce = i;
+                else if (m.equals("RGCN") && cg < 0) cg = i;
+                else if (m.equals("RLCN") && cl < 0) cl = i;
+            }
+            if (ce >= 0 && cg >= 0 && cl >= 0) { romFileId = f; ncerI = ce; ncgrI = cg; nclrI = cl; break outer; }
+        }
+        Assumptions.assumeTrue(romFileId >= 0, "no NCER+NCGR+NCLR bundle found in the test ROM");
+
+        int rom2 = intField(svc.openRom(romBytes), "handle");
+        int narc = intField(svc.openNarc(rom2, romFileId), "narcHandle");
+        int cells = intField(svc.decodeNcerMeta(rom2, narc, ncerI), "cellCount");
+        Assumptions.assumeTrue(cells > 0, "NCER has no cells");
+
+        // Render cell 0 (opaque), import it straight back, and re-render — it must be byte-identical PNG,
+        // with a perfect palette fit. Skip scanned bundles (decodeNcer returns them as raw bitmaps).
+        String dec = svc.decodeNcer(rom2, narc, ncerI, narc, ncgrI, narc, nclrI, 0, false);
+        Assumptions.assumeFalse(dec.contains("\"scanned\":true"), "cell's NCGR is scanned; not composable");
+        String pngBefore = strField(dec, "png");
+        byte[] pngBytes = java.util.Base64.getDecoder().decode(pngBefore.substring(pngBefore.indexOf(',') + 1));
+
+        String res = svc.importCellPng(rom2, narc, ncerI, narc, ncgrI, narc, nclrI, 0, pngBytes);
+        assertThat(res).contains("\"ok\":true").contains("\"unmatched\":0");
+
+        String pngAfter = strField(svc.decodeNcer(rom2, narc, ncerI, narc, ncgrI, narc, nclrI, 0, false), "png");
+        assertThat(pngAfter).as("re-rendered cell is identical after the write-back").isEqualTo(pngBefore);
+    }
+
+    @Test
     @DisplayName("exportNarcZip/importNarcZip round-trips a whole NARC's contents, through save→reopen")
     void narcZipRoundTrip() throws Exception
     {

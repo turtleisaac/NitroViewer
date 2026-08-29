@@ -209,6 +209,24 @@ public interface NitroViewerService
                            int nclrContainer, int nclrId, boolean dedupFlips, boolean rebuildPalette,
                            int numSubPalettes, boolean dryRun, byte[] pngBytes);
 
+    /**
+     * Import an image over an NCER cell (its composed sprite), decomposing it back into the NCGR tiles the
+     * cell's OAMs reference — the NCER analog of {@link #importPng}. The image must be the cell's composed
+     * size; colours are matched to each OAM's sub-palette. Writes only the NCGR (cell layout is unchanged).
+     * @return {"ok":true,"unmatched":int} | {"ok":false,"error":str}
+     */
+    String importCellPng(int romHandle, int ncerContainer, int ncerId, int ncgrContainer, int ncgrId,
+                         int nclrContainer, int nclrId, int cellIndex, byte[] pngBytes);
+
+    /**
+     * Import an image over the NCER cell an NANR frame references (edits the animation's artwork). Image
+     * must be that cell's composed size. Writes only the NCGR.
+     * @return {"ok":true,"unmatched":int,"cellIndex":int} | {"ok":false,"error":str}
+     */
+    String importNanrPng(int romHandle, int nanrContainer, int nanrId, int ncerContainer, int ncerId,
+                         int ncgrContainer, int ncgrId, int nclrContainer, int nclrId,
+                         int animIndex, int frameIndex, byte[] pngBytes);
+
     // --- 3D (static models) ---
     /** @return {"hasEmbeddedTextures":bool,"models":["name",...]} | {"error"} for an NSBMD */
     String getModelSetInfo(int romHandle, int container, int id);

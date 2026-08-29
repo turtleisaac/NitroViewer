@@ -172,6 +172,26 @@ export interface NitroViewerClient {
     dryRun: boolean,
     pngBytes: Uint8Array
   ): Promise<ScreenImportResult>;
+  /** Import an image over an NCER cell (its composed sprite) → decomposes into the NCGR tiles. */
+  importCellPng(
+    handle: number,
+    ncer: ResourceRef,
+    ncgr: ResourceRef,
+    nclr: ResourceRef,
+    cellIndex: number,
+    pngBytes: Uint8Array
+  ): Promise<{ ok: boolean; unmatched: number }>;
+  /** Import an image over the NCER cell an NANR frame references (edits the animation's artwork). */
+  importNanrPng(
+    handle: number,
+    nanr: ResourceRef,
+    ncer: ResourceRef,
+    ncgr: ResourceRef,
+    nclr: ResourceRef,
+    animIndex: number,
+    frameIndex: number,
+    pngBytes: Uint8Array
+  ): Promise<{ ok: boolean; unmatched: number; cellIndex: number }>;
   /** Replace an NCLR's colours from an image (swatch strip / indexed PNG / any image). Count preserved. */
   importPalette(
     handle: number,

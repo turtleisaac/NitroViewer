@@ -79,6 +79,8 @@ export function SpriteViewer() {
   const setPairingOverride = useStore((s) => s.setPairingOverride);
   const importPng = useStore((s) => s.importPng);
   const importScreenPng = useStore((s) => s.importScreenPng);
+  const importCellPng = useStore((s) => s.importCellPng);
+  const importNanrPng = useStore((s) => s.importNanrPng);
   const editVersion = useStore((s) => s.editVersion); // bumped on import → triggers an in-place re-decode
 
   const fmt = selection.format;
@@ -338,6 +340,46 @@ export function SpriteViewer() {
     }
   };
 
+  // Import an image over the composed NCER cell → decomposes into the NCGR tiles (match mode).
+  const onCellPngChosen = async (file: File) => {
+    if (!pair.ncgr || !pair.nclr) {
+      alert("A cell import needs a tileset (NCGR) and a palette (NCLR) — pick them first.");
+      return;
+    }
+    setImpBusy(true);
+    try {
+      const bytes = new Uint8Array(await file.arrayBuffer());
+      const res = await importCellPng(selection.ref, pair.ncgr, pair.nclr, cellIndex, bytes);
+      if (res.unmatched > 0)
+        // eslint-disable-next-line no-console
+        console.info(`Cell import: ${res.unmatched} pixels weren't an exact palette match.`);
+    } catch (e) {
+      alert("Cell import failed: " + (e as Error).message);
+    } finally {
+      setImpBusy(false);
+    }
+  };
+
+  // Import an image over the NANR frame's underlying cell (edits the animation's artwork).
+  const onNanrPngChosen = async (file: File) => {
+    if (!pair.ncer || !pair.ncgr || !pair.nclr) {
+      alert("An animation import needs NCER + NCGR + NCLR — pick them first.");
+      return;
+    }
+    setImpBusy(true);
+    try {
+      const bytes = new Uint8Array(await file.arrayBuffer());
+      const res = await importNanrPng(selection.ref, pair.ncer, pair.ncgr, pair.nclr, animIndex, frameIndex, bytes);
+      if (res.unmatched > 0)
+        // eslint-disable-next-line no-console
+        console.info(`Animation cell #${res.cellIndex} import: ${res.unmatched} pixels weren't an exact match.`);
+    } catch (e) {
+      alert("Animation cell import failed: " + (e as Error).message);
+    } finally {
+      setImpBusy(false);
+    }
+  };
+
   const applyPending = async (rebuild: boolean) => {
     if (!pending) return;
     setImpBusy(true);
@@ -427,16 +469,23 @@ export function SpriteViewer() {
           </label>
         )}
 
-        {(fmt === "NCGR" || fmt === "NSCR") && (
+        {(fmt === "NCGR" || fmt === "NSCR" || fmt === "NCER" || fmt === "NANR") && (
           <label className="ctrl">
             <span>Edit</span>
             <button
               className="play-btn"
-              disabled={impBusy || (fmt === "NCGR" ? !pair.nclr : !pair.ncgr || !pair.nclr)}
+              disabled={
+                impBusy ||
+                (fmt === "NCGR" ? !pair.nclr : fmt === "NANR" ? !pair.ncer || !pair.ncgr || !pair.nclr : !pair.ncgr || !pair.nclr)
+              }
               title={
                 fmt === "NCGR"
                   ? pair.nclr ? "Replace this sprite's pixels from an image file" : "Pick a palette first"
-                  : pair.ncgr && pair.nclr ? "Import a background image into this tilemap (rebuilds the tileset)" : "Pick a tileset + palette first"
+                  : fmt === "NSCR"
+                    ? pair.ncgr && pair.nclr ? "Import a background image into this tilemap (rebuilds the tileset)" : "Pick a tileset + palette first"
+                    : fmt === "NCER"
+                      ? pair.ncgr && pair.nclr ? "Replace this cell's pixels (writes back to the NCGR)" : "Pick a tileset + palette first"
+                      : pair.ncer && pair.ncgr && pair.nclr ? "Replace the current frame's cell artwork (writes back to the NCGR)" : "Pick NCER + NCGR + NCLR first"
               }
               onClick={() => pngRef.current?.click()}
             >
@@ -450,7 +499,11 @@ export function SpriteViewer() {
               onChange={(e) => {
                 const f = e.target.files?.[0];
                 e.target.value = "";
-                if (f) void (fmt === "NSCR" ? onScreenPngChosen(f) : onPngChosen(f));
+                if (!f) return;
+                if (fmt === "NSCR") void onScreenPngChosen(f);
+                else if (fmt === "NCER") void onCellPngChosen(f);
+                else if (fmt === "NANR") void onNanrPngChosen(f);
+                else void onPngChosen(f);
               }}
             />
           </label>

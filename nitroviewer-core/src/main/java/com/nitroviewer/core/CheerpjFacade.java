@@ -743,6 +743,67 @@ public final class CheerpjFacade implements NitroViewerService
     }
 
     @Override
+    public String importCellPng(int romHandle, int ncerContainer, int ncerId, int ncgrContainer, int ncgrId,
+                                int nclrContainer, int nclrId, int cellIndex, byte[] pngBytes)
+    {
+        try
+        {
+            NintendoDsRom rom = rom(romHandle);
+            IndexedImage ncgr = ncgr(rom, ncgrContainer, ncgrId, 0);
+            if (ncgr.isScanned())
+                return "{\"ok\":false,\"error\":" + jstr("This sprite's NCGR is a scanned bitmap; cells can't be composed/decomposed over it.") + "}";
+            Palette pal = new Palette(resolve(rom, nclrContainer, nclrId), 0);
+            ncgr.setPalette(pal);
+            CellBank bank = new CellBank(resolve(rom, ncerContainer, ncerId));
+
+            BufferedImage src = ImageIO.read(new java.io.ByteArrayInputStream(pngBytes));
+            if (src == null) throw new IllegalArgumentException("Could not decode the imported file as an image.");
+
+            CellBank.ImportResult res = bank.applyImage(cellIndex, src, ncgr, pal);
+            writeResource(romHandle, ncgrContainer, ncgrId, ncgr.save());
+            return "{\"ok\":true,\"unmatched\":" + res.unmatchedPixels + "}";
+        }
+        catch (Throwable t)
+        {
+            return "{\"ok\":false,\"error\":" + jstr(describe(t)) + "}";
+        }
+    }
+
+    @Override
+    public String importNanrPng(int romHandle, int nanrContainer, int nanrId, int ncerContainer, int ncerId,
+                                int ncgrContainer, int ncgrId, int nclrContainer, int nclrId,
+                                int animIndex, int frameIndex, byte[] pngBytes)
+    {
+        try
+        {
+            NintendoDsRom rom = rom(romHandle);
+            IndexedImage ncgr = ncgr(rom, ncgrContainer, ncgrId, 0);
+            if (ncgr.isScanned())
+                return "{\"ok\":false,\"error\":" + jstr("This sprite's NCGR is a scanned bitmap; cells can't be composed/decomposed over it.") + "}";
+            Palette pal = new Palette(resolve(rom, nclrContainer, nclrId), 0);
+            ncgr.setPalette(pal);
+            CellBank bank = new CellBank(resolve(rom, ncerContainer, ncerId));
+
+            // A NANR frame just references an NCER cell — edit that cell's artwork (the image must be the
+            // cell's composed size, not the transformed animation canvas).
+            CellAnimation anim = new CellAnimation(resolve(rom, nanrContainer, nanrId));
+            anim.setCellBank(bank);
+            int cellIndex = anim.getAnimations()[animIndex].getFrames()[frameIndex].getCellIndex();
+
+            BufferedImage src = ImageIO.read(new java.io.ByteArrayInputStream(pngBytes));
+            if (src == null) throw new IllegalArgumentException("Could not decode the imported file as an image.");
+
+            CellBank.ImportResult res = bank.applyImage(cellIndex, src, ncgr, pal);
+            writeResource(romHandle, ncgrContainer, ncgrId, ncgr.save());
+            return "{\"ok\":true,\"unmatched\":" + res.unmatchedPixels + ",\"cellIndex\":" + cellIndex + "}";
+        }
+        catch (Throwable t)
+        {
+            return "{\"ok\":false,\"error\":" + jstr(describe(t)) + "}";
+        }
+    }
+
+    @Override
     public String importScreenPng(int romHandle, int nscrContainer, int nscrId, int ncgrContainer, int ncgrId,
                                   int nclrContainer, int nclrId, boolean dedupFlips, boolean rebuildPalette,
                                   int numSubPalettes, boolean dryRun, byte[] pngBytes)

@@ -118,6 +118,22 @@ interface AppState {
     bytes: Uint8Array
   ) => Promise<ScreenImportResult>;
   importNarcZip: (narc: ResourceRef, zipBytes: Uint8Array) => Promise<{ count: number }>;
+  importCellPng: (
+    ncer: ResourceRef,
+    ncgr: ResourceRef,
+    nclr: ResourceRef,
+    cellIndex: number,
+    bytes: Uint8Array
+  ) => Promise<{ unmatched: number }>;
+  importNanrPng: (
+    nanr: ResourceRef,
+    ncer: ResourceRef,
+    ncgr: ResourceRef,
+    nclr: ResourceRef,
+    animIndex: number,
+    frameIndex: number,
+    bytes: Uint8Array
+  ) => Promise<{ unmatched: number; cellIndex: number }>;
   undo: () => Promise<void>;
   redo: () => Promise<void>;
 }
@@ -413,6 +429,30 @@ export const useStore = create<AppState>((set, get) => ({
     set((s) => ({ undoStack: [...s.undoStack, snap], redoStack: [] }));
     await refreshAfterEdit(get, set, romHandle, [nsbmd]);
     return res;
+  },
+
+  importCellPng: async (ncer, ncgr, nclr, cellIndex, bytes) => {
+    const { client, romHandle } = get();
+    if (romHandle == null) throw new Error("no ROM open");
+    const snap = await snapshot(client, romHandle, [ncgr], "Import cell");
+    const res = await client.importCellPng(romHandle, ncer, ncgr, nclr, cellIndex, bytes);
+    if (res.ok) {
+      set((s) => ({ undoStack: [...s.undoStack, snap], redoStack: [] }));
+      await refreshAfterEdit(get, set, romHandle, [ncgr]);
+    }
+    return { unmatched: res.unmatched };
+  },
+
+  importNanrPng: async (nanr, ncer, ncgr, nclr, animIndex, frameIndex, bytes) => {
+    const { client, romHandle } = get();
+    if (romHandle == null) throw new Error("no ROM open");
+    const snap = await snapshot(client, romHandle, [ncgr], "Import animation cell");
+    const res = await client.importNanrPng(romHandle, nanr, ncer, ncgr, nclr, animIndex, frameIndex, bytes);
+    if (res.ok) {
+      set((s) => ({ undoStack: [...s.undoStack, snap], redoStack: [] }));
+      await refreshAfterEdit(get, set, romHandle, [ncgr]);
+    }
+    return { unmatched: res.unmatched, cellIndex: res.cellIndex };
   },
 
   importScreenPng: async (nscr, ncgr, nclr, dedupFlips, rebuildPalette, dryRun, bytes) => {
