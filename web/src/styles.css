@@ -144,7 +144,21 @@ body { background: var(--bg); color: var(--text); font-size: 13px; }
   border: 1px solid var(--line); border-radius: 10px;
 }
 .sprite-img { image-rendering: pixelated; border-radius: 2px; box-shadow: 0 4px 20px rgba(0,0,0,.4); }
-.sprite-meta { margin-top: 10px; color: var(--text-faint); font-size: 12px; font-variant-numeric: tabular-nums; }
+.sprite-meta {
+  margin-top: 10px; color: var(--text-faint); font-size: 12px; font-variant-numeric: tabular-nums;
+  display: flex; align-items: center; gap: 14px;
+}
+.link-btn {
+  background: none; border: 0; color: var(--accent); cursor: pointer; padding: 0;
+  font-size: 12px; font-weight: 550;
+}
+.link-btn:hover { text-decoration: underline; }
+.play-btn {
+  background: var(--bg-2); color: var(--text); border: 1px solid var(--line-2);
+  border-radius: 6px; padding: 6px 12px; font-size: 12.5px; cursor: pointer; min-width: 96px;
+}
+.play-btn:hover:not(:disabled) { border-color: var(--accent); }
+.play-btn:disabled { opacity: .45; cursor: default; }
 
 /* Info / hex */
 .info .dim { display: block; margin-bottom: 12px; line-height: 1.5; }

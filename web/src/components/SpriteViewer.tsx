@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useStore, type ResourceItem } from "../state/store";
 import { refKey, type DecodedImage, type ResourceRef } from "../transport";
+import { base64ToBytes, download } from "../util";
 
 function RefSelect({
   label,
@@ -102,6 +103,7 @@ export function SpriteViewer() {
   const [frameIndex, setFrameIndex] = useState(0);
   const [animFrames, setAnimFrames] = useState<number[]>([]);
   const [zoom, setZoom] = useState(2);
+  const [playing, setPlaying] = useState(false);
 
   const [image, setImage] = useState<DecodedImage | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -113,8 +115,18 @@ export function SpriteViewer() {
     setCellIndex(0);
     setAnimIndex(0);
     setFrameIndex(0);
+    setPlaying(false);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selKey, items]);
+
+  // NANR playback: advance the frame on a timer while playing.
+  useEffect(() => {
+    if (fmt !== "NANR" || !playing) return;
+    const frames = animFrames[animIndex] ?? 0;
+    if (frames <= 1) return;
+    const id = setInterval(() => setFrameIndex((f) => (f + 1) % frames), 120);
+    return () => clearInterval(id);
+  }, [fmt, playing, animIndex, animFrames]);
 
   // Metadata (counts) for the stepper controls.
   useEffect(() => {
@@ -193,6 +205,12 @@ export function SpriteViewer() {
 
   const maxFrame = animFrames[animIndex] != null ? animFrames[animIndex] - 1 : -1;
 
+  const savePng = () => {
+    if (!image) return;
+    const base = (selection.name.split(/[/:]/).pop() || "image").replace(/[^\w.\-]+/g, "_");
+    download(`${base}.png`, base64ToBytes(image.png.split(",")[1]), "image/png");
+  };
+
   return (
     <div className="sprite">
       <div className="controls">
@@ -217,6 +235,16 @@ export function SpriteViewer() {
           <>
             <Stepper label="Animation" value={animIndex} max={animFrames.length - 1} onChange={(n) => { setAnimIndex(n); setFrameIndex(0); }} />
             <Stepper label="Frame" value={frameIndex} max={maxFrame} onChange={setFrameIndex} />
+            <label className="ctrl">
+              <span>Playback</span>
+              <button
+                className="play-btn"
+                onClick={() => setPlaying((p) => !p)}
+                disabled={(animFrames[animIndex] ?? 0) <= 1}
+              >
+                {playing ? "⏸ Pause" : "▶ Play"}
+              </button>
+            </label>
           </>
         )}
 
@@ -251,7 +279,12 @@ export function SpriteViewer() {
       </div>
       {image && !error && (
         <div className="sprite-meta">
-          {image.width}×{image.height}px{busy ? " · decoding…" : ""}
+          <span>
+            {image.width}×{image.height}px{busy ? " · decoding…" : ""}
+          </span>
+          <button className="link-btn" onClick={savePng}>
+            Save PNG ↓
+          </button>
         </div>
       )}
     </div>
