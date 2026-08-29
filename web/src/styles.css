@@ -160,6 +160,23 @@ body { background: var(--bg); color: var(--text); font-size: 13px; }
 .play-btn:hover:not(:disabled) { border-color: var(--accent); }
 .play-btn:disabled { opacity: .45; cursor: default; }
 
+/* 3D model viewer */
+.model { display: flex; flex-direction: column; }
+.viewport {
+  position: relative; margin-top: 16px; min-height: 62vh; width: 100%;
+  border: 1px solid var(--line); border-radius: 10px; overflow: hidden;
+  background: radial-gradient(circle at 50% 38%, #1d2230, #0d0e12 78%);
+}
+.viewport canvas { display: block; }
+.viewport-msg {
+  position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%);
+  color: var(--text-dim); font-size: 13px; pointer-events: none; text-align: center;
+}
+.viewport-msg.error {
+  color: var(--bad); background: #2a1817; border: 1px solid #4a2320;
+  padding: 10px 14px; border-radius: 8px; max-width: 80%;
+}
+
 /* Info / hex */
 .info .dim { display: block; margin-bottom: 12px; line-height: 1.5; }
 .hex {

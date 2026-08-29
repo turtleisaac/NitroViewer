@@ -100,4 +100,16 @@ export interface NitroViewerClient {
   ): Promise<DecodedImage>;
 
   exportRaw(handle: number, ref: ResourceRef): Promise<{ size: number; base64: string }>;
+
+  getModelSetInfo(
+    handle: number,
+    ref: ResourceRef
+  ): Promise<{ hasEmbeddedTextures: boolean; models: string[] }>;
+  /** Returns a self-contained glTF 2.0 document (JSON string). nsbtx = null → embedded textures. */
+  exportModelGltf(
+    handle: number,
+    nsbmd: ResourceRef,
+    modelIndex: number,
+    nsbtx: ResourceRef | null
+  ): Promise<string>;
 }

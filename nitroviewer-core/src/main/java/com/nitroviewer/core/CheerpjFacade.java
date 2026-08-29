@@ -9,6 +9,10 @@ import io.github.turtleisaac.nds4j.Fnt;
 import io.github.turtleisaac.nds4j.Narc;
 import io.github.turtleisaac.nds4j.NintendoDsRom;
 import io.github.turtleisaac.nds4j.framework.NitroLz;
+import io.github.turtleisaac.nds4j.g3d.GltfExporter;
+import io.github.turtleisaac.nds4j.g3d.Model;
+import io.github.turtleisaac.nds4j.g3d.ModelSet;
+import io.github.turtleisaac.nds4j.g3d.TextureSet;
 import io.github.turtleisaac.nds4j.images.CellAnimation;
 import io.github.turtleisaac.nds4j.images.CellBank;
 import io.github.turtleisaac.nds4j.images.IndexedImage;
@@ -22,6 +26,7 @@ import java.io.ByteArrayOutputStream;
 import java.nio.charset.StandardCharsets;
 import java.util.Arrays;
 import java.util.Base64;
+import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -312,6 +317,55 @@ public final class CheerpjFacade implements NitroViewerService
             return "{\"size\":" + raw.length + ",\"base64\":" + jstr(base64(raw)) + "}";
         }
         catch (Throwable t) { return err(t); }
+    }
+
+    // --- 3D (static models) ------------------------------------------------------------------
+
+    @Override
+    public String getModelSetInfo(int romHandle, int container, int id)
+    {
+        try
+        {
+            ModelSet ms = new ModelSet(resolve(rom(romHandle), container, id));
+            List<Model> models = ms.getModels();
+            StringBuilder sb = new StringBuilder("{\"hasEmbeddedTextures\":")
+                    .append(ms.hasEmbeddedTextures()).append(",\"models\":[");
+            for (int i = 0; i < models.size(); i++)
+            {
+                if (i > 0) sb.append(',');
+                sb.append(jstr(models.get(i).getName()));
+            }
+            return sb.append("]}").toString();
+        }
+        catch (Throwable t) { return err(t); }
+    }
+
+    @Override
+    public String exportModelGltf(int romHandle, int nsbmdContainer, int nsbmdId, int modelIndex,
+                                  int nsbtxContainer, int nsbtxId)
+    {
+        try
+        {
+            NintendoDsRom rom = rom(romHandle);
+            ModelSet ms = new ModelSet(resolve(rom, nsbmdContainer, nsbmdId));
+            List<Model> models = ms.getModels();
+            if (modelIndex < 0 || modelIndex >= models.size())
+                return "ERROR: model index " + modelIndex + " out of range (" + models.size() + ")";
+
+            TextureSet tex;
+            if (nsbtxId >= 0)
+                tex = new TextureSet(resolve(rom, nsbtxContainer, nsbtxId));
+            else if (ms.hasEmbeddedTextures())
+                tex = ms.getEmbeddedTextures();
+            else
+                return "ERROR: this model has no embedded textures — select an NSBTX to pair with it";
+
+            return GltfExporter.toGltf(models.get(modelIndex), tex);
+        }
+        catch (Throwable t)
+        {
+            return "ERROR: " + describe(t);
+        }
     }
 
     // --- resolution helpers ------------------------------------------------------------------

@@ -76,4 +76,20 @@ public interface NitroViewerService
     // --- export ---
     /** @return {"name":str,"size":int,"base64":str} raw (as-stored) bytes | {"error"} */
     String exportRaw(int romHandle, int container, int id);
+
+    // --- 3D (static models) ---
+    /** @return {"hasEmbeddedTextures":bool,"models":["name",...]} | {"error"} for an NSBMD */
+    String getModelSetInfo(int romHandle, int container, int id);
+
+    /**
+     * Export one model from an NSBMD to a self-contained glTF 2.0 string (embedded geometry +
+     * base64 PNG textures). Textures come from the model set's embedded TEX0 when {@code nsbtxId < 0},
+     * otherwise from the NSBTX at {@code (nsbtxContainer, nsbtxId)}.
+     *
+     * @return raw glTF JSON on success, or a string beginning {@code "ERROR: "} on failure — this one
+     *         method returns raw glTF rather than the JSON-wrapped contract, to avoid double-escaping
+     *         a large document.
+     */
+    String exportModelGltf(int romHandle, int nsbmdContainer, int nsbmdId, int modelIndex,
+                           int nsbtxContainer, int nsbtxId);
 }

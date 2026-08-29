@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { lazy, Suspense, useState } from "react";
 import { useStore } from "../state/store";
 import { refKey, ROM_CONTAINER } from "../transport";
 import { base64ToBytes, download } from "../util";
@@ -6,6 +6,9 @@ import { NarcBrowser } from "./NarcBrowser";
 import { PaletteViewer } from "./PaletteViewer";
 import { SpriteViewer } from "./SpriteViewer";
 import { InfoViewer } from "./InfoViewer";
+
+// three.js is heavy; only load the 3D viewer (and three) when a model is actually opened.
+const ModelViewer = lazy(() => import("./ModelViewer"));
 
 function ExportButton() {
   const selection = useStore((s) => s.selection)!;
@@ -66,6 +69,10 @@ export function InspectorPane() {
           <PaletteViewer key={refKey(selection.ref)} />
         ) : isImage ? (
           <SpriteViewer key={refKey(selection.ref)} />
+        ) : fmt === "NSBMD" ? (
+          <Suspense fallback={<div className="placeholder">Loading 3D viewer…</div>}>
+            <ModelViewer key={refKey(selection.ref)} />
+          </Suspense>
         ) : (
           <InfoViewer key={refKey(selection.ref)} />
         )}
