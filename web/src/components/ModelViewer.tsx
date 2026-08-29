@@ -3,6 +3,7 @@ import * as THREE from "three";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
 import { useStore } from "../state/store";
+import { pickNearestAfter } from "../state/pairing";
 import { refKey, type ResourceRef } from "../transport";
 
 interface Three {
@@ -162,11 +163,12 @@ export default function ModelViewer() {
     };
   }, [client, romHandle, selKey]);
 
-  // Default to a static model on selection — a mispaired NSBCA looks broken, so animation is opt-in
-  // via the picker (which model↔animation pairing to use is content-specific and unreliable to guess).
+  // Auto-pair the nearest animation set (first NSBCA at/after the model's index) so models play by
+  // default; the picker lets the user correct it or choose None (static).
   useEffect(() => {
-    setNsbca(null);
-  }, [selKey]);
+    setNsbca(pickNearestAfter(nsbcaItems, selection.ref.id) ?? null);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selKey, nsbcaItems]);
 
   // Export the chosen model (+ optional NSBCA) to glTF and load it into the scene.
   useEffect(() => {

@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { pickSibling } from "./pairing";
+import { pickSibling, pickNearestAfter } from "./pairing";
 import type { ResourceItem } from "./store";
 
 const item = (id: number, format: string): ResourceItem => ({
@@ -51,5 +51,22 @@ describe("pickSibling", () => {
     const nclrs = [item(21, "NCLR"), item(20, "NCLR")]; // out of order
     expect(pickSibling(nclrs, ncgrs, 0)).toEqual({ container: 0, id: 20 });
     expect(pickSibling(nclrs, ncgrs, 1)).toEqual({ container: 0, id: 21 });
+  });
+});
+
+describe("pickNearestAfter", () => {
+  it("picks the first candidate at or after the model index (manene: model 51 → anim 53)", () => {
+    const nsbca = [item(40, "NSBCA"), item(53, "NSBCA"), item(56, "NSBCA")];
+    expect(pickNearestAfter(nsbca, 51)).toEqual({ container: 0, id: 53 });
+    expect(pickNearestAfter(nsbca, 53)).toEqual({ container: 0, id: 53 }); // exact
+  });
+
+  it("falls back to the last candidate before the model when none are after", () => {
+    const nsbca = [item(10, "NSBCA"), item(20, "NSBCA")];
+    expect(pickNearestAfter(nsbca, 99)).toEqual({ container: 0, id: 20 });
+  });
+
+  it("returns undefined with no candidates", () => {
+    expect(pickNearestAfter([], 5)).toBeUndefined();
   });
 });

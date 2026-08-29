@@ -31,3 +31,15 @@ export function pickSibling(
     Math.abs(c.ref.id - selfId) < Math.abs(best.ref.id - selfId) ? c : best
   ).ref;
 }
+
+/**
+ * Choose the animation/companion resource to auto-pair with a model. DS archives store a model's
+ * animations right after it, so pick the first candidate at or after the model's index; if there is
+ * none after it, fall back to the last one before it. Returns undefined when there are no candidates.
+ */
+export function pickNearestAfter(cands: ResourceItem[], selfId: number): ResourceRef | undefined {
+  if (cands.length === 0) return undefined;
+  const sorted = cands.slice().sort((a, b) => a.ref.id - b.ref.id);
+  const after = sorted.find((c) => c.ref.id >= selfId);
+  return (after ?? sorted[sorted.length - 1]).ref;
+}
