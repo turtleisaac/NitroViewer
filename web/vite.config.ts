@@ -6,5 +6,8 @@ import react from "@vitejs/plugin-react";
 export default defineConfig({
   plugins: [react()],
   server: { port: 5173 },
-  // Large base64 PNG/JSON crossing from the JVM is fine; keep the default build.
+  // Relative asset paths so the build works both at the apex domain root (nitroviewer.com) and at
+  // a GitHub project subpath (turtleisaac.github.io/NitroViewer/). The CheerpJ jar classpath is made
+  // path-aware separately in the transport.
+  base: "./",
 });

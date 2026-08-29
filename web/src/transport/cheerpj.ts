@@ -22,7 +22,11 @@ declare global {
   function cheerpjRunLibrary(classpath: string): Promise<any>;
 }
 
-const CLASSPATH = "/app/jars/nitroviewer-core.jar:/app/jars/Nds4j.jar";
+// CheerpJ's /app mount maps to the site origin root, so the jar paths must include whatever
+// subdirectory the page is served from (root "/" at nitroviewer.com, "/NitroViewer/" on GitHub
+// project pages). Derive that prefix from the current page location.
+const APP_DIR = typeof location !== "undefined" ? location.pathname.replace(/[^/]*$/, "") : "/";
+const CLASSPATH = `/app${APP_DIR}jars/nitroviewer-core.jar:/app${APP_DIR}jars/Nds4j.jar`;
 
 /** Java exceptions never cross the boundary; the facade returns {"error":...} instead. */
 function unwrap<T>(json: string): T {
