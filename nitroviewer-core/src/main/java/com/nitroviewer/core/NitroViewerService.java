@@ -84,6 +84,9 @@ public interface NitroViewerService
     /** @return {"textures":[{"name","width","height","png"}]} | {"error"} for an NSBTX */
     String decodeTextureSet(int romHandle, int container, int id);
 
+    /** @return {"nodeCount","meshes":[{"material","node"}]} — maps a model's meshes to material name + node */
+    String getModelRig(int romHandle, int container, int id, int modelIndex);
+
     /**
      * Export one model from an NSBMD to a self-contained glTF 2.0 string (embedded geometry +
      * base64 PNG textures). Textures come from the model set's embedded TEX0 when {@code nsbtxId < 0},
@@ -98,4 +101,19 @@ public interface NitroViewerService
      */
     String exportModelGltf(int romHandle, int nsbmdContainer, int nsbmdId, int modelIndex,
                            int nsbtxContainer, int nsbtxId, int nsbcaContainer, int nsbcaId);
+
+    // --- 3D animation tracks with no glTF path (driven in three.js from this per-frame data) ---
+    /** @return {"frameCount","materials":[{"name","diffuse":["#rrggbb"/frame],"alpha":[0..1/frame]}]} (NSBMA) */
+    String getMaterialColorAnim(int romHandle, int container, int id, int animIndex);
+
+    /** @return {"frameCount","nodeCount","visible":[[0/1 per frame] per node]} (NSBVA) */
+    String getVisibilityAnim(int romHandle, int container, int id, int animIndex);
+
+    /**
+     * @return {"frameCount","materials":[{"name","frames":["texName"/frame]}],"textures":{name:dataURL}} (NSBTP).
+     * Texture images resolve from the NSBTX at (nsbtxContainer,nsbtxId) when nsbtxId>=0, else the model's
+     * embedded TEX0 at (nsbmdContainer,nsbmdId).
+     */
+    String getTexturePatternAnim(int romHandle, int nsbtpContainer, int nsbtpId, int animIndex,
+                                 int nsbmdContainer, int nsbmdId, int nsbtxContainer, int nsbtxId);
 }

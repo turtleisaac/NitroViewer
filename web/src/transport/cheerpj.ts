@@ -6,12 +6,16 @@
 import type {
   DecodedImage,
   FormatInfo,
+  MaterialColorAnim,
+  ModelRig,
   NarcEntry,
   NitroViewerClient,
   PaletteData,
   ResourceRef,
   RomInfo,
+  TexturePatternAnim,
   TreeFolder,
+  VisibilityAnim,
 } from "./types";
 
 // Globals defined by the CheerpJ loader.js script tag in index.html.
@@ -206,6 +210,40 @@ export class CheerpjTransport implements NitroViewerClient {
     ref: ResourceRef
   ): Promise<{ textures: { name: string; width: number; height: number; png: string }[] }> {
     return this.enqueue(async () => unwrap(await this.f.decodeTextureSet(handle, ref.container, ref.id)));
+  }
+
+  getModelRig(handle: number, ref: ResourceRef, modelIndex: number): Promise<ModelRig> {
+    return this.enqueue(async () => unwrap<ModelRig>(await this.f.getModelRig(handle, ref.container, ref.id, modelIndex)));
+  }
+
+  getMaterialColorAnim(handle: number, ref: ResourceRef, animIndex: number): Promise<MaterialColorAnim> {
+    return this.enqueue(async () =>
+      unwrap<MaterialColorAnim>(await this.f.getMaterialColorAnim(handle, ref.container, ref.id, animIndex))
+    );
+  }
+
+  getVisibilityAnim(handle: number, ref: ResourceRef, animIndex: number): Promise<VisibilityAnim> {
+    return this.enqueue(async () =>
+      unwrap<VisibilityAnim>(await this.f.getVisibilityAnim(handle, ref.container, ref.id, animIndex))
+    );
+  }
+
+  getTexturePatternAnim(
+    handle: number,
+    nsbtp: ResourceRef,
+    animIndex: number,
+    nsbmd: ResourceRef | null,
+    nsbtx: ResourceRef | null
+  ): Promise<TexturePatternAnim> {
+    return this.enqueue(async () =>
+      unwrap<TexturePatternAnim>(
+        await this.f.getTexturePatternAnim(
+          handle, nsbtp.container, nsbtp.id, animIndex,
+          nsbmd ? nsbmd.container : 0, nsbmd ? nsbmd.id : -1,
+          nsbtx ? nsbtx.container : 0, nsbtx ? nsbtx.id : -1
+        )
+      )
+    );
   }
 
   exportModelGltf(

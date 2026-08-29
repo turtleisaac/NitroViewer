@@ -156,6 +156,68 @@ class CheerpjFacadeTest
         assertThat(res).contains("data:image/png;base64,").contains("\"width\":").contains("\"name\":");
     }
 
+    @Test
+    @DisplayName("NSBMA / NSBVA / NSBTP tracks decode to per-frame data (Platinum)")
+    void animationTracksDecode()
+    {
+        byte[] plat = TestRoms.require("Platinum.nds"); // skips if Platinum isn't present
+        CheerpjFacade s = new CheerpjFacade();
+        int r = intField(s.openRom(plat), "handle");
+        java.util.Map<String, int[]> tracks = findTracks(s, r);
+
+        int[] bma = tracks.get("NSBMA");
+        Assumptions.assumeTrue(bma != null, "no NSBMA found in Platinum");
+        String ma = s.getMaterialColorAnim(r, bma[0], bma[1], 0);
+        assertThat(ma).doesNotContain("\"error\"").contains("\"frameCount\":").contains("\"diffuse\":").contains("\"alpha\":");
+
+        int[] bva = tracks.get("NSBVA");
+        if (bva != null)
+        {
+            String va = s.getVisibilityAnim(r, bva[0], bva[1], 0);
+            assertThat(va).doesNotContain("\"error\"").contains("\"nodeCount\":").contains("\"visible\":");
+        }
+
+        int[] btp = tracks.get("NSBTP");
+        if (btp != null)
+        {
+            String tp = s.getTexturePatternAnim(r, btp[0], btp[1], 0, -1, -1, -1, -1);
+            assertThat(tp).doesNotContain("\"error\"").contains("\"frameCount\":").contains("\"materials\":");
+        }
+    }
+
+    /** One pass over the ROM collecting the first NSBMA/NSBVA/NSBTP (loose or in a NARC). */
+    private java.util.Map<String, int[]> findTracks(CheerpjFacade s, int r)
+    {
+        String[] want = {"NSBMA", "NSBVA", "NSBTP"};
+        java.util.Map<String, int[]> out = new java.util.HashMap<>();
+        int n = intField(s.getRomInfo(r), "numFiles");
+        for (int f = 0; f < n && out.size() < want.length; f++)
+        {
+            String ff = formatField(s.detectFormat(r, -1, f));
+            if ("NARC".equals(ff))
+            {
+                String o = s.openNarc(r, f);
+                if (o.contains("\"error\""))
+                    continue;
+                int nh = intField(o, "narcHandle");
+                String list = s.listNarc(nh);
+                for (String w : want)
+                    if (!out.containsKey(w))
+                    {
+                        Integer i = firstIndexOfFormat(list, w);
+                        if (i != null) out.put(w, new int[]{nh, i});
+                    }
+            }
+            else
+            {
+                for (String w : want)
+                    if (w.equals(ff) && !out.containsKey(w))
+                        out.put(w, new int[]{-1, f});
+            }
+        }
+        return out;
+    }
+
     // --- ROM scanning helpers -----------------------------------------------------------------
 
     /** First NSBTX (loose or in a NARC): {container, id} or null. */

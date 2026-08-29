@@ -10,10 +10,13 @@ import io.github.turtleisaac.nds4j.Narc;
 import io.github.turtleisaac.nds4j.NintendoDsRom;
 import io.github.turtleisaac.nds4j.framework.NitroLz;
 import io.github.turtleisaac.nds4j.g3d.GltfExporter;
+import io.github.turtleisaac.nds4j.g3d.MaterialColorAnimationSet;
 import io.github.turtleisaac.nds4j.g3d.Model;
 import io.github.turtleisaac.nds4j.g3d.ModelSet;
 import io.github.turtleisaac.nds4j.g3d.SkeletalAnimationSet;
+import io.github.turtleisaac.nds4j.g3d.TexturePatternAnimationSet;
 import io.github.turtleisaac.nds4j.g3d.TextureSet;
+import io.github.turtleisaac.nds4j.g3d.VisibilityAnimationSet;
 import io.github.turtleisaac.nds4j.images.CellAnimation;
 import io.github.turtleisaac.nds4j.images.CellBank;
 import io.github.turtleisaac.nds4j.images.IndexedImage;
@@ -398,6 +401,146 @@ public final class CheerpjFacade implements NitroViewerService
                         .append('}');
             }
             return sb.append("]}").toString();
+        }
+        catch (Throwable t) { return err(t); }
+    }
+
+    @Override
+    public String getModelRig(int romHandle, int container, int id, int modelIndex)
+    {
+        try
+        {
+            Model m = new ModelSet(resolve(rom(romHandle), container, id)).getModels().get(modelIndex);
+            List<Model.Mesh> meshes = m.getMeshes();
+            StringBuilder sb = new StringBuilder("{\"nodeCount\":").append(m.getNodeCount()).append(",\"meshes\":[");
+            for (int i = 0; i < meshes.size(); i++)
+            {
+                if (i > 0) sb.append(',');
+                Model.Mesh mesh = meshes.get(i);
+                sb.append("{\"material\":").append(jstr(mesh.getMaterial().getName()))
+                        .append(",\"node\":").append(mesh.getNodeIndex()).append('}');
+            }
+            return sb.append("]}").toString();
+        }
+        catch (Throwable t) { return err(t); }
+    }
+
+    // --- 3D animation tracks with no glTF path (driven in three.js from this data) ------------
+
+    @Override
+    public String getMaterialColorAnim(int romHandle, int container, int id, int animIndex)
+    {
+        try
+        {
+            MaterialColorAnimationSet set = new MaterialColorAnimationSet(resolve(rom(romHandle), container, id));
+            MaterialColorAnimationSet.Animation anim = set.getAnimations().get(animIndex);
+            int fc = anim.getFrameCount();
+            StringBuilder sb = new StringBuilder("{\"frameCount\":").append(fc).append(",\"materials\":[");
+            boolean first = true;
+            for (MaterialColorAnimationSet.MaterialColor mc : anim.getMaterials())
+            {
+                if (!first) sb.append(',');
+                first = false;
+                sb.append("{\"name\":").append(jstr(mc.getName())).append(",\"diffuse\":[");
+                for (int f = 0; f < fc; f++)
+                {
+                    if (f > 0) sb.append(',');
+                    sb.append(jstr(String.format("#%06x", mc.getDiffuse().rgbAt(f) & 0xFFFFFF)));
+                }
+                sb.append("],\"alpha\":[");
+                for (int f = 0; f < fc; f++)
+                {
+                    if (f > 0) sb.append(',');
+                    sb.append(String.format("%.4f", mc.getAlpha().at(f) / 31.0));
+                }
+                sb.append("]}");
+            }
+            return sb.append("]}").toString();
+        }
+        catch (Throwable t) { return err(t); }
+    }
+
+    @Override
+    public String getVisibilityAnim(int romHandle, int container, int id, int animIndex)
+    {
+        try
+        {
+            VisibilityAnimationSet set = new VisibilityAnimationSet(resolve(rom(romHandle), container, id));
+            VisibilityAnimationSet.Animation anim = set.getAnimations().get(animIndex);
+            int fc = anim.getFrameCount();
+            int nc = anim.getNodeCount();
+            StringBuilder sb = new StringBuilder("{\"frameCount\":").append(fc)
+                    .append(",\"nodeCount\":").append(nc).append(",\"visible\":[");
+            for (int n = 0; n < nc; n++)
+            {
+                if (n > 0) sb.append(',');
+                sb.append('[');
+                for (int f = 0; f < fc; f++)
+                {
+                    if (f > 0) sb.append(',');
+                    sb.append(anim.isVisible(n, f) ? '1' : '0');
+                }
+                sb.append(']');
+            }
+            return sb.append("]}").toString();
+        }
+        catch (Throwable t) { return err(t); }
+    }
+
+    @Override
+    public String getTexturePatternAnim(int romHandle, int nsbtpContainer, int nsbtpId, int animIndex,
+                                        int nsbmdContainer, int nsbmdId, int nsbtxContainer, int nsbtxId)
+    {
+        try
+        {
+            NintendoDsRom rom = rom(romHandle);
+            TexturePatternAnimationSet set = new TexturePatternAnimationSet(resolve(rom, nsbtpContainer, nsbtpId));
+            TexturePatternAnimationSet.Animation anim = set.getAnimations().get(animIndex);
+            int fc = anim.getFrameCount();
+
+            TextureSet tex = null;
+            try
+            {
+                if (nsbtxId >= 0)
+                    tex = new TextureSet(resolve(rom, nsbtxContainer, nsbtxId));
+                else if (nsbmdId >= 0)
+                    tex = new ModelSet(resolve(rom, nsbmdContainer, nsbmdId)).getEmbeddedTextures();
+            }
+            catch (Throwable e) { tex = null; } // no textures available — still return frame patterns
+
+            java.util.LinkedHashSet<String> texNames = new java.util.LinkedHashSet<>();
+            StringBuilder mats = new StringBuilder("[");
+            boolean first = true;
+            for (TexturePatternAnimationSet.MaterialPattern mp : anim.getMaterials())
+            {
+                if (!first) mats.append(',');
+                first = false;
+                mats.append("{\"name\":").append(jstr(mp.getName())).append(",\"frames\":[");
+                for (int f = 0; f < fc; f++)
+                {
+                    if (f > 0) mats.append(',');
+                    String tn = mp.at(f).getTexture();
+                    texNames.add(tn);
+                    mats.append(jstr(tn));
+                }
+                mats.append("]}");
+            }
+            mats.append(']');
+
+            StringBuilder texs = new StringBuilder("{");
+            boolean tf = true;
+            for (String tn : texNames)
+            {
+                String dataUrl;
+                try { dataUrl = pngDataUrl(tex.getImage(tn)); }
+                catch (Throwable e) { continue; }
+                if (!tf) texs.append(',');
+                tf = false;
+                texs.append(jstr(tn)).append(':').append(jstr(dataUrl));
+            }
+            texs.append('}');
+
+            return "{\"frameCount\":" + fc + ",\"materials\":" + mats + ",\"textures\":" + texs + "}";
         }
         catch (Throwable t) { return err(t); }
     }

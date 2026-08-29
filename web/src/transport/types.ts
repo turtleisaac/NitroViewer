@@ -51,6 +51,25 @@ export interface PaletteData {
   colors: string[]; // "#rrggbb"
 }
 
+export interface ModelRig {
+  nodeCount: number;
+  meshes: { material: string; node: number }[];
+}
+export interface MaterialColorAnim {
+  frameCount: number;
+  materials: { name: string; diffuse: string[]; alpha: number[] }[];
+}
+export interface VisibilityAnim {
+  frameCount: number;
+  nodeCount: number;
+  visible: number[][]; // visible[node][frame]
+}
+export interface TexturePatternAnim {
+  frameCount: number;
+  materials: { name: string; frames: string[] }[];
+  textures: Record<string, string>; // textureName -> data URL
+}
+
 export interface NitroViewerClient {
   init(onProgress?: (msg: string) => void): Promise<void>;
 
@@ -109,6 +128,16 @@ export interface NitroViewerClient {
     handle: number,
     ref: ResourceRef
   ): Promise<{ textures: { name: string; width: number; height: number; png: string }[] }>;
+  getModelRig(handle: number, ref: ResourceRef, modelIndex: number): Promise<ModelRig>;
+  getMaterialColorAnim(handle: number, ref: ResourceRef, animIndex: number): Promise<MaterialColorAnim>;
+  getVisibilityAnim(handle: number, ref: ResourceRef, animIndex: number): Promise<VisibilityAnim>;
+  getTexturePatternAnim(
+    handle: number,
+    nsbtp: ResourceRef,
+    animIndex: number,
+    nsbmd: ResourceRef | null,
+    nsbtx: ResourceRef | null
+  ): Promise<TexturePatternAnim>;
   /**
    * Returns a self-contained glTF 2.0 document (JSON string). nsbtx = null → embedded textures;
    * nsbca = null → static model, otherwise the NSBCA's skeletal animations are baked in.
