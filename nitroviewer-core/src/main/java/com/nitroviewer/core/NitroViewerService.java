@@ -81,6 +81,9 @@ public interface NitroViewerService
     /** @return {"hasEmbeddedTextures":bool,"models":["name",...]} | {"error"} for an NSBMD */
     String getModelSetInfo(int romHandle, int container, int id);
 
+    /** @return {"textures":[{"name","width","height","png"}]} | {"error"} for an NSBTX */
+    String decodeTextureSet(int romHandle, int container, int id);
+
     /**
      * Export one model from an NSBMD to a self-contained glTF 2.0 string (embedded geometry +
      * base64 PNG textures). Textures come from the model set's embedded TEX0 when {@code nsbtxId < 0},

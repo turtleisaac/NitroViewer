@@ -376,6 +376,32 @@ public final class CheerpjFacade implements NitroViewerService
         }
     }
 
+    @Override
+    public String decodeTextureSet(int romHandle, int container, int id)
+    {
+        try
+        {
+            TextureSet ts = new TextureSet(resolve(rom(romHandle), container, id));
+            StringBuilder sb = new StringBuilder("{\"textures\":[");
+            boolean first = true;
+            for (TextureSet.Texture tex : ts.getTextures())
+            {
+                String png;
+                try { png = pngDataUrl(ts.getImage(tex)); }
+                catch (Throwable e) { continue; } // skip textures that fail to decode
+                if (!first) sb.append(',');
+                first = false;
+                sb.append("{\"name\":").append(jstr(tex.getName()))
+                        .append(",\"width\":").append(tex.getWidth())
+                        .append(",\"height\":").append(tex.getHeight())
+                        .append(",\"png\":").append(jstr(png))
+                        .append('}');
+            }
+            return sb.append("]}").toString();
+        }
+        catch (Throwable t) { return err(t); }
+    }
+
     // --- resolution helpers ------------------------------------------------------------------
 
     private NintendoDsRom rom(int handle)

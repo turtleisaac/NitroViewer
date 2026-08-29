@@ -5,6 +5,7 @@ import { base64ToBytes, download } from "../util";
 import { NarcBrowser } from "./NarcBrowser";
 import { PaletteViewer } from "./PaletteViewer";
 import { SpriteViewer } from "./SpriteViewer";
+import { TextureViewer } from "./TextureViewer";
 import { InfoViewer } from "./InfoViewer";
 
 // three.js is heavy; only load the 3D viewer (and three) when a model is actually opened.
@@ -69,6 +70,8 @@ export function InspectorPane() {
           <PaletteViewer key={refKey(selection.ref)} />
         ) : isImage ? (
           <SpriteViewer key={refKey(selection.ref)} />
+        ) : fmt === "NSBTX" ? (
+          <TextureViewer key={refKey(selection.ref)} />
         ) : fmt === "NSBMD" ? (
           <Suspense fallback={<div className="placeholder">Loading 3D viewer…</div>}>
             <ModelViewer key={refKey(selection.ref)} />

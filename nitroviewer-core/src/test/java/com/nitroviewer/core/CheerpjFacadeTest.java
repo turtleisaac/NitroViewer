@@ -145,7 +145,41 @@ class CheerpjFacadeTest
         assertThat(gltf).contains("\"animations\"").contains("\"samplers\"").contains("\"channels\"");
     }
 
+    @Test
+    @DisplayName("an NSBTX decodes to named PNG textures")
+    void textureSetDecodes()
+    {
+        int[] found = findTextureSet();
+        Assumptions.assumeTrue(found != null, "no NSBTX found in ROM");
+        String res = svc.decodeTextureSet(rom, found[0], found[1]);
+        assertThat(res).doesNotContain("\"error\"").contains("\"textures\":[");
+        assertThat(res).contains("data:image/png;base64,").contains("\"width\":").contains("\"name\":");
+    }
+
     // --- ROM scanning helpers -----------------------------------------------------------------
+
+    /** First NSBTX (loose or in a NARC): {container, id} or null. */
+    private int[] findTextureSet()
+    {
+        int numFiles = intField(svc.getRomInfo(rom), "numFiles");
+        for (int f = 0; f < numFiles; f++)
+        {
+            String fmt = formatField(svc.detectFormat(rom, -1, f));
+            if ("NSBTX".equals(fmt))
+                return new int[]{-1, f};
+            if ("NARC".equals(fmt))
+            {
+                String open = svc.openNarc(rom, f);
+                if (open.contains("\"error\""))
+                    continue;
+                int narc = intField(open, "narcHandle");
+                Integer t = firstIndexOfFormat(svc.listNarc(narc), "NSBTX");
+                if (t != null)
+                    return new int[]{narc, t};
+            }
+        }
+        return null;
+    }
 
     /** First NARC that carries both an NCGR and an NCLR: {narcHandle, ncgrIndex, nclrIndex} or null. */
     private int[] findGraphicsNarc()

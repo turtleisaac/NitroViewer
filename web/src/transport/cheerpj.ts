@@ -201,6 +201,13 @@ export class CheerpjTransport implements NitroViewerClient {
     return this.enqueue(async () => unwrap(await this.f.getModelSetInfo(handle, ref.container, ref.id)));
   }
 
+  getTextureSet(
+    handle: number,
+    ref: ResourceRef
+  ): Promise<{ textures: { name: string; width: number; height: number; png: string }[] }> {
+    return this.enqueue(async () => unwrap(await this.f.decodeTextureSet(handle, ref.container, ref.id)));
+  }
+
   exportModelGltf(
     handle: number,
     nsbmd: ResourceRef,

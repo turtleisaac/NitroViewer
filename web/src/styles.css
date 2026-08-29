@@ -160,6 +160,18 @@ body { background: var(--bg); color: var(--text); font-size: 13px; }
 .play-btn:hover:not(:disabled) { border-color: var(--accent); }
 .play-btn:disabled { opacity: .45; cursor: default; }
 
+/* NSBTX texture gallery */
+.texgrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); gap: 12px; }
+.texcard { display: flex; flex-direction: column; gap: 4px; }
+.texframe {
+  display: grid; place-items: center; aspect-ratio: 1; padding: 8px;
+  background: repeating-conic-gradient(#20232c 0% 25%, #171a21 0% 50%) 50% / 14px 14px;
+  border: 1px solid var(--line); border-radius: 8px;
+}
+.teximg { image-rendering: pixelated; max-width: 100%; max-height: 100%; }
+.texname { font-size: 12px; color: var(--text-dim); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.texdim { font-size: 11px; color: var(--text-faint); font-variant-numeric: tabular-nums; }
+
 /* 3D model viewer */
 .model { display: flex; flex-direction: column; }
 .viewport {
