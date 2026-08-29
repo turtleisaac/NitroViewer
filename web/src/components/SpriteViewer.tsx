@@ -157,7 +157,7 @@ export function SpriteViewer() {
     if (fmt !== "NANR" || !playing) return;
     const frames = animFrames[animIndex] ?? 0;
     if (frames <= 1) return;
-    const id = setInterval(() => setFrameIndex((f) => (f + 1) % frames), 120);
+    const id = setInterval(() => setFrameIndex((f) => (f + 1) % frames), 240);
     return () => clearInterval(id);
   }, [fmt, playing, animIndex, animFrames]);
 

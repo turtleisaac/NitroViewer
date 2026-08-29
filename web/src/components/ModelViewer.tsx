@@ -147,6 +147,7 @@ export default function ModelViewer() {
   const [loadTick, setLoadTick] = useState(0);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [frames, setFrames] = useState(0); // live playback-frame counter (diagnostic; loop-alive on-device)
 
   const siblingsOfFormat = (fmt: string) => {
     const container = selection.ref.container;
@@ -430,23 +431,25 @@ export default function ModelViewer() {
     t.render();
   }, [tracksTick, loadTick, playing]);
 
-  // Drive the animation with a RAF loop ONLY while actively playing and not exporting.
+  // Drive the animation while playing (never during an export — `busy` gates it). We use setInterval
+  // rather than requestAnimationFrame because iOS Safari starves the rAF loop for the WebGL canvas under
+  // memory pressure (2D NANR playback, which uses a timer, keeps running fine there), leaving the model
+  // static. dt still comes from the clock, so playback speed is correct regardless of interval drift.
   useEffect(() => {
     const t = three.current;
     const hasAnim = !!(animNames.length > 0 || t?.matColor || t?.vis || t?.texPat);
     if (!t || !playing || busy || !info || !hasAnim) return;
-    let raf = 0;
     t.clock.getDelta(); // reset delta so the first frame doesn't jump
-    const loop = () => {
-      raf = requestAnimationFrame(loop);
+    let n = 0;
+    const id = setInterval(() => {
       const dt = t.clock.getDelta();
       if (t.mixer) t.mixer.update(dt);
       t.trackTime += dt;
       applyTracks(t);
       t.render();
-    };
-    loop();
-    return () => cancelAnimationFrame(raf);
+      if (++n % 15 === 0) setFrames(n); // throttled live counter — proves the loop is running on-device
+    }, 1000 / 60);
+    return () => clearInterval(id);
   }, [playing, busy, info, animNames.length, loadTick, tracksTick]);
 
   const capturePng = () => {
@@ -582,6 +585,11 @@ export default function ModelViewer() {
       </div>
       <div className="sprite-meta">
         <span>Drag to orbit · scroll to zoom · right-drag to pan</span>
+        {playing && (animNames.length > 0 || nsbma || nsbva || nsbtp) && (
+          <span className="dim" title="Animation frames rendered — climbing means the loop is running">
+            ▶ {frames} frames
+          </span>
+        )}
         {loadTick > 0 && !error && (
           <>
             <button className="link-btn" onClick={capturePng}>Capture PNG ↓</button>
