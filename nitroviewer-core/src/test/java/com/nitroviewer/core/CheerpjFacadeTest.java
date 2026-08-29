@@ -721,6 +721,39 @@ class CheerpjFacadeTest
     }
 
     @Test
+    @DisplayName("importObjTextured builds a model with an embedded texture from a framed OBJ+image payload")
+    void importObjTexturedRoundTrip() throws Exception
+    {
+        String obj = "v -1 -1 -1\nv 1 -1 -1\nv 1 1 -1\nv -1 1 -1\nv -1 -1 1\nv 1 -1 1\nv 1 1 1\nv -1 1 1\n"
+                + "vt 0 0\nvt 1 0\nvt 1 1\nvt 0 1\n"
+                + "f 1/1 2/2 3/3 4/4\nf 6/1 5/2 8/3 7/4\nf 5/1 1/2 4/3 8/4\n"
+                + "f 2/1 6/2 7/3 3/4\nf 4/1 3/2 7/3 8/4\nf 5/1 6/2 2/3 1/4\n";
+        byte[] objBytes = obj.getBytes(java.nio.charset.StandardCharsets.UTF_8);
+
+        BufferedImage tex = new BufferedImage(8, 8, BufferedImage.TYPE_INT_RGB); // power-of-two
+        for (int y = 0; y < 8; y++)
+            for (int x = 0; x < 8; x++)
+                tex.setRGB(x, y, new Color(x * 32, y * 32, 128).getRGB());
+        ByteArrayOutputStream png = new ByteArrayOutputStream();
+        ImageIO.write(tex, "png", png);
+        byte[] texBytes = png.toByteArray();
+
+        // Frame: [u32 LE objLen][obj][texture]
+        byte[] payload = new byte[4 + objBytes.length + texBytes.length];
+        payload[0] = (byte) objBytes.length;
+        payload[1] = (byte) (objBytes.length >> 8);
+        payload[2] = (byte) (objBytes.length >> 16);
+        payload[3] = (byte) (objBytes.length >> 24);
+        System.arraycopy(objBytes, 0, payload, 4, objBytes.length);
+        System.arraycopy(texBytes, 0, payload, 4 + objBytes.length, texBytes.length);
+
+        String res = svc.importObjTextured(rom, -1, 210, payload);
+        assertThat(res).contains("\"ok\":true").contains("\"textured\":true");
+        assertThat(intField(res, "triangles")).isEqualTo(12); // 6 quads fan-triangulated
+        assertThat(svc.getModelSetInfo(rom, -1, 210)).contains("\"hasEmbeddedTextures\":true");
+    }
+
+    @Test
     @DisplayName("importObj rejects empty/garbage input with a structured error")
     void importObjBad()
     {

@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useStore } from "../state/store";
 import { ROM_CONTAINER, type TreeFolder } from "../transport";
 import { base64ToBytes, download } from "../util";
@@ -74,7 +74,10 @@ export function TreePane() {
   const navOpen = useStore((s) => s.navOpen);
   const revealPath = useStore((s) => s.revealPath);
   const revealTick = useStore((s) => s.revealTick);
+  const idToPath = useStore((s) => s.idToPath);
+  const select = useStore((s) => s.select);
   const scrollRef = useRef<HTMLDivElement>(null);
+  const [query, setQuery] = useState("");
 
   // When a breadcrumb folder is clicked, revealFolder expands its ancestors and bumps revealTick;
   // scroll that folder's row into view (it now exists in the DOM because its ancestors are open).
@@ -84,11 +87,53 @@ export function TreePane() {
     el?.scrollIntoView({ block: "nearest" });
   }, [revealPath, revealTick]);
 
+  // Search filters the whole filesystem by path (a flat, clickable result list) — Tinke-style file search.
+  const q = query.trim().toLowerCase();
+  const results = useMemo(() => {
+    if (!q) return [];
+    const hits: { id: number; path: string }[] = [];
+    for (const [id, path] of Object.entries(idToPath)) {
+      if (path.toLowerCase().includes(q)) hits.push({ id: Number(id), path });
+      if (hits.length >= 300) break;
+    }
+    return hits.sort((a, b) => a.path.localeCompare(b.path));
+  }, [q, idToPath]);
+
   return (
     <aside className={"pane tree-pane" + (navOpen ? " open" : "")}>
-      <div className="pane-head">Filesystem</div>
+      <div className="pane-head tree-head">
+        <span>Filesystem</span>
+        <input
+          className="tree-search"
+          type="search"
+          placeholder="Search files…"
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+        />
+      </div>
       <div className="tree-scroll" ref={scrollRef}>
-        {tree && <FolderNode folder={tree} path="/" />}
+        {q ? (
+          <div className="search-results">
+            <div className="search-count">{results.length}{results.length >= 300 ? "+" : ""} matches</div>
+            {results.map((r) => {
+              const name = r.path.split("/").pop() || String(r.id);
+              const dir = r.path.slice(0, r.path.length - name.length);
+              return (
+                <button
+                  key={r.id}
+                  className="search-hit"
+                  title={r.path}
+                  onClick={() => void select({ container: ROM_CONTAINER, id: r.id }, name)}
+                >
+                  <span className="search-hit-name">{name}</span>
+                  <span className="search-hit-dir">{dir}</span>
+                </button>
+              );
+            })}
+          </div>
+        ) : (
+          tree && <FolderNode folder={tree} path="/" />
+        )}
       </div>
     </aside>
   );

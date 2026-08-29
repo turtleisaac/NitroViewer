@@ -184,6 +184,12 @@ export interface NitroViewerClient {
     nsbmd: ResourceRef,
     objBytes: Uint8Array
   ): Promise<{ ok: boolean; vertices: number; triangles: number; textured: boolean }>;
+  /** Textured OBJ import: payload = [u32 LE objLen][obj UTF-8][texture image bytes] → embedded TEX0. */
+  importObjTextured(
+    handle: number,
+    nsbmd: ResourceRef,
+    payload: Uint8Array
+  ): Promise<{ ok: boolean; vertices: number; triangles: number; textured: boolean }>;
   /**
    * Import an image over an NCGR sprite (propagates down into the NCGR, and the NCLR when rebuilding).
    * rebuildPalette=false matches to the existing (sub-)palette; dryRun computes the fit without writing.

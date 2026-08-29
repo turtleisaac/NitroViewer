@@ -305,6 +305,17 @@ export class CheerpjTransport implements NitroViewerClient {
     );
   }
 
+  importObjTextured(
+    handle: number,
+    nsbmd: ResourceRef,
+    payload: Uint8Array
+  ): Promise<{ ok: boolean; vertices: number; triangles: number; textured: boolean }> {
+    const signed = new Int8Array(payload.buffer, payload.byteOffset, payload.byteLength);
+    return this.enqueue(async () =>
+      unwrap(await this.f.importObjTextured(handle, nsbmd.container, nsbmd.id, signed))
+    );
+  }
+
   saveRom(handle: number): Promise<Uint8Array> {
     return this.enqueue(async () => {
       // saveRom returns the raw byte[] (an Int8Array in JS), or a zero-length array on failure —

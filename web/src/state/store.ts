@@ -104,6 +104,10 @@ interface AppState {
     nsbmd: ResourceRef,
     objBytes: Uint8Array
   ) => Promise<{ vertices: number; triangles: number; textured: boolean }>;
+  importObjTextured: (
+    nsbmd: ResourceRef,
+    payload: Uint8Array
+  ) => Promise<{ vertices: number; triangles: number; textured: boolean }>;
   importScreenPng: (
     nscr: ResourceRef,
     ncgr: ResourceRef,
@@ -396,6 +400,16 @@ export const useStore = create<AppState>((set, get) => ({
     if (romHandle == null) throw new Error("no ROM open");
     const snap = await snapshot(client, romHandle, [nsbmd], "Import OBJ");
     const res = await client.importObj(romHandle, nsbmd, objBytes);
+    set((s) => ({ undoStack: [...s.undoStack, snap], redoStack: [] }));
+    await refreshAfterEdit(get, set, romHandle, [nsbmd]);
+    return res;
+  },
+
+  importObjTextured: async (nsbmd, payload) => {
+    const { client, romHandle } = get();
+    if (romHandle == null) throw new Error("no ROM open");
+    const snap = await snapshot(client, romHandle, [nsbmd], "Import textured OBJ");
+    const res = await client.importObjTextured(romHandle, nsbmd, payload);
     set((s) => ({ undoStack: [...s.undoStack, snap], redoStack: [] }));
     await refreshAfterEdit(get, set, romHandle, [nsbmd]);
     return res;

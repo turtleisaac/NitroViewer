@@ -710,6 +710,39 @@ public final class CheerpjFacade implements NitroViewerService
     }
 
     @Override
+    public String importObjTextured(int romHandle, int container, int id, byte[] payload)
+    {
+        try
+        {
+            // One byte[] (the proven CheerpJ shape): [u32 LE objLen][obj UTF-8][texture image bytes].
+            if (payload == null || payload.length < 4) throw new IllegalArgumentException("no payload");
+            int objLen = (payload[0] & 0xFF) | (payload[1] & 0xFF) << 8 | (payload[2] & 0xFF) << 16 | (payload[3] & 0xFF) << 24;
+            if (objLen < 0 || 4 + objLen > payload.length) throw new IllegalArgumentException("bad payload framing");
+            rom(romHandle);
+
+            String objText = new String(payload, 4, objLen, StandardCharsets.UTF_8);
+            byte[] texBytes = Arrays.copyOfRange(payload, 4 + objLen, payload.length);
+            io.github.turtleisaac.nds4j.g3d.ObjImporter obj = io.github.turtleisaac.nds4j.g3d.ObjImporter.parse(objText);
+            float[] pos = obj.getPositions();
+            int[] tris = obj.getTriangles();
+            if (tris.length < 3) throw new IllegalArgumentException("OBJ has no triangles.");
+            if (!obj.hasTexcoords()) throw new IllegalArgumentException("The OBJ has no texture coordinates (vt) to map the texture.");
+
+            BufferedImage tex = ImageIO.read(new java.io.ByteArrayInputStream(texBytes));
+            if (tex == null) throw new IllegalArgumentException("Could not decode the texture image.");
+            float[] uv = obj.texcoordsInTexels(tex.getWidth(), tex.getHeight());
+            byte[] nsbmd = io.github.turtleisaac.nds4j.g3d.ModelBuilder.buildTextured("model", pos, uv, tris, tex);
+            writeResource(romHandle, container, id, nsbmd);
+            return "{\"ok\":true,\"vertices\":" + (pos.length / 3) + ",\"triangles\":" + (tris.length / 3)
+                    + ",\"textured\":true}";
+        }
+        catch (Throwable t)
+        {
+            return "{\"ok\":false,\"error\":" + jstr(describe(t)) + "}";
+        }
+    }
+
+    @Override
     public String importScreenPng(int romHandle, int nscrContainer, int nscrId, int ncgrContainer, int ncgrId,
                                   int nclrContainer, int nclrId, boolean dedupFlips, boolean rebuildPalette,
                                   int numSubPalettes, boolean dryRun, byte[] pngBytes)

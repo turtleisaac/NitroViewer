@@ -147,6 +147,7 @@ export default function ModelViewer() {
   const selKey = refKey(selection.ref);
 
   const importObj = useStore((s) => s.importObj);
+  const importObjTextured = useStore((s) => s.importObjTextured);
   const mountRef = useRef<HTMLDivElement>(null);
   const three = useRef<Three | null>(null);
   const gltfStrRef = useRef<string | null>(null);
@@ -519,13 +520,32 @@ export default function ModelViewer() {
     return () => clearInterval(id);
   }, [playing, busy, info, animNames.length, loadTick, tracksTick]);
 
-  // Import a Wavefront OBJ over this NSBMD (re-encoded to NSBMD by Nds4j's ModelBuilder). Untextured for
-  // now; the edit is undoable and re-renders via editVersion. Replaces the file's model(s) with the mesh.
-  const onObjChosen = async (file: File) => {
+  // Import a Wavefront OBJ over this NSBMD (re-encoded by Nds4j's ModelBuilder). Select the .obj alone for
+  // an untextured model, or the .obj + a texture image together for a textured one (embedded TEX0). The
+  // edit is undoable and re-renders via editVersion; it replaces the file's model(s) with the mesh.
+  const onObjChosen = async (files: FileList) => {
+    const list = Array.from(files);
+    const objFile = list.find((f) => /\.obj$/i.test(f.name)) ?? list.find((f) => !f.type.startsWith("image/"));
+    const texFile = list.find((f) => f.type.startsWith("image/") || /\.(png|bmp|jpe?g|gif)$/i.test(f.name));
+    if (!objFile) {
+      alert("Select an .obj file (optionally with a texture image).");
+      return;
+    }
     setImporting(true);
     try {
-      const bytes = new Uint8Array(await file.arrayBuffer());
-      const res = await importObj(selection.ref, bytes);
+      const objBytes = new Uint8Array(await objFile.arrayBuffer());
+      let res;
+      if (texFile) {
+        const texBytes = new Uint8Array(await texFile.arrayBuffer());
+        // Frame: [u32 LE objLen][obj][texture], the one-byte[] payload the facade expects.
+        const payload = new Uint8Array(4 + objBytes.length + texBytes.length);
+        new DataView(payload.buffer).setUint32(0, objBytes.length, true);
+        payload.set(objBytes, 4);
+        payload.set(texBytes, 4 + objBytes.length);
+        res = await importObjTextured(selection.ref, payload);
+      } else {
+        res = await importObj(selection.ref, objBytes);
+      }
       setModelIndex(0);
       setError(null);
       // eslint-disable-next-line no-console
@@ -698,7 +718,7 @@ export default function ModelViewer() {
             <button
               className="link-btn"
               disabled={importing}
-              title="Replace this model with a Wavefront OBJ mesh (re-encoded to NSBMD)"
+              title="Replace this model with a Wavefront OBJ (select the .obj, and optionally a texture image)"
               onClick={() => objRef.current?.click()}
             >
               {importing ? "Importing…" : "Import OBJ ↑"}
@@ -706,12 +726,13 @@ export default function ModelViewer() {
             <input
               ref={objRef}
               type="file"
-              accept=".obj,text/plain"
+              accept=".obj,text/plain,image/*"
+              multiple
               hidden
               onChange={(e) => {
-                const f = e.target.files?.[0];
+                const files = e.target.files;
+                if (files && files.length) void onObjChosen(files);
                 e.target.value = "";
-                if (f) void onObjChosen(f);
               }}
             />
           </>

@@ -140,6 +140,14 @@ public interface NitroViewerService
     String importObj(int romHandle, int container, int id, byte[] objBytes);
 
     /**
+     * Textured variant of {@link #importObj}: authors an NSBMD with an embedded TEX0 from an OBJ (with
+     * {@code vt} texcoords) + a texture image. The two cross as ONE {@code byte[]} to stay on the proven
+     * CheerpJ marshalling path: {@code [u32 little-endian objLen][obj UTF-8 bytes][texture image bytes]}.
+     * @return {"ok":true,"vertices":int,"triangles":int,"textured":true} | {"ok":false,"error":str}
+     */
+    String importObjTextured(int romHandle, int container, int id, byte[] payload);
+
+    /**
      * Serialise the (possibly edited) ROM to a complete {@code .nds} image. Returns the raw
      * {@code byte[]} (CheerpJ marshals it to a JS {@code Int8Array}); the transport wraps it in a
      * Blob for download. This is the one path that returns a large binary rather than JSON — on
