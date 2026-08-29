@@ -43,7 +43,7 @@ export function App() {
         )}
         <div className="brand">
           <span className="logo">◆</span> <span className="brand-name">NitroViewer</span>
-          <span className="tagline">DS ROM viewer · runs in your browser · nothing is uploaded</span>
+          <span className="tagline">DS ROM viewer</span>
         </div>
         <div className="topbar-actions">
           <span className={"status" + (loading ? " status--busy" : "")}>{status}</span>
@@ -80,14 +80,19 @@ export function App() {
       </header>
 
       <main className="body">
-        {romHandle == null ? (
+        {loading ? (
+          <div className="loading-screen">
+            <div className="spinner" aria-label="Loading" />
+            <div className="loading-text">{status}</div>
+          </div>
+        ) : romHandle == null ? (
           <div className="empty">
             <div className="empty-card">
               <div className="empty-logo">◆</div>
               <h1>NitroViewer</h1>
               <p>
                 A modern replacement for Tinke. Open a Nintendo DS ROM to browse its filesystem and
-                view its graphics. Everything runs locally via CheerpJ — your ROM never leaves this tab.
+                view its graphics.
               </p>
               <button className="btn btn--lg" disabled={!booted} onClick={() => fileRef.current?.click()}>
                 {booted ? "Open a .nds ROM" : status}

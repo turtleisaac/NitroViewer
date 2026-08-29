@@ -205,6 +205,8 @@ export default function ModelViewer() {
     ro.observe(mount);
     state.ro = ro;
     three.current = state;
+    // Dev affordance (mirrors window.__store): lets an e2e/screenshot driver set an exact camera angle.
+    if (typeof window !== "undefined") (window as unknown as { __three: Three }).__three = state;
     render();
 
     return () => {

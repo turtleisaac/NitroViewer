@@ -55,6 +55,7 @@ interface AppState {
   navOpen: boolean; // tree drawer open (only affects narrow screens)
   revealPath: string | null; // folder path the tree should scroll into view
   revealTick: number; // bumped on each reveal so re-revealing the same folder still scrolls
+  narcScroll: Record<number, number>; // narcHandle -> inspector scrollTop, so "back" restores the spot
   // Manual pairing choices the user made, keyed by refKey, so they survive re-selecting a resource.
   pairingOverrides: Record<string, PairOverride>;
 
@@ -65,6 +66,7 @@ interface AppState {
   boot: () => Promise<void>;
   setNavOpen: (open: boolean) => void;
   revealFolder: (folderPath: string) => void;
+  setNarcScroll: (narcHandle: number, top: number) => void;
   setPairingOverride: (key: string, partial: PairOverride) => void;
   openRom: (file: File) => Promise<void>;
   toggleFolder: (path: string) => void;
@@ -158,6 +160,7 @@ export const useStore = create<AppState>((set, get) => ({
   navOpen: false,
   revealPath: null,
   revealTick: 0,
+  narcScroll: {},
   pairingOverrides: {},
 
   dirty: false,
@@ -179,6 +182,9 @@ export const useStore = create<AppState>((set, get) => ({
       }
       return { expanded: next, revealPath: folderPath, revealTick: s.revealTick + 1, navOpen: true };
     }),
+
+  setNarcScroll: (narcHandle, top) =>
+    set((s) => ({ narcScroll: { ...s.narcScroll, [narcHandle]: top } })),
 
   setPairingOverride: (key, partial) =>
     set((s) => ({
@@ -216,6 +222,7 @@ export const useStore = create<AppState>((set, get) => ({
         selection: null,
         romSiblings: [],
         pairingOverrides: {},
+        narcScroll: {},
         dirty: false,
         editVersion: 0,
         status: `${romInfo.title.trim() || file.name} · ${romInfo.numFiles} files`,

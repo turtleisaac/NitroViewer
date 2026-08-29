@@ -1,0 +1,10 @@
+{
+  "name": "NitroViewer",
+  "short_name": "NitroViewer",
+  "description": "In-browser Nintendo DS ROM viewer & editor",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#0d0e12",
+  "theme_color": "#0d0e12",
+  "icons": [{ "src": "/favicon.svg", "type": "image/svg+xml", "sizes": "any" }]
+}

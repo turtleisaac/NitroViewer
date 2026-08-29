@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useStore } from "../state/store";
 import type { NarcEntry } from "../transport";
 
@@ -8,6 +8,7 @@ export function NarcBrowser() {
   const select = useStore((s) => s.select);
   const [state, setState] = useState<{ narcHandle: number; entries: NarcEntry[] } | null>(null);
   const [err, setErr] = useState<string>();
+  const rootRef = useRef<HTMLDivElement>(null);
 
   const romFileId = selection.ref.id;
   useEffect(() => {
@@ -22,11 +23,25 @@ export function NarcBrowser() {
     };
   }, [romFileId, ensureNarc]);
 
+  // Preserve how far the user scrolled the file grid: restore on (re)open, save on scroll — so pressing
+  // the breadcrumb to come back lands where they left off instead of at the top. The scroll happens on
+  // the shared .inspector-body ancestor, keyed by narcHandle. Read/write the store imperatively so
+  // scrolling doesn't re-render.
+  useEffect(() => {
+    if (!state) return;
+    const scroller = rootRef.current?.closest(".inspector-body") as HTMLElement | null;
+    if (!scroller) return;
+    scroller.scrollTop = useStore.getState().narcScroll[state.narcHandle] ?? 0;
+    const onScroll = () => useStore.getState().setNarcScroll(state.narcHandle, scroller.scrollTop);
+    scroller.addEventListener("scroll", onScroll, { passive: true });
+    return () => scroller.removeEventListener("scroll", onScroll);
+  }, [state]);
+
   if (err) return <div className="error">Could not open NARC: {err}</div>;
   if (!state) return <div className="placeholder">Opening NARC…</div>;
 
   return (
-    <div className="narc">
+    <div className="narc" ref={rootRef}>
       <div className="narc-info">{state.entries.length} embedded files — click to inspect</div>
       <div className="narc-grid">
         {state.entries.map((e) => (

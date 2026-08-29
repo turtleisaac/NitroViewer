@@ -3,7 +3,59 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>NitroViewer</title>
+
+    <title>NitroViewer — Nintendo DS ROM Viewer &amp; Editor (in-browser Tinke alternative)</title>
+    <meta
+      name="description"
+      content="NitroViewer is a modern, in-browser Nintendo DS ROM viewer and editor. Browse a ROM's filesystem and view &amp; edit NARC archives, NCGR/NCLR/NCER/NANR sprites, and NSBMD 3D models — a fast, free Tinke alternative that runs entirely in your browser."
+    />
+    <meta
+      name="keywords"
+      content="Nintendo DS, NDS ROM, ROM viewer, ROM editor, Tinke, Tinke alternative, NARC, NCGR, NCLR, NCER, NANR, NSBMD, NSBTX, sprite editor, DS romhacking, Pokémon romhacking"
+    />
+    <meta name="robots" content="index, follow" />
+    <meta name="theme-color" content="#0d0e12" />
+    <link rel="canonical" href="https://nitroviewer.com/" />
+
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <link rel="manifest" href="/site.webmanifest" />
+
+    <!-- Open Graph -->
+    <meta property="og:type" content="website" />
+    <meta property="og:site_name" content="NitroViewer" />
+    <meta property="og:title" content="NitroViewer — Nintendo DS ROM Viewer &amp; Editor" />
+    <meta
+      property="og:description"
+      content="View &amp; edit Nintendo DS ROM filesystems — NARC archives, sprites (NCGR/NCLR/NCER/NANR) and NSBMD 3D models — right in your browser. A modern, free Tinke alternative."
+    />
+    <meta property="og:url" content="https://nitroviewer.com/" />
+    <meta property="og:image" content="https://nitroviewer.com/og.png" />
+    <meta property="og:image:width" content="1200" />
+    <meta property="og:image:height" content="630" />
+
+    <!-- Twitter -->
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content="NitroViewer — Nintendo DS ROM Viewer &amp; Editor" />
+    <meta
+      name="twitter:description"
+      content="View &amp; edit Nintendo DS ROM filesystems — NARC, sprites and 3D models — in your browser. A modern, free Tinke alternative."
+    />
+    <meta name="twitter:image" content="https://nitroviewer.com/og.png" />
+
+    <script type="application/ld+json">
+      {
+        "@context": "https://schema.org",
+        "@type": "WebApplication",
+        "name": "NitroViewer",
+        "url": "https://nitroviewer.com/",
+        "description": "A modern, in-browser Nintendo DS ROM viewer and editor: browse ROM filesystems and view & edit NARC archives, NCGR/NCLR/NCER/NANR sprites, and NSBMD 3D models. A free Tinke alternative.",
+        "applicationCategory": "MultimediaApplication",
+        "operatingSystem": "Any (modern web browser)",
+        "browserRequirements": "Requires a modern browser with WebAssembly",
+        "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" }
+      }
+    </script>
+
     <!-- CheerpJ runtime loader. Defines the global cheerpjInit / cheerpjRunLibrary the transport
          layer calls. Must load before the app runs; a classic script in <head> does that. -->
     <script src="https://cjrtnc.leaningtech.com/4.3/loader.js"></script>
