@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useStore, type ResourceItem } from "../state/store";
 import { pickSibling } from "../state/pairing";
 import { refKey, type DecodedImage, type ResourceRef } from "../transport";
@@ -76,6 +76,8 @@ export function SpriteViewer() {
   const narcs = useStore((s) => s.narcs);
   const romSiblings = useStore((s) => s.romSiblings);
   const setPairingOverride = useStore((s) => s.setPairingOverride);
+  const importPng = useStore((s) => s.importPng);
+  const editVersion = useStore((s) => s.editVersion); // bumped on import → triggers an in-place re-decode
 
   const fmt = selection.format;
   const container = selection.ref.container;
@@ -112,6 +114,11 @@ export function SpriteViewer() {
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
+  // PNG-import state (NCGR only): a pending match-vs-rebuild choice when the image doesn't fit.
+  const pngRef = useRef<HTMLInputElement>(null);
+  const [impBusy, setImpBusy] = useState(false);
+  const [pending, setPending] = useState<{ bytes: Uint8Array; unmatched: number; w: number; h: number } | null>(null);
+
   // All resources of the selected file's own format, ordered by container index.
   const selfPeers = useMemo(
     () => items.filter((i) => i.format === fmt).slice().sort((a, b) => a.ref.id - b.ref.id),
@@ -128,6 +135,13 @@ export function SpriteViewer() {
       nclr: saved.nclr ?? pick(nclrs),
       ncer: saved.ncer ?? pick(ncers),
     });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selKey, items]);
+
+  // Reset the view controls only when a DIFFERENT file is selected — not when the current file's bytes
+  // are edited in place (an import bumps editVersion but keeps selKey), so the tile width / palette /
+  // zoom the user dialed in survive the edit.
+  useEffect(() => {
     setCellIndex(0);
     setAnimIndex(0);
     setFrameIndex(0);
@@ -136,7 +150,7 @@ export function SpriteViewer() {
     setTilesWidth(0);
     setPlaying(false);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selKey, items]);
+  }, [selKey]);
 
   // NANR playback: advance the frame on a timer while playing.
   useEffect(() => {
@@ -158,7 +172,19 @@ export function SpriteViewer() {
     } else if (fmt === "NANR") {
       client
         .decodeNanrMeta(romHandle, selection.ref)
-        .then((m) => alive && setAnimFrames(m.animations.map((a) => a.frames)))
+        .then((m) => {
+          if (!alive) return;
+          const frames = m.animations.map((a) => a.frames);
+          setAnimFrames(frames);
+          // Clip 0 is often a single static frame; jump to the first animation that actually moves
+          // (>1 frame) and auto-play it, so a NANR looks alive on open instead of frozen.
+          const firstMulti = frames.findIndex((f) => f > 1);
+          if (firstMulti > 0) {
+            setAnimIndex(firstMulti);
+            setFrameIndex(0);
+          }
+          setPlaying(firstMulti >= 0);
+        })
         .catch(() => alive && setAnimFrames([]));
     }
     return () => {
@@ -179,6 +205,7 @@ export function SpriteViewer() {
     cellIndex,
     animIndex,
     frameIndex,
+    editVersion, // re-decode after an in-place import (bytes changed, no remount)
   });
 
   useEffect(() => {
@@ -233,6 +260,42 @@ export function SpriteViewer() {
     download(`${base}.png`, base64ToBytes(image.png.split(",")[1]), "image/png");
   };
 
+  // Import an image over this NCGR. Dry-run first: if every pixel fits the current palette, apply the
+  // match immediately; otherwise surface the match-vs-rebuild choice with the unmatched-pixel count.
+  const onPngChosen = async (file: File) => {
+    if (!pair.nclr) {
+      alert("Pick a palette (NCLR) first — the import needs one to match colours against.");
+      return;
+    }
+    setImpBusy(true);
+    try {
+      const bytes = new Uint8Array(await file.arrayBuffer());
+      const dry = await importPng(selection.ref, pair.nclr, paletteIndex, tilesWidth, false, true, bytes);
+      if (dry.unmatched === 0) {
+        await importPng(selection.ref, pair.nclr, paletteIndex, tilesWidth, false, false, bytes);
+      } else {
+        setPending({ bytes, unmatched: dry.unmatched, w: dry.width, h: dry.height });
+      }
+    } catch (e) {
+      alert("PNG import failed: " + (e as Error).message);
+    } finally {
+      setImpBusy(false);
+    }
+  };
+
+  const applyPending = async (rebuild: boolean) => {
+    if (!pending || !pair.nclr) return;
+    setImpBusy(true);
+    try {
+      await importPng(selection.ref, pair.nclr, paletteIndex, tilesWidth, rebuild, false, pending.bytes);
+      setPending(null); // (the viewer also remounts on editVersion bump)
+    } catch (e) {
+      alert("PNG import failed: " + (e as Error).message);
+    } finally {
+      setImpBusy(false);
+    }
+  };
+
   return (
     <div className="sprite">
       <div className="controls">
@@ -279,7 +342,50 @@ export function SpriteViewer() {
             ))}
           </select>
         </label>
+
+        {fmt === "NCGR" && (
+          <label className="ctrl">
+            <span>Edit</span>
+            <button
+              className="play-btn"
+              disabled={impBusy || !pair.nclr}
+              title={pair.nclr ? "Replace this sprite's pixels from an image file" : "Pick a palette first"}
+              onClick={() => pngRef.current?.click()}
+            >
+              {impBusy ? "…" : "Import PNG…"}
+            </button>
+            <input
+              ref={pngRef}
+              type="file"
+              accept="image/*"
+              hidden
+              onChange={(e) => {
+                const f = e.target.files?.[0];
+                e.target.value = "";
+                if (f) void onPngChosen(f);
+              }}
+            />
+          </label>
+        )}
       </div>
+
+      {pending && (
+        <div className="import-choice">
+          <span>
+            {pending.unmatched.toLocaleString()} of {(pending.w * pending.h).toLocaleString()} pixels don't
+            match the current palette.
+          </span>
+          <button className="btn btn--sm" disabled={impBusy} onClick={() => void applyPending(false)}>
+            Match to palette
+          </button>
+          <button className="btn btn--sm" disabled={impBusy} onClick={() => void applyPending(true)}>
+            Rebuild palette
+          </button>
+          <button className="link-btn" disabled={impBusy} onClick={() => setPending(null)}>
+            Cancel
+          </button>
+        </div>
+      )}
 
       <div className="canvas-wrap">
         {error ? (
@@ -296,6 +402,14 @@ export function SpriteViewer() {
           <div className="placeholder">{busy ? "Decoding…" : "…"}</div>
         )}
       </div>
+      {image?.scanned && (fmt === "NCER" || fmt === "NANR") && (
+        <div className="import-choice">
+          <span>
+            This tileset is a scanned (bitmap) NCGR — its pixels are the full sprite, so it's shown
+            directly (cells/frames can't be composed over a bitmap).
+          </span>
+        </div>
+      )}
       {image && !error && (
         <div className="sprite-meta">
           <span>

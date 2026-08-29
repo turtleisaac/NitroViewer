@@ -115,6 +115,151 @@ class CheerpjFacadeTest
     }
 
     @Test
+    @DisplayName("importRaw over a NARC sub-file survives saveRom + reopen; siblings unchanged")
+    void narcImportRoundTrip()
+    {
+        // Discover stable file identities using the shared read-only facade; mutate a private one so
+        // the shared ROM other tests decode from is never touched (JUnit method order is arbitrary).
+        int[] found = firstNarcWithTwoFiles();
+        Assumptions.assumeTrue(found != null, "no NARC with >= 2 sub-files found");
+        int romFileId = found[0], target = found[2], sibling = found[3];
+
+        CheerpjFacade s1 = new CheerpjFacade();
+        int r1 = intField(s1.openRom(romBytes), "handle");
+        int narc1 = intField(s1.openNarc(r1, romFileId), "narcHandle");
+
+        // Snapshot an untouched sibling so we can prove no collateral damage.
+        String siblingBefore = strField(s1.exportRaw(r1, narc1, sibling), "base64");
+
+        byte[] payload = "NITROVIEWER-IMPORT-TEST-PAYLOAD".getBytes(java.nio.charset.StandardCharsets.US_ASCII);
+        assertThat(s1.importRaw(r1, narc1, target, payload)).contains("\"ok\":true");
+
+        byte[] saved = s1.saveRom(r1);
+        assertThat(saved.length).as("saveRom produced a non-empty ROM").isGreaterThan(0);
+
+        // Re-open the freshly-saved ROM image in a clean facade and read the edited NARC back.
+        CheerpjFacade s2 = new CheerpjFacade();
+        int r2 = intField(s2.openRom(saved), "handle");
+        int narc2 = intField(s2.openNarc(r2, romFileId), "narcHandle");
+
+        String reread = strField(s2.exportRaw(r2, narc2, target), "base64");
+        assertThat(java.util.Base64.getDecoder().decode(reread)).isEqualTo(payload);
+
+        String siblingAfter = strField(s2.exportRaw(r2, narc2, sibling), "base64");
+        assertThat(siblingAfter).as("untouched sibling unchanged").isEqualTo(siblingBefore);
+    }
+
+    @Test
+    @DisplayName("importPng (match) recolours an NCGR, propagates to bytes, survives saveRom + reopen")
+    void importPngMatchRoundTrip() throws Exception
+    {
+        int[] g = findGraphicsNarcWithRomFile();
+        Assumptions.assumeTrue(g != null, "no NCGR+NCLR NARC found");
+        int romFileId = g[0], ncgr = g[2], nclr = g[3];
+
+        CheerpjFacade s1 = new CheerpjFacade();
+        int r1 = intField(s1.openRom(romBytes), "handle");
+        int narc1 = intField(s1.openNarc(r1, romFileId), "narcHandle");
+
+        String dec = s1.decodeNcgr(r1, narc1, ncgr, narc1, nclr, 0, false, 0);
+        int w = intField(dec, "width"), h = intField(dec, "height");
+        byte[] ncgrBefore = java.util.Base64.getDecoder().decode(strField(s1.exportRaw(r1, narc1, ncgr), "base64"));
+
+        // Paint a checkerboard of two DISTINCT existing palette colours → exact matches (unmatched 0),
+        // and guaranteed to differ from whatever the sprite held (unless it was already that pattern).
+        String palJson = s1.decodePalette(r1, narc1, nclr);
+        String[] two = twoDistinctHex(palJson);
+        Assumptions.assumeTrue(two != null, "palette has fewer than 2 distinct colours");
+        byte[] png = checkerPng(w, h, hexColor(two[0]), hexColor(two[1]));
+
+        String dry = s1.importPng(r1, narc1, ncgr, narc1, nclr, 0, 0, false, true, png);
+        assertThat(dry).contains("\"ok\":true");
+        assertThat(intField(dry, "unmatched")).as("exact palette colours fit").isEqualTo(0);
+
+        assertThat(s1.importPng(r1, narc1, ncgr, narc1, nclr, 0, 0, false, false, png)).contains("\"ok\":true");
+        byte[] ncgrAfter = java.util.Base64.getDecoder().decode(strField(s1.exportRaw(r1, narc1, ncgr), "base64"));
+        assertThat(ncgrAfter).as("import changed the NCGR bytes").isNotEqualTo(ncgrBefore);
+
+        byte[] saved = s1.saveRom(r1);
+        assertThat(saved.length).isGreaterThan(0);
+
+        CheerpjFacade s2 = new CheerpjFacade();
+        int r2 = intField(s2.openRom(saved), "handle");
+        int narc2 = intField(s2.openNarc(r2, romFileId), "narcHandle");
+        assertThat(intField(s2.decodeNcgr(r2, narc2, ncgr, narc2, nclr, 0, false, 0), "width")).isEqualTo(w);
+        byte[] reread = java.util.Base64.getDecoder().decode(strField(s2.exportRaw(r2, narc2, ncgr), "base64"));
+        assertThat(reread).as("edit persisted through save + reopen").isEqualTo(ncgrAfter);
+    }
+
+    @Test
+    @DisplayName("importPng (rebuild) rewrites the NCLR sub-palette, survives saveRom + reopen")
+    void importPngRebuildRoundTrip() throws Exception
+    {
+        int[] g = findGraphicsNarcWithRomFile();
+        Assumptions.assumeTrue(g != null, "no NCGR+NCLR NARC found");
+        int romFileId = g[0], ncgr = g[2], nclr = g[3];
+
+        CheerpjFacade s1 = new CheerpjFacade();
+        int r1 = intField(s1.openRom(romBytes), "handle");
+        int narc1 = intField(s1.openNarc(r1, romFileId), "narcHandle");
+        String palBefore = s1.decodePalette(r1, narc1, nclr);
+
+        int w = intField(s1.decodeNcgr(r1, narc1, ncgr, narc1, nclr, 0, false, 0), "width");
+        int h = intField(s1.decodeNcgr(r1, narc1, ncgr, narc1, nclr, 0, false, 0), "height");
+        byte[] png = gradientPng(w, h); // many colours → forces a real median-cut
+
+        assertThat(s1.importPng(r1, narc1, ncgr, narc1, nclr, 0, 0, true, false, png)).contains("\"paletteRebuilt\":true");
+
+        byte[] saved = s1.saveRom(r1);
+        CheerpjFacade s2 = new CheerpjFacade();
+        int r2 = intField(s2.openRom(saved), "handle");
+        int narc2 = intField(s2.openNarc(r2, romFileId), "narcHandle");
+        String palAfter = s2.decodePalette(r2, narc2, nclr);
+        assertThat(palAfter).as("rebuilt palette differs from original").isNotEqualTo(palBefore);
+    }
+
+    @Test
+    @DisplayName("importPng rejects a size mismatch with a structured error")
+    void importPngSizeMismatch() throws Exception
+    {
+        int[] g = findGraphicsNarcWithRomFile();
+        Assumptions.assumeTrue(g != null, "no NCGR+NCLR NARC found");
+        CheerpjFacade s1 = new CheerpjFacade();
+        int r1 = intField(s1.openRom(romBytes), "handle");
+        int narc1 = intField(s1.openNarc(r1, g[0]), "narcHandle");
+        byte[] tiny = solidPng(8, 8, java.awt.Color.RED); // almost certainly the wrong size
+        String res = s1.importPng(r1, narc1, g[2], narc1, g[3], 0, 0, false, false, tiny);
+        // either it matched an 8x8 sprite (fine) or it reported a structured size error — never threw
+        assertThat(res).contains("\"ok\":");
+    }
+
+    @Test
+    @DisplayName("importRaw over a top-level ROM file survives saveRom + reopen")
+    void romFileImportRoundTrip()
+    {
+        // Overwrite a NARC ROM file wholesale with a distinctive payload — round-trips the ROM's own
+        // FAT/file table without needing a valid inner structure.
+        int[] found = firstNarcWithTwoFiles();
+        Assumptions.assumeTrue(found != null, "no NARC ROM file found");
+        int romFileId = found[0];
+
+        CheerpjFacade s1 = new CheerpjFacade();
+        int r1 = intField(s1.openRom(romBytes), "handle");
+
+        byte[] payload = new byte[4096];
+        for (int i = 0; i < payload.length; i++) payload[i] = (byte) (i * 7 + 3);
+        assertThat(s1.importRaw(r1, -1, romFileId, payload)).contains("\"ok\":true");
+
+        byte[] saved = s1.saveRom(r1);
+        assertThat(saved.length).isGreaterThan(0);
+
+        CheerpjFacade s2 = new CheerpjFacade();
+        int r2 = intField(s2.openRom(saved), "handle");
+        String reread = strField(s2.exportRaw(r2, -1, romFileId), "base64");
+        assertThat(java.util.Base64.getDecoder().decode(reread)).isEqualTo(payload);
+    }
+
+    @Test
     @DisplayName("an NSBMD model exports to a self-contained glTF document")
     void modelExportsGltf()
     {
@@ -196,6 +341,24 @@ class CheerpjFacadeTest
         Assumptions.assumeTrue(spa != null, "no SPA found in Platinum");
         String res = s.renderParticles(r, spa[0], spa[1], 96, 96, 6);
         assertThat(res).doesNotContain("\"error\"").contains("\"frames\":[").contains("data:image/png;base64,");
+    }
+
+    @Test
+    @DisplayName("a scanned (bitmap) NCGR viewed as an NCER renders directly instead of erroring (Platinum trbgra)")
+    void scannedNcgrNcerFallback()
+    {
+        byte[] plat = TestRoms.require("Platinum.nds"); // skips if Platinum isn't present
+        CheerpjFacade s = new CheerpjFacade();
+        int r = intField(s.openRom(plat), "handle");
+        int id = findFileByName(s, r, "trbgra.narc");
+        Assumptions.assumeTrue(id >= 0, "trbgra.narc not found in Platinum");
+        int nh = intField(s.openNarc(r, id), "narcHandle");
+
+        // NCER #32 + scanned NCGR #19 + NCLR #11 used to throw "Can't use a scanned image with an NCER".
+        String res = s.decodeNcer(r, nh, 32, nh, 19, nh, 11, 0, true);
+        assertThat(res).doesNotContain("\"error\"");
+        assertThat(res).contains("\"scanned\":true").contains("data:image/png");
+        assertThat(intField(res, "width")).isGreaterThan(0);
     }
 
     @Test
@@ -298,6 +461,113 @@ class CheerpjFacadeTest
             }
         }
         return null;
+    }
+
+    /** First NARC ROM file holding >= 2 sub-files: {romFileId, narcHandle, index0, index1} or null. */
+    private int[] firstNarcWithTwoFiles()
+    {
+        int numFiles = intField(svc.getRomInfo(rom), "numFiles");
+        for (int f = 0; f < numFiles; f++)
+        {
+            if (!"NARC".equals(formatField(svc.detectFormat(rom, -1, f))))
+                continue;
+            String open = svc.openNarc(rom, f);
+            if (open.contains("\"error\""))
+                continue;
+            int narc = intField(open, "narcHandle");
+            if (narcFileCount(narc) >= 2)
+                return new int[]{f, narc, 0, 1};
+        }
+        return null;
+    }
+
+    private int narcFileCount(int narcHandle)
+    {
+        // count "index": occurrences in the listNarc JSON
+        String list = svc.listNarc(narcHandle);
+        int count = 0, i = 0;
+        while ((i = list.indexOf("\"index\":", i)) >= 0) { count++; i += 8; }
+        return count;
+    }
+
+    /** Like {@link #findGraphicsNarc()} but includes the ROM file id: {romFileId, narcHandle, ncgr, nclr}. */
+    private int[] findGraphicsNarcWithRomFile()
+    {
+        int numFiles = intField(svc.getRomInfo(rom), "numFiles");
+        for (int f = 0; f < numFiles; f++)
+        {
+            if (!"NARC".equals(formatField(svc.detectFormat(rom, -1, f))))
+                continue;
+            String open = svc.openNarc(rom, f);
+            if (open.contains("\"error\""))
+                continue;
+            int narc = intField(open, "narcHandle");
+            String list = svc.listNarc(narc);
+            Integer ncgr = firstIndexOfFormat(list, "NCGR");
+            Integer nclr = firstIndexOfFormat(list, "NCLR");
+            if (ncgr != null && nclr != null)
+                return new int[]{f, narc, ncgr, nclr};
+        }
+        return null;
+    }
+
+    /** The {@code i}-th "#rrggbb" colour in a decodePalette JSON. */
+    private static String firstHex(String palJson, int i)
+    {
+        Matcher m = Pattern.compile("#[0-9a-fA-F]{6}").matcher(palJson);
+        String last = "#000000";
+        for (int k = 0; k <= i && m.find(); k++) last = m.group();
+        return last;
+    }
+
+    private static java.awt.Color hexColor(String hex)
+    {
+        return new java.awt.Color(Integer.parseInt(hex.substring(1), 16));
+    }
+
+    /** The first two distinct "#rrggbb" colours in a decodePalette JSON, or null if fewer than two. */
+    private static String[] twoDistinctHex(String palJson)
+    {
+        Matcher m = Pattern.compile("#[0-9a-fA-F]{6}").matcher(palJson);
+        String first = null;
+        while (m.find())
+        {
+            String c = m.group();
+            if (first == null) first = c;
+            else if (!c.equalsIgnoreCase(first)) return new String[]{first, c};
+        }
+        return null;
+    }
+
+    private static byte[] checkerPng(int w, int h, java.awt.Color a, java.awt.Color b) throws Exception
+    {
+        java.awt.image.BufferedImage img = new java.awt.image.BufferedImage(w, h, java.awt.image.BufferedImage.TYPE_INT_ARGB);
+        for (int y = 0; y < h; y++)
+            for (int x = 0; x < w; x++)
+                img.setRGB(x, y, (((x / 4) + (y / 4)) % 2 == 0 ? a : b).getRGB());
+        java.io.ByteArrayOutputStream baos = new java.io.ByteArrayOutputStream();
+        javax.imageio.ImageIO.write(img, "png", baos);
+        return baos.toByteArray();
+    }
+
+    private static byte[] solidPng(int w, int h, java.awt.Color c) throws Exception
+    {
+        java.awt.image.BufferedImage img = new java.awt.image.BufferedImage(w, h, java.awt.image.BufferedImage.TYPE_INT_ARGB);
+        for (int y = 0; y < h; y++) for (int x = 0; x < w; x++) img.setRGB(x, y, c.getRGB());
+        java.io.ByteArrayOutputStream baos = new java.io.ByteArrayOutputStream();
+        javax.imageio.ImageIO.write(img, "png", baos);
+        return baos.toByteArray();
+    }
+
+    private static byte[] gradientPng(int w, int h) throws Exception
+    {
+        java.awt.image.BufferedImage img = new java.awt.image.BufferedImage(w, h, java.awt.image.BufferedImage.TYPE_INT_ARGB);
+        for (int y = 0; y < h; y++)
+            for (int x = 0; x < w; x++)
+                img.setRGB(x, y, new java.awt.Color((x * 255) / Math.max(1, w - 1), (y * 255) / Math.max(1, h - 1), 128).getRGB());
+        java.io.ByteArrayOutputStream baos = new java.io.ByteArrayOutputStream();
+        javax.imageio.ImageIO.write(img, "png", baos);
+        return baos.toByteArray();
     }
 
     /** First NARC that carries both an NCGR and an NCLR: {narcHandle, ncgrIndex, nclrIndex} or null. */

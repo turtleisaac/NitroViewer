@@ -44,11 +44,21 @@ export interface DecodedImage {
   height: number;
   png: string; // data:image/png;base64,...
   subPalettes?: number; // number of selectable 16-colour sub-palettes (NCGR); 1 if not applicable
+  scanned?: boolean; // NCER/NANR over a scanned (bitmap) NCGR: shown as the raw NCGR, not composed
 }
 
 export interface PaletteData {
   count: number;
   colors: string[]; // "#rrggbb"
+}
+
+export interface PngImportResult {
+  ok: boolean;
+  width: number;
+  height: number;
+  unmatched: number; // pixels not exactly in the existing palette (match mode)
+  paletteRebuilt: boolean;
+  dryRun: boolean;
 }
 
 export interface ModelRig {
@@ -119,6 +129,25 @@ export interface NitroViewerClient {
   ): Promise<DecodedImage>;
 
   exportRaw(handle: number, ref: ResourceRef): Promise<{ size: number; base64: string }>;
+
+  /** Replace the bytes of a resource (ROM file or NARC sub-file, which is repacked into its ROM file). */
+  importRaw(handle: number, ref: ResourceRef, bytes: Uint8Array): Promise<{ size: number }>;
+  /** Serialise the (edited) ROM to a complete .nds image. */
+  saveRom(handle: number): Promise<Uint8Array>;
+  /**
+   * Import an image over an NCGR sprite (propagates down into the NCGR, and the NCLR when rebuilding).
+   * rebuildPalette=false matches to the existing (sub-)palette; dryRun computes the fit without writing.
+   */
+  importPng(
+    handle: number,
+    ncgr: ResourceRef,
+    nclr: ResourceRef,
+    paletteIndex: number,
+    tilesWidth: number,
+    rebuildPalette: boolean,
+    dryRun: boolean,
+    pngBytes: Uint8Array
+  ): Promise<PngImportResult>;
 
   getModelSetInfo(
     handle: number,

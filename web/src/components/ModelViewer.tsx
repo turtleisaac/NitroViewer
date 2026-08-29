@@ -166,7 +166,9 @@ export default function ModelViewer() {
   // never a perpetual RAF loop — that starves CheerpJ's cooperative Java execution and hangs exports.
   useEffect(() => {
     const mount = mountRef.current!;
-    const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+    // preserveDrawingBuffer lets "Save PNG" read the canvas back after an on-demand render (WebGL
+    // otherwise clears the buffer once the frame is composited).
+    const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true, preserveDrawingBuffer: true });
     renderer.setPixelRatio(window.devicePixelRatio);
     renderer.setSize(mount.clientWidth, mount.clientHeight || 400);
     mount.appendChild(renderer.domElement);
@@ -434,6 +436,20 @@ export default function ModelViewer() {
     return () => cancelAnimationFrame(raf);
   }, [playing, busy, info, animNames.length, loadTick, tracksTick]);
 
+  const capturePng = () => {
+    const t = three.current;
+    if (!t) return;
+    t.render(); // draw the current frame, then read it back synchronously (buffer still intact)
+    const url = t.renderer.domElement.toDataURL("image/png");
+    const base = (selection.name.split(/[/:]/).pop() || "model").replace(/[^\w.\-]+/g, "_");
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `${base}.png`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+  };
+
   const saveGltf = () => {
     if (!gltfStrRef.current) return;
     const base = (selection.name.split(/[/:]/).pop() || "model").replace(/[^\w.\-]+/g, "_");
@@ -554,7 +570,10 @@ export default function ModelViewer() {
       <div className="sprite-meta">
         <span>Drag to orbit · scroll to zoom · right-drag to pan</span>
         {loadTick > 0 && !error && (
-          <button className="link-btn" onClick={saveGltf}>Save glTF ↓</button>
+          <>
+            <button className="link-btn" onClick={capturePng}>Capture PNG ↓</button>
+            <button className="link-btn" onClick={saveGltf}>Save glTF ↓</button>
+          </>
         )}
       </div>
     </div>

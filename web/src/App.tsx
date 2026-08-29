@@ -13,11 +13,25 @@ export function App() {
   const openRom = useStore((s) => s.openRom);
   const navOpen = useStore((s) => s.navOpen);
   const setNavOpen = useStore((s) => s.setNavOpen);
+  const dirty = useStore((s) => s.dirty);
+  const saving = useStore((s) => s.saving);
+  const saveRom = useStore((s) => s.saveRom);
   const fileRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     void boot();
   }, [boot]);
+
+  // Warn before leaving with unsaved edits (edits live only in the tab's memory until Save ROM).
+  useEffect(() => {
+    if (!dirty) return;
+    const warn = (e: BeforeUnloadEvent) => {
+      e.preventDefault();
+      e.returnValue = "";
+    };
+    window.addEventListener("beforeunload", warn);
+    return () => window.removeEventListener("beforeunload", warn);
+  }, [dirty]);
 
   return (
     <div className="app">
@@ -33,6 +47,21 @@ export function App() {
         </div>
         <div className="topbar-actions">
           <span className={"status" + (loading ? " status--busy" : "")}>{status}</span>
+          {dirty && (
+            <span className="badge badge--dirty" title="Unsaved edits — download with Save ROM">
+              ● unsaved
+            </span>
+          )}
+          {romHandle != null && (
+            <button
+              className="btn btn--save"
+              disabled={saving || !dirty}
+              title={dirty ? "Download the edited .nds" : "No edits to save"}
+              onClick={() => void saveRom()}
+            >
+              {saving ? "Saving…" : "Save ROM"}
+            </button>
+          )}
           <button className="btn" disabled={!booted || loading} onClick={() => fileRef.current?.click()}>
             {romHandle == null ? "Open ROM…" : "Open another…"}
           </button>

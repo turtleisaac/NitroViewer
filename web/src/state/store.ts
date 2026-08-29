@@ -1,4 +1,4 @@
-import { create } from "zustand";
+import { create, type StoreApi } from "zustand";
 import {
   createClient,
   refKey,
@@ -7,9 +7,11 @@ import {
   type NarcEntry,
   type NitroViewerClient,
   type ResourceRef,
+  type PngImportResult,
   type RomInfo,
   type TreeFolder,
 } from "../transport";
+import { download } from "../util";
 
 export interface ResourceItem {
   ref: ResourceRef;
@@ -46,21 +48,40 @@ interface AppState {
   narcs: Record<number, { romFileId: number; entries: NarcEntry[] }>; // by narcHandle
   fileToNarc: Record<number, number>; // romFileId -> narcHandle
   formats: Record<string, FormatInfo>; // refKey -> format
+  idToPath: Record<number, string>; // ROM file id -> full FNT path (e.g. /poketool/trgra/trbgra.narc)
 
   selection: Selection | null;
   romSiblings: ResourceItem[]; // pairing candidates when a loose ROM file is selected
   navOpen: boolean; // tree drawer open (only affects narrow screens)
+  revealPath: string | null; // folder path the tree should scroll into view
+  revealTick: number; // bumped on each reveal so re-revealing the same folder still scrolls
   // Manual pairing choices the user made, keyed by refKey, so they survive re-selecting a resource.
   pairingOverrides: Record<string, PairOverride>;
 
+  dirty: boolean; // unsaved edits exist (import happened, no saveRom since)
+  editVersion: number; // bumped on every import so viewers re-decode the changed bytes
+  saving: boolean; // a saveRom is in flight
+
   boot: () => Promise<void>;
   setNavOpen: (open: boolean) => void;
+  revealFolder: (folderPath: string) => void;
   setPairingOverride: (key: string, partial: PairOverride) => void;
   openRom: (file: File) => Promise<void>;
   toggleFolder: (path: string) => void;
   select: (ref: ResourceRef, name: string) => Promise<void>;
   ensureNarc: (romFileId: number) => Promise<{ narcHandle: number; entries: NarcEntry[] }>;
   containerItems: (container: number) => ResourceItem[];
+  importFile: (ref: ResourceRef, bytes: Uint8Array) => Promise<void>;
+  importPng: (
+    ncgr: ResourceRef,
+    nclr: ResourceRef,
+    paletteIndex: number,
+    tilesWidth: number,
+    rebuildPalette: boolean,
+    dryRun: boolean,
+    bytes: Uint8Array
+  ) => Promise<PngImportResult>;
+  saveRom: () => Promise<void>;
 }
 
 function findFolder(folder: TreeFolder, id: number): TreeFolder | null {
@@ -70,6 +91,49 @@ function findFolder(folder: TreeFolder, id: number): TreeFolder | null {
     if (hit) return hit;
   }
   return null;
+}
+
+/** Map every ROM file id to its full FNT path (e.g. "/poketool/trgra/trbgra.narc", "/a/0/0/4"), so the
+ *  UI can show where a file lives instead of just its (often numeric/ambiguous) name. */
+function buildPathMap(root: TreeFolder): Record<number, string> {
+  const map: Record<number, string> = {};
+  const walk = (folder: TreeFolder, prefix: string) => {
+    for (const f of folder.files) map[f.id] = prefix + (f.name || `${f.id}`);
+    for (const sub of folder.folders) walk(sub, prefix + sub.name + "/");
+  };
+  walk(root, "/"); // root folder's own name is "/"; start the prefix there and skip it as a segment
+  return map;
+}
+
+// After an edit persists new bytes for one or more resources: refresh each ref's cached format (size
+// and format may have changed) and its NARC listing, keep the selection's displayed metadata in sync,
+// then mark the ROM dirty and bump editVersion (which re-keys the open viewer so it re-decodes).
+async function refreshAfterEdit(
+  get: StoreApi<AppState>["getState"],
+  set: StoreApi<AppState>["setState"],
+  romHandle: number,
+  refs: ResourceRef[]
+) {
+  const { client } = get();
+  for (const ref of refs) {
+    const key = refKey(ref);
+    const fmt = await client.detectFormat(romHandle, ref);
+    set((s) => ({ formats: { ...s.formats, [key]: fmt } }));
+    if (ref.container >= 0) {
+      const narc = get().narcs[ref.container];
+      if (narc) {
+        const entries = await client.listNarc(ref.container);
+        set((s) => ({ narcs: { ...s.narcs, [ref.container]: { ...narc, entries } } }));
+      }
+    }
+    set((s) => ({
+      selection:
+        s.selection && refKey(s.selection.ref) === key
+          ? { ...s.selection, format: fmt.format, compressed: fmt.compressed, size: fmt.size }
+          : s.selection,
+    }));
+  }
+  set((s) => ({ dirty: true, editVersion: s.editVersion + 1 }));
 }
 
 export const useStore = create<AppState>((set, get) => ({
@@ -87,13 +151,34 @@ export const useStore = create<AppState>((set, get) => ({
   narcs: {},
   fileToNarc: {},
   formats: {},
+  idToPath: {},
 
   selection: null,
   romSiblings: [],
   navOpen: false,
+  revealPath: null,
+  revealTick: 0,
   pairingOverrides: {},
 
+  dirty: false,
+  editVersion: 0,
+  saving: false,
+
   setNavOpen: (open) => set({ navOpen: open }),
+
+  // Expand a folder and all its ancestors in the tree, and signal TreePane to scroll it into view.
+  // folderPath is a trailing-slash path like "/poketool/trgra/" (matching the tree's expanded keys).
+  revealFolder: (folderPath) =>
+    set((s) => {
+      const next = new Set(s.expanded);
+      let p = "/";
+      next.add(p);
+      for (const seg of folderPath.split("/").filter(Boolean)) {
+        p += seg + "/";
+        next.add(p);
+      }
+      return { expanded: next, revealPath: folderPath, revealTick: s.revealTick + 1, navOpen: true };
+    }),
 
   setPairingOverride: (key, partial) =>
     set((s) => ({
@@ -127,9 +212,12 @@ export const useStore = create<AppState>((set, get) => ({
         narcs: {},
         fileToNarc: {},
         formats: {},
+        idToPath: buildPathMap(tree),
         selection: null,
         romSiblings: [],
         pairingOverrides: {},
+        dirty: false,
+        editVersion: 0,
         status: `${romInfo.title.trim() || file.name} · ${romInfo.numFiles} files`,
       });
     } catch (e) {
@@ -193,6 +281,41 @@ export const useStore = create<AppState>((set, get) => ({
       set({ romSiblings: items });
     } else {
       set({ romSiblings: [] });
+    }
+  },
+
+  importFile: async (ref, bytes) => {
+    const { client, romHandle } = get();
+    if (romHandle == null) throw new Error("no ROM open");
+    await client.importRaw(romHandle, ref, bytes);
+    await refreshAfterEdit(get, set, romHandle, [ref]);
+  },
+
+  importPng: async (ncgr, nclr, paletteIndex, tilesWidth, rebuildPalette, dryRun, bytes) => {
+    const { client, romHandle } = get();
+    if (romHandle == null) throw new Error("no ROM open");
+    const res = await client.importPng(romHandle, ncgr, nclr, paletteIndex, tilesWidth, rebuildPalette, dryRun, bytes);
+    if (!dryRun) {
+      // A real import touched the NCGR (and the NCLR too, when the palette was rebuilt).
+      await refreshAfterEdit(get, set, romHandle, rebuildPalette ? [ncgr, nclr] : [ncgr]);
+    }
+    return res;
+  },
+
+  saveRom: async () => {
+    const { client, romHandle, romName } = get();
+    if (romHandle == null) throw new Error("no ROM open");
+    set({ saving: true, status: "Saving ROM…" });
+    try {
+      const bytes = await client.saveRom(romHandle);
+      const name = romName || "edited.nds";
+      download(name.replace(/(\.nds)?$/i, ".nds"), bytes);
+      set({ dirty: false, status: `Saved ${name} · ${bytes.length.toLocaleString()} B` });
+    } catch (e) {
+      set({ status: "Save failed: " + (e as Error).message });
+      throw e;
+    } finally {
+      set({ saving: false });
     }
   },
 

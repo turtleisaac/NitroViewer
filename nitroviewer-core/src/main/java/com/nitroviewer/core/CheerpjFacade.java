@@ -46,8 +46,12 @@ public final class CheerpjFacade implements NitroViewerService
 {
     private final Map<Integer, NintendoDsRom> roms = new ConcurrentHashMap<>();
     private final Map<Integer, Narc> narcs = new ConcurrentHashMap<>();
+    // Which (romHandle, romFileId) each narc-handle was opened from, so an edited NARC sub-file can be
+    // repacked into the ROM file it lives in. Without this link importRaw couldn't persist NARC edits.
+    private final Map<Integer, int[]> narcRomFile = new ConcurrentHashMap<>(); // narcHandle -> {romHandle, romFileId}
     private final AtomicInteger romSeq = new AtomicInteger(1);
     private final AtomicInteger narcSeq = new AtomicInteger(1);
+    private volatile String lastError = "";
 
     // --- session -----------------------------------------------------------------------------
 
@@ -153,6 +157,7 @@ public final class CheerpjFacade implements NitroViewerService
             Narc narc = new Narc(data);
             int handle = narcSeq.getAndIncrement();
             narcs.put(handle, narc);
+            narcRomFile.put(handle, new int[]{romHandle, romFileId});
             return "{\"narcHandle\":" + handle + ",\"numFiles\":" + narc.getNumFiles() + "}";
         }
         catch (Throwable t) { return err(t); }
@@ -265,6 +270,11 @@ public final class CheerpjFacade implements NitroViewerService
             NintendoDsRom rom = rom(romHandle);
             IndexedImage ncgr = ncgr(rom, ncgrContainer, ncgrId, 0);
             ncgr.setPalette(new Palette(resolve(rom, nclrContainer, nclrId), 0));
+            // A scanned (bitmap) NCGR — e.g. DPPt trbgra.narc trainer sprites — can't be composed
+            // through an NCER (Nds4j only implements tiled-OBJ composition; a re-tiled bitmap scrambles).
+            // Its own pixels ARE the assembled sprite, so render the NCGR directly instead of erroring.
+            if (ncgr.isScanned())
+                return scannedNcgrJson(ncgr, transparent);
             CellBank bank = new CellBank(resolve(rom, ncerContainer, ncerId));
             bank.setParentImage(ncgr);
             return imageJson(transparent ? bank.getTransparentNcerImage(cellIndex)
@@ -302,6 +312,8 @@ public final class CheerpjFacade implements NitroViewerService
             NintendoDsRom rom = rom(romHandle);
             IndexedImage ncgr = ncgr(rom, ncgrContainer, ncgrId, 0);
             ncgr.setPalette(new Palette(resolve(rom, nclrContainer, nclrId), 0));
+            if (ncgr.isScanned())
+                return scannedNcgrJson(ncgr, transparent); // see decodeNcer — bitmap parent, render direct
             CellBank bank = new CellBank(resolve(rom, ncerContainer, ncerId));
             bank.setParentImage(ncgr);
             CellAnimation anim = new CellAnimation(resolve(rom, nanrContainer, nanrId));
@@ -323,6 +335,145 @@ public final class CheerpjFacade implements NitroViewerService
             return "{\"size\":" + raw.length + ",\"base64\":" + jstr(base64(raw)) + "}";
         }
         catch (Throwable t) { return err(t); }
+    }
+
+    // --- import / save (write half) ----------------------------------------------------------
+
+    @Override
+    public String importRaw(int romHandle, int container, int id, byte[] bytes)
+    {
+        try
+        {
+            if (bytes == null) throw new IllegalArgumentException("no bytes");
+            rom(romHandle); // validate the handle before touching anything
+            writeResource(romHandle, container, id, bytes);
+            return "{\"ok\":true,\"size\":" + bytes.length + "}";
+        }
+        catch (Throwable t)
+        {
+            return "{\"ok\":false,\"error\":" + jstr(describe(t)) + "}";
+        }
+    }
+
+    /**
+     * Persist {@code bytes} to the addressed resource. ROM file ({@code container < 0}) → direct
+     * {@code setFile}; NARC entry → update the sub-file then repack the NARC into the ROM file it was
+     * opened from (tracked in {@link #narcRomFile}). Shared by {@link #importRaw} and {@link #importPng}.
+     */
+    private void writeResource(int romHandle, int container, int id, byte[] bytes)
+    {
+        NintendoDsRom rom = rom(romHandle);
+        if (container < 0)
+        {
+            rom.setFile(id, bytes);
+            return;
+        }
+        Narc narc = narc(container);
+        narc.setFile(id, bytes);
+        int[] link = narcRomFile.get(container);
+        if (link == null || link[0] != romHandle)
+            throw new IllegalStateException("NARC handle " + container + " not linked to a ROM file");
+        rom.setFile(link[1], narc.save());
+    }
+
+    @Override
+    public String importPng(int romHandle, int ncgrContainer, int ncgrId, int nclrContainer, int nclrId,
+                            int paletteIndex, int tilesWidth, boolean rebuildPalette, boolean dryRun,
+                            byte[] pngBytes)
+    {
+        try
+        {
+            NintendoDsRom rom = rom(romHandle);
+            // Load the EXISTING NCGR so its geometry (dimensions, bit depth, tiling) is preserved — the
+            // imported pixels just overwrite it, then it re-encodes cleanly. (This is why we don't build
+            // an IndexedImage from scratch: the header fields would be lost.)
+            IndexedImage ncgr = ncgr(rom, ncgrContainer, ncgrId, tilesWidth);
+            int bitDepth = ncgr.getBitDepth();
+
+            BufferedImage src = ImageIO.read(new java.io.ByteArrayInputStream(pngBytes));
+            if (src == null)
+                throw new IllegalArgumentException("Could not decode the imported file as an image.");
+            if (src.getWidth() != ncgr.getWidth() || src.getHeight() != ncgr.getHeight())
+                return "{\"ok\":false,\"error\":" + jstr(String.format(
+                        "Imported image is %dx%d but the sprite is %dx%d — they must match.",
+                        src.getWidth(), src.getHeight(), ncgr.getWidth(), ncgr.getHeight())) + "}";
+
+            Palette full = new Palette(resolve(rom, nclrContainer, nclrId), 0);
+            Color[] fullColors = full.getColors();
+
+            int unmatched;
+            if (rebuildPalette)
+            {
+                int maxColors = bitDepth == 8 ? 256 : 16;
+                Palette rebuilt = ncgr.applyImageQuantized(src, maxColors);
+                if (!dryRun)
+                {
+                    writeResource(romHandle, ncgrContainer, ncgrId, ncgr.save());
+                    // Splice the rebuilt colours into the NCLR: for 4bpp only the selected 16-colour
+                    // sub-palette block, for 8bpp the whole 256. Other sub-palettes are left intact.
+                    int blockLen = bitDepth == 8 ? 256 : 16;
+                    int subCount = Math.max(1, fullColors.length / blockLen);
+                    int blockStart = (bitDepth == 8 ? 0 : Math.max(0, Math.min(paletteIndex, subCount - 1))) * blockLen;
+                    int mergedLen = Math.max(fullColors.length, blockStart + blockLen);
+                    Color[] merged = new Color[mergedLen];
+                    for (int i = 0; i < mergedLen; i++)
+                        merged[i] = i < fullColors.length ? fullColors[i] : Color.BLACK;
+                    Color[] rc = rebuilt.getColors();
+                    for (int i = 0; i < blockLen && i < rc.length; i++)
+                        merged[blockStart + i] = rc[i];
+                    writeResource(romHandle, nclrContainer, nclrId, new Palette(merged).save());
+                }
+                unmatched = 0; // a rebuilt palette fits by construction
+            }
+            else
+            {
+                // Match against the palette the sprite actually uses: the selected 16-colour sub-palette
+                // for 4bpp, the full palette for 8bpp.
+                Palette use = full;
+                if (bitDepth == 4 && fullColors.length > 16)
+                {
+                    int subCount = fullColors.length / 16;
+                    int idx = Math.max(0, Math.min(paletteIndex, subCount - 1));
+                    use = new Palette(Arrays.copyOfRange(fullColors, idx * 16, idx * 16 + 16));
+                }
+                ncgr.setPalette(use);
+                unmatched = ncgr.applyImageMatched(src);
+                if (!dryRun)
+                    writeResource(romHandle, ncgrContainer, ncgrId, ncgr.save());
+            }
+
+            return "{\"ok\":true,\"width\":" + ncgr.getWidth() + ",\"height\":" + ncgr.getHeight()
+                    + ",\"unmatched\":" + unmatched + ",\"paletteRebuilt\":" + rebuildPalette
+                    + ",\"dryRun\":" + dryRun + "}";
+        }
+        catch (Throwable t)
+        {
+            return "{\"ok\":false,\"error\":" + jstr(describe(t)) + "}";
+        }
+    }
+
+    @Override
+    public byte[] saveRom(int romHandle)
+    {
+        try
+        {
+            // updateDeviceCapacity=false, per Nds4j's own examples — the cartridge size is unchanged;
+            // save() recomputes the FAT so growing/shrinking individual files is fine.
+            byte[] out = rom(romHandle).save(false);
+            lastError = "";
+            return out;
+        }
+        catch (Throwable t)
+        {
+            lastError = describe(t);
+            return new byte[0];
+        }
+    }
+
+    @Override
+    public String lastError()
+    {
+        return lastError;
     }
 
     // --- 3D (static models) ------------------------------------------------------------------
@@ -632,6 +783,18 @@ public final class CheerpjFacade implements NitroViewerService
         return "{\"width\":" + img.getWidth() + ",\"height\":" + img.getHeight()
                 + ",\"subPalettes\":" + subPalettes
                 + ",\"png\":" + jstr(pngDataUrl(img)) + "}";
+    }
+
+    /**
+     * Render a scanned (bitmap) NCGR directly — its pixels already ARE the assembled sprite, so an NCER
+     * can't be (and needn't be) composed over it. The {@code "scanned":true} flag lets the UI note that
+     * the composed cell/animation view was replaced by the raw bitmap.
+     */
+    private static String scannedNcgrJson(IndexedImage ncgr, boolean transparent)
+    {
+        BufferedImage img = transparent ? ncgr.getTransparentImage() : ncgr.getImage();
+        return "{\"width\":" + img.getWidth() + ",\"height\":" + img.getHeight()
+                + ",\"subPalettes\":1,\"scanned\":true,\"png\":" + jstr(pngDataUrl(img)) + "}";
     }
 
     private static String pngDataUrl(BufferedImage img)

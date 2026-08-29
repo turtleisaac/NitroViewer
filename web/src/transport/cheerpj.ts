@@ -11,6 +11,7 @@ import type {
   NarcEntry,
   NitroViewerClient,
   PaletteData,
+  PngImportResult,
   ResourceRef,
   RomInfo,
   TexturePatternAnim,
@@ -196,6 +197,48 @@ export class CheerpjTransport implements NitroViewerClient {
 
   exportRaw(handle: number, ref: ResourceRef): Promise<{ size: number; base64: string }> {
     return this.enqueue(async () => unwrap(await this.f.exportRaw(handle, ref.container, ref.id)));
+  }
+
+  importRaw(handle: number, ref: ResourceRef, bytes: Uint8Array): Promise<{ size: number }> {
+    // Same signed-byte marshalling rule as openRom: Java byte[] needs an Int8Array.
+    const signed = new Int8Array(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+    return this.enqueue(async () =>
+      unwrap<{ ok: boolean; size: number }>(await this.f.importRaw(handle, ref.container, ref.id, signed))
+    );
+  }
+
+  importPng(
+    handle: number,
+    ncgr: ResourceRef,
+    nclr: ResourceRef,
+    paletteIndex: number,
+    tilesWidth: number,
+    rebuildPalette: boolean,
+    dryRun: boolean,
+    pngBytes: Uint8Array
+  ): Promise<PngImportResult> {
+    const signed = new Int8Array(pngBytes.buffer, pngBytes.byteOffset, pngBytes.byteLength);
+    return this.enqueue(async () =>
+      unwrap<PngImportResult>(
+        await this.f.importPng(
+          handle, ncgr.container, ncgr.id, nclr.container, nclr.id,
+          paletteIndex, tilesWidth, rebuildPalette, dryRun, signed
+        )
+      )
+    );
+  }
+
+  saveRom(handle: number): Promise<Uint8Array> {
+    return this.enqueue(async () => {
+      // saveRom returns the raw byte[] (an Int8Array in JS), or a zero-length array on failure —
+      // in which case lastError() carries the message. This is the one large-binary-out path.
+      const out: Int8Array = await this.f.saveRom(handle);
+      if (!out || out.length === 0) {
+        const msg: string = await this.f.lastError();
+        throw new Error(msg || "saveRom produced no data");
+      }
+      return new Uint8Array(out.buffer, out.byteOffset, out.byteLength);
+    });
   }
 
   getModelSetInfo(

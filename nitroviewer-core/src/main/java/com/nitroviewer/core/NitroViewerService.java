@@ -77,6 +77,53 @@ public interface NitroViewerService
     /** @return {"name":str,"size":int,"base64":str} raw (as-stored) bytes | {"error"} */
     String exportRaw(int romHandle, int container, int id);
 
+    // --- import / save (the write half) ---
+    /**
+     * Replace the bytes of the addressed resource. For a ROM file ({@code container < 0}):
+     * {@code rom.setFile(id, bytes)}. For a NARC entry ({@code container >= 0}): update the sub-file
+     * then repack the whole NARC back into the ROM file it came from (tracked at {@link #openNarc}).
+     * Bytes are written as-given (uncompressed); no re-LZ is applied.
+     *
+     * @return {"ok":true,"size":int} | {"ok":false,"error":str}
+     */
+    String importRaw(int romHandle, int container, int id, byte[] bytes);
+
+    /**
+     * Serialise the (possibly edited) ROM to a complete {@code .nds} image. Returns the raw
+     * {@code byte[]} (CheerpJ marshals it to a JS {@code Int8Array}); the transport wraps it in a
+     * Blob for download. This is the one path that returns a large binary rather than JSON — on
+     * failure it returns a zero-length array (call {@link #lastError()} for the message).
+     *
+     * @return the ROM bytes, or an empty array on failure
+     */
+    byte[] saveRom(int romHandle);
+
+    /** @return the message from the most recent {@link #saveRom} failure, or "" if none. */
+    String lastError();
+
+    /**
+     * Import a PNG (or any {@link javax.imageio.ImageIO}-decodable image) over an existing NCGR sprite,
+     * propagating the edit down into the NCGR (and, when {@code rebuildPalette}, the NCLR). The image
+     * must match the sprite's pixel dimensions. Quantisation is headless (Nds4j
+     * {@code IndexedImage.applyImageMatched}/{@code applyImageQuantized}).
+     * <ul>
+     *   <li>{@code rebuildPalette=false} — match each pixel to the nearest colour in the sprite's
+     *       current (sub-)palette; the NCLR is untouched. {@code unmatched} reports how many pixels
+     *       weren't an exact palette colour.</li>
+     *   <li>{@code rebuildPalette=true} — median-cut a fresh palette from the image and write both the
+     *       NCGR and the affected NCLR (sub-)palette block.</li>
+     *   <li>{@code dryRun=true} — compute {@code unmatched} without writing anything (for the
+     *       match-vs-rebuild prompt).</li>
+     * </ul>
+     * For 4bpp sprites {@code paletteIndex} selects which 16-colour sub-palette to match/rebuild.
+     *
+     * @return {"ok":true,"width","height","unmatched":int,"paletteRebuilt":bool,"dryRun":bool}
+     *         | {"ok":false,"error":str}
+     */
+    String importPng(int romHandle, int ncgrContainer, int ncgrId, int nclrContainer, int nclrId,
+                     int paletteIndex, int tilesWidth, boolean rebuildPalette, boolean dryRun,
+                     byte[] pngBytes);
+
     // --- 3D (static models) ---
     /** @return {"hasEmbeddedTextures":bool,"models":["name",...]} | {"error"} for an NSBMD */
     String getModelSetInfo(int romHandle, int container, int id);

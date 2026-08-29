@@ -47,6 +47,8 @@ body { background: var(--bg); color: var(--text); font-size: 13px; }
 .btn:disabled { background: #262a34; color: #5c6373; cursor: default; }
 .btn--lg { padding: 11px 22px; font-size: 14px; }
 .btn--sm { padding: 5px 11px; font-size: 12px; }
+.btn--save { background: linear-gradient(180deg, #2fbf6b, #22a35b); }
+.btn--save:disabled { background: #262a34; }
 
 /* Body */
 .body { flex: 1 1 auto; min-height: 0; }
@@ -87,11 +89,26 @@ body { background: var(--bg); color: var(--text); font-size: 13px; }
 .inspector { background: var(--bg); }
 .inspector-head { text-transform: none; letter-spacing: 0; font-size: 12.5px; color: var(--text); }
 .insp-name { font-weight: 600; overflow: hidden; text-overflow: ellipsis; max-width: 40ch; white-space: nowrap; }
+.insp-crumbs { display: inline-flex; align-items: center; gap: 6px; min-width: 0; max-width: 60%; }
+.crumb { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.crumb--link { background: none; border: 0; padding: 0; font: inherit; color: #9fb6ff; cursor: pointer;
+  max-width: 40ch; overflow: hidden; text-overflow: ellipsis; }
+.crumb--link:hover { text-decoration: underline; filter: brightness(1.1); }
+.crumb--current { color: var(--text); font-weight: 600; flex: none; }
+.crumb-sep { color: #5c6373; flex: none; }
 .spacer { flex: 1 1 auto; }
 .dim { color: var(--text-faint); font-weight: 400; }
 .badge { font-size: 10.5px; font-weight: 650; padding: 2px 7px; border-radius: 999px; background: #2a2f3b; color: #aeb6c8; letter-spacing: .03em; }
 .badge--fmt { background: #223056; color: #9fb6ff; }
 .badge--lz { background: #3a2b16; color: #e5b13a; }
+.badge--dirty { background: #3a1a1f; color: #ff8a9c; }
+
+.import-choice {
+  display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+  margin: 8px 0; padding: 8px 12px; border-radius: var(--radius);
+  background: #2a221a; color: #e5c07a; border: 1px solid #4a3a22; font-size: 12.5px;
+}
+.import-choice .link-btn { color: #aeb6c8; }
 
 .inspector-body { flex: 1 1 auto; min-height: 0; overflow: auto; padding: 16px; }
 .placeholder { color: var(--text-faint); padding: 24px; }

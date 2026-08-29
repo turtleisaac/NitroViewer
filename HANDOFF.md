@@ -14,16 +14,33 @@ This doc covers: current state, how to work in the repo, the hard-won quirks, an
 ## 1. Current state (what's done)
 
 **Read/view side is complete and deployed:**
-- **2D:** NCGR (sprites) · NCLR (palettes) · NSCR (tilemaps) · NCER (cells) · NANR (cell animation, plays)
-  — with palette-pairing UX, 4bpp sub-palette selection, LZ decompression, PNG export.
+- **2D:** NCGR (sprites) · NCLR (palettes) · NSCR (tilemaps) · NCER (cells) · NANR (cell animation, plays,
+  auto-selects the first multi-frame clip so it looks alive on open) — with palette-pairing UX, 4bpp
+  sub-palette selection, LZ decompression, PNG export.
 - **NARC** browse (format-typed entries) + **raw file export**.
 - **3D / effects (full Nitro stack):** NSBMD models + NSBTX textures (three.js, orbit/zoom/pan, unlit),
   NSBCA skeletal animation (glTF), NSBMA/NSBVA/NSBTP tracks (three.js-driven per-frame), SPA particles
-  (server-rendered frame player), glTF export, model/texture/animation pickers, smart NSBCA auto-pairing.
-- **Infra:** responsive layout, GitHub Actions CI/CD to Pages, 13 JUnit facade tests + 10 vitest tests.
+  (server-rendered frame player), glTF export, **Capture PNG of the 3D view**, model/texture/animation
+  pickers, smart NSBCA auto-pairing.
+- **Write/edit/save (MVP done — §6):** **Import…** replaces any file's bytes (ROM file or NARC sub-file,
+  auto-repacked into its ROM file); **Save ROM** serialises the edited image and downloads the `.nds`;
+  dirty indicator + `beforeunload` guard; viewers re-decode edited bytes immediately.
+- **Asset import — PNG→NCGR/NCLR done:** SpriteViewer **Import PNG…** replaces a sprite's pixels,
+  propagating down to the NCGR (and NCLR when rebuilding). Headless quantisers live in Nds4j
+  (`IndexedImage.applyImageMatched`/`applyImageQuantized`, replacing the deprecated JPanel path); the UI
+  offers **Match to palette** vs **Rebuild palette** with the unmatched-pixel count. Faithful round-trip
+  (export→recolour→re-import) verified on the HG player sprite.
+- **Scanned (bitmap) NCGR handling:** a scanned NCGR viewed through an NCER (DPPt trainer sprites,
+  `trbgra.narc`) can't be tile-composed by Nds4j — it now renders the NCGR **bitmap directly** (the
+  assembled sprite) with a note, instead of throwing.
+- **Infra:** responsive layout, GitHub Actions CI/CD to Pages, 19 JUnit facade tests + 4 Nds4j quantiser
+  tests + 10 vitest tests.
 
-**Not done:** the entire **write/edit/save** path (this doc's focus), plus formats Nds4j can't parse yet
-(NFTR fonts, NMCR/NMAR multi-cell) and SPA-track niceties. See §5.
+**Not done:** more asset import (glTF/OBJ→NSBMD — facade write path exists, encoders are §6.2), bitmap-OBJ
+NCER composition (Nds4j RE task), formats Nds4j can't parse yet (NFTR fonts, NMCR/NMAR), SPA-track niceties.
+
+> **Sprite viewing tip:** NCGRs are often stored as a linear strip — set the **Tile width** control
+> (in *tiles*: 64px = 8) to see the real 2D sprite; auto (0) can look like garbled strips.
 
 ---
 
@@ -135,9 +152,13 @@ frames' buffers to detect animation. Keep throwaway driver scripts in a scratch 
 
 ## 5. Read-side backlog (small)
 
-- Smarter model↔NSBCA/track pairing (currently nearest-at-or-after by index; sometimes wrong).
-- NANR: auto-select a multi-frame clip (default clip 0 is often single-frame → looks static).
-- Model lighting/material polish; a ground grid; "capture PNG" of the 3D view.
+- Smarter model↔NSBCA/track pairing (currently nearest-at-or-after by index; sometimes wrong). The
+  systematic fix is the **per-game asset manifest in §8** (declare the groupings; heuristics fall back).
+- ~~NANR: auto-select a multi-frame clip~~ **DONE** (`SpriteViewer` jumps to the first `frames > 1`
+  animation and auto-plays).
+- ~~"capture PNG" of the 3D view~~ **DONE** (`ModelViewer` "Capture PNG ↓";
+  `preserveDrawingBuffer: true` + on-demand `toDataURL`). Still open: model lighting/material polish, a
+  ground grid.
 - Formats Nds4j can't parse yet: **NFTR** (fonts), **NMCR/NMAR** (multi-cell) — need Nds4j support first.
 - SPA: emitter isolation, adjustable frame count/size, background toggle.
 
@@ -148,6 +169,16 @@ frames' buffers to detect animation. Keep throwaway driver scripts in a scratch 
 This is the big remaining half of Tinke: **replace/import files and assets, then save the modified `.nds`.**
 The architecture already supports it — the facade holds a **mutable in-memory `NintendoDsRom`** per handle.
 The model is: **edits accumulate in that ROM; "Save ROM" serialises and downloads the `.nds`.**
+
+> **STATUS: MVP shipped & verified (2026-08-28).** Phase-1 (`importRaw` + `saveRom` + Save button +
+> dirty flag) is done and proven end-to-end. The **128 MB `byte[]` save path across CheerpJ works**:
+> `saveRom` returns the raw `byte[]` (JS gets an `Int8Array`, wrapped in a Blob); HeartGold round-trips
+> a 126.6 MB `.nds` in-browser in headless Chrome. JUnit round-trip tests (NARC sub-file **and** top-level
+> ROM file → save → reopen → bytes match, siblings unchanged) pass. Remaining: Phase-2 asset import
+> (PNG→NCGR, glTF→NSBMD via the §6.2/§6.1 encoders) and Phase-3 polish (undo/redo, per-format UIs, batch).
+> **Facade contract note:** `saveRom` returns `byte[]` (not JSON) and, on failure, an **empty array** —
+> call `lastError()` for the message (both awaited inside one transport `enqueue`, so still serial).
+> `openNarc` now records `narcRomFile[narcHandle] = {romHandle, romFileId}` so `importRaw` can repack.
 
 ### 6.1 Nds4j write APIs (confirmed, real signatures)
 - `NintendoDsRom.setFile(int index, byte[] data)` / `setFileByName(String path, byte[])` — replace a ROM file.
@@ -230,3 +261,135 @@ Right now the facade doesn't store that link.
     `ModelViewer` (3D + tracks), `ParticleViewer`, `NarcBrowser`, `TreePane`.
 - `.github/workflows/deploy.yml` · `scripts/{build-jars,serve-static,serve-spike}.{sh,py}` · `Makefile`
 - Memory: `~/.claude/projects/…/memory/nitroviewer-cheerpj-spike.md` has the condensed quirks.
+
+---
+
+## 8. Future: per-game asset manifest ("game DB")
+
+**Problem.** Today the app *guesses* how related files pair up — `state/pairing.ts` (`pickSibling`,
+`pickNearestAfter`) picks NCGR/NCLR/NCER siblings by index proximity, and per-entry render facts are
+inferred at view time (tile width, 4bpp sub-palette, and — as the `trbgra.narc` case showed — whether an
+NCGR is scanned). That's fragile: the correct **tile width** is often un-guessable (an NCGR is a linear
+strip until you pick the right width), a NANR's real **NCER/NCGR/NCLR** may not be its index-neighbours,
+and 3D **model↔texture↔animation** sets pair by a nearest-index heuristic that's "sometimes wrong" (§5).
+
+**Concept.** Ship a declarative **game DB**: JSON, keyed by 4-char game code, that *declares* how the
+sibling files in a NARC group into renderable units, plus per-unit/per-entry render hints. Resolution is
+**manifest-first, heuristic-fallback** — a known game/NARC returns exact answers; anything unlisted falls
+back to today's `pairing.ts` rules, so coverage can grow incrementally without regressing unknown ROMs.
+The whole point: **clicking a NANR resolves to exactly the NCGR + NCLR + NCER (and the tile width) to
+load — no guessing.**
+
+### Where it lives / how it plugs in
+- Frontend data: `web/src/gamedb/*.json` (one file per game, or a bundled `gamedb.json`), loaded at boot
+  and cached. It's pure data behind the transport, so an HTTP backend could serve it later unchanged.
+- A resolver — `web/src/state/grouping.ts` — exposes `resolveUnit(gameCode, narcPath, ref): AssetUnit | null`.
+  The store consults it in `select()` / the viewers' auto-pair effects **before** `pairing.ts`. When it
+  returns `null`, the existing heuristic runs (unchanged).
+- Keying: `romInfo.gameCode` (already in the store). Support region-agnostic entries via a trailing `*`
+  wildcard (`"CPU*"` = Platinum all regions); exact code wins over wildcard. NARCs are addressed by **FNT
+  path** when named (DPPt: `/poketool/trgra/trbgra.narc`) or by numbered FNT path (HGSS: `a/0/0/4`).
+
+### Schema sketch (v1)
+```jsonc
+{
+  "version": 1,
+  "games": {
+    "CPU*": {                                    // Pokémon Platinum, any region
+      "title": "Pokémon Platinum",
+      "narcs": {
+        "/poketool/trgra/trbgra.narc": {
+          "role": "sprite-set",
+          // The NARC holds equal-length runs of each format, in this order; unit i = the i-th entry of
+          // each run (nclr[i], ncgr[i], ncer[i], nanr[i]). Counts inferred from the detected runs, or set `count`.
+          "grouping": { "strategy": "lockstep", "order": ["NCLR", "NCGR", "NCER", "NANR"] },
+          "render":   { "tileWidth": 20, "transparent": true },   // per-unit defaults
+          "entries":  { "19": { "scanned": true, "role": "bitmap-sprite" } }  // per-index overrides
+        }
+      },
+      "models": {
+        "/poketool/pokegra/…": {
+          // 3D set: which NSBMD pairs with which NSBTX/NSBCA and driven tracks
+          "grouping": { "strategy": "model-set",
+                        "model": "NSBMD", "texture": "embedded|NSBTX",
+                        "anim": "NSBCA", "tracks": ["NSBMA", "NSBVA", "NSBTP"] }
+        }
+      }
+    }
+  }
+}
+```
+
+### Grouping strategies (extensible)
+- **`lockstep`** — equal-length runs of each format in a stated `order`; unit i aligns the i-th of each.
+  (The common Pokémon layout: a block of NCLR, then NCGR, then NCER, then NANR.)
+- **`interleaved`** — entries repeat a fixed pattern per unit, e.g. `["NCLR","NCGR","NCER","NANR"]`.
+- **`explicit`** — an array of units with exact indices: `[{ "nclr":1, "ncgr":19, "ncer":32, "nanr":43 }]`.
+- **`model-set`** — 3D: pair NSBMD with its NSBTX/NSBCA/tracks (declared, replacing `pickNearestAfter`).
+
+### Data split across NARCs (cross-NARC units)
+A unit's parts are often in **different NARCs** — e.g. models in `build_model.narc` and their textures in
+`build_model_tex.narc`, aligned by index; or Pokémon where the NSBMD and its NSBTX live in parallel
+archives. The `(container, id)` facade calls **already** accept a different open NARC per role (each ref is
+independent — `exportModelGltf` takes separate `nsbmd`/`nsbtx`/`nsbca` refs, `decodeNcgr` separate
+`ncgr`/`nclr` refs), so nothing in the transport or Java changes. The manifest expresses it, and the
+resolver opens the sibling NARC on demand. Model each role as `{ narc, format, index }` (omit `narc` to
+mean "this NARC") under a top-level `sets` list:
+
+```jsonc
+"sets": [
+  {
+    "role": "model-set",
+    "align": "index",                 // unit i = index i in each member (see alignments below)
+    "members": {
+      "model":   { "narc": "/data/build_model.narc",     "format": "NSBMD" },
+      "texture": { "narc": "/data/build_model_tex.narc", "format": "NSBTX" },
+      "anim":    { "narc": "/data/build_model_anim.narc","format": "NSBCA" }
+    },
+    "render": { "unlit": true }
+  }
+]
+```
+Click NSBMD `#i` in `build_model.narc` → resolver finds the set whose `model.narc` matches, and returns
+`{ model: (build_model,i), texture: (build_model_tex,i), anim: (build_model_anim,i) }` — refs spanning
+three containers. Intra-NARC groupings are just the degenerate case where every member omits `narc`.
+
+**Member alignments** (how a member's index is derived from the clicked unit's index `i`):
+- **`index`** — parallel archives, member index = `i` (the common case).
+- **`offset`** — member index = `i + k` (per-member constant), for archives that lead/lag.
+- **`explicit`** — a per-unit index table when there's no arithmetic relation.
+- **`by-name`** — match by the internal asset name (NSBMD material texture-names ↔ the NSBTX's texture
+  names; NSBMD model name ↔ NSBCA name). Robust when archives aren't index-aligned; a good heuristic
+  fallback even without a manifest.
+
+**Resolver/store implications** (the one new piece of plumbing):
+- Manifest references NARCs by **FNT path**, so the resolver first maps path → `romFileId` (walk the tree)
+  → `store.ensureNarc(romFileId)` to get/open each member NARC's handle. A cross-NARC unit therefore may
+  **open a second (or third) NARC lazily** the first time it's resolved; cache the handles (the store
+  already memoises `fileToNarc`).
+- `resolveUnit` returns refs whose `container` fields are **different narc handles** — the viewers already
+  pass per-role refs straight through, so `ModelViewer`/`SpriteViewer` need only stop assuming siblings
+  share the selection's container (today `siblingsOfFormat` scans one container; it gains a manifest path
+  that pulls candidates from the member NARCs instead).
+
+### Render hints (stop guessing these too)
+Per-unit or per-entry: **`tileWidth`** (the big one — kills the "linear strip" problem), `bitDepth`,
+`paletteIndex` (4bpp sub-palette), `transparent`, and **`scanned`** (so the bitmap-NCGR path in
+`decodeNcer`/`decodeNanr` is chosen from data, not sniffed). These flow into the existing decode calls.
+
+### Resolution, for "click NANR/NSBMD at (narc, id)"
+1. `gameCode` → best game key (exact, else `*`-wildcard).
+2. Selected NARC's FNT path → look for a matching `narcs[path]` (intra-NARC) **or** a `sets` entry whose
+   member `narc` matches (cross-NARC).
+3. Apply the `grouping`/`align` strategy to find the unit containing this file → refs for every role
+   (possibly across containers) + render hints, e.g. `{ nclr, ncgr, ncer, tileWidth }` or
+   `{ model, texture, anim }`. For cross-NARC members, `ensureNarc` the member archives to get their handles.
+4. Any miss (unknown game / NARC / entry) → fall back to `pairing.ts` + view-time inference.
+
+### Authoring & growth
+- Seed it from the cases already learned (trbgra scanned + tile widths; HG player-sprite widths) and grow
+  per game. The store already records **manual `pairingOverrides`** (and, after the tile-width fix, the
+  user's chosen tile width) — a small "export overrides → manifest stub" dev action could turn hands-on
+  corrections into DB entries, so the app *learns* the right groupings once and never re-guesses.
+- Community-editable: adding a game is just adding a JSON file; no code change. Consider a lightweight
+  schema (`$schema` + CI validation) so contributed entries stay well-formed.
