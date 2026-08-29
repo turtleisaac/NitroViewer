@@ -6,7 +6,8 @@
 set -euo pipefail
 
 here="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-nds4j="$(cd "$here/../Nds4j" && pwd)"
+# Nds4j source lives beside this repo by default; CI can override with NDS4J_DIR.
+nds4j="$(cd "${NDS4J_DIR:-$here/../Nds4j}" && pwd)"
 
 echo "==> Installing Nds4j (feature/3d-formats) from $nds4j"
 mvn -q -f "$nds4j/pom.xml" -DskipTests install

@@ -1,0 +1,83 @@
+name: Deploy to GitHub Pages
+
+# Builds the Nds4j jar (from its own repo), the NitroViewer facade jar, and the SPA, then publishes
+# the static site to GitHub Pages. The whole app runs in the visitor's browser via CheerpJ, so this
+# only ships static files — no server-side runtime.
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# Allow one concurrent deployment; don't cancel an in-progress one.
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout NitroViewer
+        uses: actions/checkout@v4
+        with:
+          path: NitroViewer
+
+      # Nds4j lives in its own repo; the facade depends on the feature/3d-formats branch.
+      - name: Checkout Nds4j
+        uses: actions/checkout@v4
+        with:
+          repository: turtleisaac/Nds4j
+          ref: feature/3d-formats
+          path: Nds4j
+
+      - name: Set up JDK
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+          cache: maven
+
+      # Installs Nds4j into ~/.m2, builds the facade jar, and stages both into web/public/jars.
+      - name: Build & stage jars
+        working-directory: NitroViewer
+        env:
+          NDS4J_DIR: ${{ github.workspace }}/Nds4j
+        run: ./scripts/build-jars.sh
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: NitroViewer/web/package-lock.json
+
+      - name: Build SPA
+        working-directory: NitroViewer/web
+        run: |
+          npm ci
+          npm run build
+
+      - name: Configure Pages
+        uses: actions/configure-pages@v5
+
+      - name: Upload artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: NitroViewer/web/dist
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
