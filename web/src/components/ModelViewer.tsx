@@ -36,6 +36,25 @@ interface Three {
   vis: VisibilityAnim | null;
   visNodeByMaterial: Map<string, number>;
   texPat: TexPat | null;
+  // CPU skinning (iOS Safari's GPU skinning leaves skinned meshes in bind pose):
+  cpuSkins: { sm: THREE.SkinnedMesh; geom: THREE.BufferGeometry; count: number; tmp: THREE.Vector3 }[];
+}
+
+// Skin skinned meshes on the CPU into their display geometry. GPU skinning silently fails on iOS Safari
+// (the mixer updates the bones, but the vertex shader doesn't deform the mesh, so it stays in bind pose).
+// DS models are tiny, so per-vertex CPU skinning every frame is cheap and works everywhere. Unlit
+// MeshBasicMaterial ignores normals, so only positions need updating.
+function applySkinning(t: Three) {
+  if (!t.cpuSkins.length) return;
+  t.root.updateMatrixWorld(true); // propagate the mixer's bone transforms into world matrices
+  for (const cs of t.cpuSkins) {
+    const pos = cs.geom.getAttribute("position") as THREE.BufferAttribute;
+    for (let i = 0; i < cs.count; i++) {
+      cs.sm.applyBoneTransform(i, cs.tmp);
+      pos.setXYZ(i, cs.tmp.x, cs.tmp.y, cs.tmp.z);
+    }
+    pos.needsUpdate = true;
+  }
 }
 
 const frameOf = (timeSec: number, frameCount: number) =>
@@ -199,7 +218,7 @@ export default function ModelViewer() {
       renderer, scene, camera, controls, root, render,
       clock: new THREE.Clock(), mixer: null, actions: [], ro: null as unknown as ResizeObserver,
       trackTime: 0, materialsByName: new Map(), meshes: [],
-      matColor: null, vis: null, visNodeByMaterial: new Map(), texPat: null,
+      matColor: null, vis: null, visNodeByMaterial: new Map(), texPat: null, cpuSkins: [],
     };
 
     const ro = new ResizeObserver(() => {
@@ -316,6 +335,29 @@ export default function ModelViewer() {
             } else {
               setAnimNames([]);
             }
+
+            // Replace each SkinnedMesh with a CPU-skinned plain-mesh copy (GPU skinning fails on iOS
+            // Safari — see applySkinning). The SkinnedMesh is hidden but kept, so its skeleton is still
+            // driven by the mixer; we recompute its display copy's vertices each frame on the CPU.
+            t.cpuSkins = [];
+            const skinned: THREE.SkinnedMesh[] = [];
+            gltf.scene.traverse((o) => {
+              if ((o as THREE.SkinnedMesh).isSkinnedMesh) skinned.push(o as THREE.SkinnedMesh);
+            });
+            for (const sm of skinned) {
+              sm.updateMatrix();
+              const geom = sm.geometry.clone();
+              const display = new THREE.Mesh(geom, sm.material as THREE.Material);
+              display.name = sm.name;
+              display.frustumCulled = false; // verts change every frame; don't cull on stale bounds
+              display.matrixAutoUpdate = false;
+              display.matrix.copy(sm.matrix);
+              (sm.parent ?? gltf.scene).add(display);
+              sm.visible = false;
+              t.cpuSkins.push({ sm, geom, count: geom.getAttribute("position").count, tmp: new THREE.Vector3() });
+            }
+
+            applySkinning(t);
             t.render();
             setLoadTick((n) => n + 1);
             setBusy(false);
@@ -354,6 +396,7 @@ export default function ModelViewer() {
       }
     });
     t.mixer?.update(0);
+    applySkinning(t);
     t.render();
   }, [animIndex, playing, loadTick]);
 
@@ -428,13 +471,14 @@ export default function ModelViewer() {
     const t = three.current;
     if (!t) return;
     applyTracks(t);
+    applySkinning(t);
     t.render();
   }, [tracksTick, loadTick, playing]);
 
-  // Drive the animation while playing (never during an export — `busy` gates it). We use setInterval
-  // rather than requestAnimationFrame because iOS Safari starves the rAF loop for the WebGL canvas under
-  // memory pressure (2D NANR playback, which uses a timer, keeps running fine there), leaving the model
-  // static. dt still comes from the clock, so playback speed is correct regardless of interval drift.
+  // Drive the animation while playing (never during an export — `busy` gates it). A setInterval timer
+  // (like the 2D NANR player) rather than requestAnimationFrame: harmless, and it can't be starved by
+  // CheerpJ's cooperative main-thread execution. dt comes from the clock, so playback speed is correct
+  // regardless of interval drift. (Skinned models also need applySkinning — GPU skinning fails on iOS.)
   useEffect(() => {
     const t = three.current;
     const hasAnim = !!(animNames.length > 0 || t?.matColor || t?.vis || t?.texPat);
@@ -446,6 +490,7 @@ export default function ModelViewer() {
       if (t.mixer) t.mixer.update(dt);
       t.trackTime += dt;
       applyTracks(t);
+      applySkinning(t);
       t.render();
       if (++n % 15 === 0) setFrames(n); // throttled live counter — proves the loop is running on-device
     }, 1000 / 60);
