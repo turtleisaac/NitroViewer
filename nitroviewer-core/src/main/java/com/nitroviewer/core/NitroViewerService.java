@@ -216,7 +216,8 @@ public interface NitroViewerService
      * @return {"ok":true,"unmatched":int} | {"ok":false,"error":str}
      */
     String importCellPng(int romHandle, int ncerContainer, int ncerId, int ncgrContainer, int ncgrId,
-                         int nclrContainer, int nclrId, int cellIndex, byte[] pngBytes);
+                         int nclrContainer, int nclrId, int cellIndex, boolean rebuildPalette,
+                         boolean dryRun, byte[] pngBytes);
 
     /**
      * Import an image over the NCER cell an NANR frame references (edits the animation's artwork). Image
@@ -225,7 +226,7 @@ public interface NitroViewerService
      */
     String importNanrPng(int romHandle, int nanrContainer, int nanrId, int ncerContainer, int ncerId,
                          int ncgrContainer, int ncgrId, int nclrContainer, int nclrId,
-                         int animIndex, int frameIndex, byte[] pngBytes);
+                         int animIndex, int frameIndex, boolean rebuildPalette, boolean dryRun, byte[] pngBytes);
 
     // --- 3D (static models) ---
     /** @return {"hasEmbeddedTextures":bool,"models":["name",...]} | {"error"} for an NSBMD */

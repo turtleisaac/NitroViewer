@@ -289,13 +289,16 @@ export class CheerpjTransport implements NitroViewerClient {
     ncgr: ResourceRef,
     nclr: ResourceRef,
     cellIndex: number,
+    rebuildPalette: boolean,
+    dryRun: boolean,
     pngBytes: Uint8Array
-  ): Promise<{ ok: boolean; unmatched: number }> {
+  ): Promise<{ ok: boolean; unmatched: number; paletteRebuilt: boolean; dryRun: boolean }> {
     const signed = new Int8Array(pngBytes.buffer, pngBytes.byteOffset, pngBytes.byteLength);
     return this.enqueue(async () =>
       unwrap(
         await this.f.importCellPng(
-          handle, ncer.container, ncer.id, ncgr.container, ncgr.id, nclr.container, nclr.id, cellIndex, signed
+          handle, ncer.container, ncer.id, ncgr.container, ncgr.id, nclr.container, nclr.id,
+          cellIndex, rebuildPalette, dryRun, signed
         )
       )
     );
@@ -309,14 +312,16 @@ export class CheerpjTransport implements NitroViewerClient {
     nclr: ResourceRef,
     animIndex: number,
     frameIndex: number,
+    rebuildPalette: boolean,
+    dryRun: boolean,
     pngBytes: Uint8Array
-  ): Promise<{ ok: boolean; unmatched: number; cellIndex: number }> {
+  ): Promise<{ ok: boolean; unmatched: number; cellIndex: number; paletteRebuilt: boolean; dryRun: boolean }> {
     const signed = new Int8Array(pngBytes.buffer, pngBytes.byteOffset, pngBytes.byteLength);
     return this.enqueue(async () =>
       unwrap(
         await this.f.importNanrPng(
           handle, nanr.container, nanr.id, ncer.container, ncer.id, ncgr.container, ncgr.id,
-          nclr.container, nclr.id, animIndex, frameIndex, signed
+          nclr.container, nclr.id, animIndex, frameIndex, rebuildPalette, dryRun, signed
         )
       )
     );

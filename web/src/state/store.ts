@@ -123,8 +123,10 @@ interface AppState {
     ncgr: ResourceRef,
     nclr: ResourceRef,
     cellIndex: number,
+    rebuildPalette: boolean,
+    dryRun: boolean,
     bytes: Uint8Array
-  ) => Promise<{ unmatched: number }>;
+  ) => Promise<{ ok: boolean; unmatched: number }>;
   importNanrPng: (
     nanr: ResourceRef,
     ncer: ResourceRef,
@@ -132,8 +134,10 @@ interface AppState {
     nclr: ResourceRef,
     animIndex: number,
     frameIndex: number,
+    rebuildPalette: boolean,
+    dryRun: boolean,
     bytes: Uint8Array
-  ) => Promise<{ unmatched: number; cellIndex: number }>;
+  ) => Promise<{ ok: boolean; unmatched: number; cellIndex: number }>;
   undo: () => Promise<void>;
   redo: () => Promise<void>;
 }
@@ -431,28 +435,30 @@ export const useStore = create<AppState>((set, get) => ({
     return res;
   },
 
-  importCellPng: async (ncer, ncgr, nclr, cellIndex, bytes) => {
+  importCellPng: async (ncer, ncgr, nclr, cellIndex, rebuildPalette, dryRun, bytes) => {
     const { client, romHandle } = get();
     if (romHandle == null) throw new Error("no ROM open");
-    const snap = await snapshot(client, romHandle, [ncgr], "Import cell");
-    const res = await client.importCellPng(romHandle, ncer, ncgr, nclr, cellIndex, bytes);
-    if (res.ok) {
-      set((s) => ({ undoStack: [...s.undoStack, snap], redoStack: [] }));
-      await refreshAfterEdit(get, set, romHandle, [ncgr]);
+    const touched = rebuildPalette ? [ncgr, nclr] : [ncgr];
+    const snap = dryRun ? null : await snapshot(client, romHandle, touched, "Import cell");
+    const res = await client.importCellPng(romHandle, ncer, ncgr, nclr, cellIndex, rebuildPalette, dryRun, bytes);
+    if (!dryRun && res.ok) {
+      if (snap) set((s) => ({ undoStack: [...s.undoStack, snap], redoStack: [] }));
+      await refreshAfterEdit(get, set, romHandle, touched);
     }
-    return { unmatched: res.unmatched };
+    return { ok: res.ok, unmatched: res.unmatched };
   },
 
-  importNanrPng: async (nanr, ncer, ncgr, nclr, animIndex, frameIndex, bytes) => {
+  importNanrPng: async (nanr, ncer, ncgr, nclr, animIndex, frameIndex, rebuildPalette, dryRun, bytes) => {
     const { client, romHandle } = get();
     if (romHandle == null) throw new Error("no ROM open");
-    const snap = await snapshot(client, romHandle, [ncgr], "Import animation cell");
-    const res = await client.importNanrPng(romHandle, nanr, ncer, ncgr, nclr, animIndex, frameIndex, bytes);
-    if (res.ok) {
-      set((s) => ({ undoStack: [...s.undoStack, snap], redoStack: [] }));
-      await refreshAfterEdit(get, set, romHandle, [ncgr]);
+    const touched = rebuildPalette ? [ncgr, nclr] : [ncgr];
+    const snap = dryRun ? null : await snapshot(client, romHandle, touched, "Import animation cell");
+    const res = await client.importNanrPng(romHandle, nanr, ncer, ncgr, nclr, animIndex, frameIndex, rebuildPalette, dryRun, bytes);
+    if (!dryRun && res.ok) {
+      if (snap) set((s) => ({ undoStack: [...s.undoStack, snap], redoStack: [] }));
+      await refreshAfterEdit(get, set, romHandle, touched);
     }
-    return { unmatched: res.unmatched, cellIndex: res.cellIndex };
+    return { ok: res.ok, unmatched: res.unmatched, cellIndex: res.cellIndex };
   },
 
   importScreenPng: async (nscr, ncgr, nclr, dedupFlips, rebuildPalette, dryRun, bytes) => {

@@ -887,11 +887,20 @@ class CheerpjFacadeTest
         String pngBefore = strField(dec, "png");
         byte[] pngBytes = java.util.Base64.getDecoder().decode(pngBefore.substring(pngBefore.indexOf(',') + 1));
 
-        String res = svc.importCellPng(rom2, narc, ncerI, narc, ncgrI, narc, nclrI, 0, pngBytes);
+        String res = svc.importCellPng(rom2, narc, ncerI, narc, ncgrI, narc, nclrI, 0, false, false, pngBytes);
         assertThat(res).contains("\"ok\":true").contains("\"unmatched\":0");
 
         String pngAfter = strField(svc.decodeNcer(rom2, narc, ncerI, narc, ncgrI, narc, nclrI, 0, false), "png");
         assertThat(pngAfter).as("re-rendered cell is identical after the write-back").isEqualTo(pngBefore);
+
+        // Rebuild mode: build a NEW palette from a transparent-render of the cell and write it back too.
+        String pngT = strField(svc.decodeNcer(rom2, narc, ncerI, narc, ncgrI, narc, nclrI, 0, true), "png");
+        byte[] pngTBytes = java.util.Base64.getDecoder().decode(pngT.substring(pngT.indexOf(',') + 1));
+        String nclrBefore = strField(svc.exportRaw(rom2, narc, nclrI), "base64");
+        String rb = svc.importCellPng(rom2, narc, ncerI, narc, ncgrI, narc, nclrI, 0, true, false, pngTBytes);
+        assertThat(rb).contains("\"ok\":true").contains("\"paletteRebuilt\":true");
+        assertThat(strField(svc.exportRaw(rom2, narc, nclrI), "base64"))
+                .as("rebuild rewrites the NCLR").isNotEqualTo(nclrBefore);
     }
 
     @Test

@@ -139,7 +139,7 @@ export function SpriteViewer() {
   const [impBusy, setImpBusy] = useState(false);
   const [dedupFlips, setDedupFlips] = useState(true);
   const [pending, setPending] = useState<
-    { bytes: Uint8Array; unmatched: number; w: number; h: number; kind: "ncgr" | "screen" } | null
+    { bytes: Uint8Array; unmatched: number; w: number; h: number; kind: "ncgr" | "screen" | "cell" | "nanr" } | null
   >(null);
 
   // All resources of the selected file's own format, ordered by container index.
@@ -340,7 +340,8 @@ export function SpriteViewer() {
     }
   };
 
-  // Import an image over the composed NCER cell → decomposes into the NCGR tiles (match mode).
+  // Import an image over the composed NCER cell → decomposes into the NCGR tiles. Dry-run to match first;
+  // if it fits, apply, else prompt match-vs-rebuild (rebuild synthesises a new NCLR from the image).
   const onCellPngChosen = async (file: File) => {
     if (!pair.ncgr || !pair.nclr) {
       alert("A cell import needs a tileset (NCGR) and a palette (NCLR) — pick them first.");
@@ -349,10 +350,10 @@ export function SpriteViewer() {
     setImpBusy(true);
     try {
       const bytes = new Uint8Array(await file.arrayBuffer());
-      const res = await importCellPng(selection.ref, pair.ncgr, pair.nclr, cellIndex, bytes);
-      if (res.unmatched > 0)
-        // eslint-disable-next-line no-console
-        console.info(`Cell import: ${res.unmatched} pixels weren't an exact palette match.`);
+      const dry = await importCellPng(selection.ref, pair.ncgr, pair.nclr, cellIndex, false, true, bytes);
+      if (!dry.ok) throw new Error("import failed");
+      if (dry.unmatched === 0) await importCellPng(selection.ref, pair.ncgr, pair.nclr, cellIndex, false, false, bytes);
+      else setPending({ bytes, unmatched: dry.unmatched, w: 0, h: 0, kind: "cell" });
     } catch (e) {
       alert("Cell import failed: " + (e as Error).message);
     } finally {
@@ -369,10 +370,10 @@ export function SpriteViewer() {
     setImpBusy(true);
     try {
       const bytes = new Uint8Array(await file.arrayBuffer());
-      const res = await importNanrPng(selection.ref, pair.ncer, pair.ncgr, pair.nclr, animIndex, frameIndex, bytes);
-      if (res.unmatched > 0)
-        // eslint-disable-next-line no-console
-        console.info(`Animation cell #${res.cellIndex} import: ${res.unmatched} pixels weren't an exact match.`);
+      const dry = await importNanrPng(selection.ref, pair.ncer, pair.ncgr, pair.nclr, animIndex, frameIndex, false, true, bytes);
+      if (!dry.ok) throw new Error("import failed");
+      if (dry.unmatched === 0) await importNanrPng(selection.ref, pair.ncer, pair.ncgr, pair.nclr, animIndex, frameIndex, false, false, bytes);
+      else setPending({ bytes, unmatched: dry.unmatched, w: 0, h: 0, kind: "nanr" });
     } catch (e) {
       alert("Animation cell import failed: " + (e as Error).message);
     } finally {
@@ -387,6 +388,12 @@ export function SpriteViewer() {
       if (pending.kind === "screen") {
         if (!pair.ncgr || !pair.nclr) return;
         await importScreenPng(selection.ref, pair.ncgr, pair.nclr, dedupFlips, rebuild, false, pending.bytes);
+      } else if (pending.kind === "cell") {
+        if (!pair.ncgr || !pair.nclr) return;
+        await importCellPng(selection.ref, pair.ncgr, pair.nclr, cellIndex, rebuild, false, pending.bytes);
+      } else if (pending.kind === "nanr") {
+        if (!pair.ncer || !pair.ncgr || !pair.nclr) return;
+        await importNanrPng(selection.ref, pair.ncer, pair.ncgr, pair.nclr, animIndex, frameIndex, rebuild, false, pending.bytes);
       } else {
         if (!pair.nclr) return;
         await importPng(selection.ref, pair.nclr, paletteIndex, tilesWidth, rebuild, false, pending.bytes);
@@ -514,9 +521,9 @@ export function SpriteViewer() {
         <div className="import-choice">
           <span>
             {pending.unmatched.toLocaleString()}
-            {pending.kind === "screen"
-              ? " pixels don't match the current palette."
-              : ` of ${(pending.w * pending.h).toLocaleString()} pixels don't match the current palette.`}
+            {pending.kind === "ncgr"
+              ? ` of ${(pending.w * pending.h).toLocaleString()} pixels don't match the current palette.`
+              : " pixels don't match the current palette."}
           </span>
           <button className="btn btn--sm" disabled={impBusy} onClick={() => void applyPending(false)}>
             Match to palette

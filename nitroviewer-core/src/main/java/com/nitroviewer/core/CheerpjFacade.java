@@ -744,7 +744,8 @@ public final class CheerpjFacade implements NitroViewerService
 
     @Override
     public String importCellPng(int romHandle, int ncerContainer, int ncerId, int ncgrContainer, int ncgrId,
-                                int nclrContainer, int nclrId, int cellIndex, byte[] pngBytes)
+                                int nclrContainer, int nclrId, int cellIndex, boolean rebuildPalette,
+                                boolean dryRun, byte[] pngBytes)
     {
         try
         {
@@ -759,9 +760,16 @@ public final class CheerpjFacade implements NitroViewerService
             BufferedImage src = ImageIO.read(new java.io.ByteArrayInputStream(pngBytes));
             if (src == null) throw new IllegalArgumentException("Could not decode the imported file as an image.");
 
-            CellBank.ImportResult res = bank.applyImage(cellIndex, src, ncgr, pal);
-            writeResource(romHandle, ncgrContainer, ncgrId, ncgr.save());
-            return "{\"ok\":true,\"unmatched\":" + res.unmatchedPixels + "}";
+            CellBank.ImportResult res = rebuildPalette
+                    ? bank.applyImageRebuildingPalette(cellIndex, src, ncgr, pal)
+                    : bank.applyImage(cellIndex, src, ncgr, pal);
+            if (!dryRun)
+            {
+                writeResource(romHandle, ncgrContainer, ncgrId, ncgr.save());
+                if (rebuildPalette) writeResource(romHandle, nclrContainer, nclrId, res.palette.save());
+            }
+            return "{\"ok\":true,\"unmatched\":" + res.unmatchedPixels
+                    + ",\"paletteRebuilt\":" + rebuildPalette + ",\"dryRun\":" + dryRun + "}";
         }
         catch (Throwable t)
         {
@@ -772,7 +780,7 @@ public final class CheerpjFacade implements NitroViewerService
     @Override
     public String importNanrPng(int romHandle, int nanrContainer, int nanrId, int ncerContainer, int ncerId,
                                 int ncgrContainer, int ncgrId, int nclrContainer, int nclrId,
-                                int animIndex, int frameIndex, byte[] pngBytes)
+                                int animIndex, int frameIndex, boolean rebuildPalette, boolean dryRun, byte[] pngBytes)
     {
         try
         {
@@ -793,9 +801,16 @@ public final class CheerpjFacade implements NitroViewerService
             BufferedImage src = ImageIO.read(new java.io.ByteArrayInputStream(pngBytes));
             if (src == null) throw new IllegalArgumentException("Could not decode the imported file as an image.");
 
-            CellBank.ImportResult res = bank.applyImage(cellIndex, src, ncgr, pal);
-            writeResource(romHandle, ncgrContainer, ncgrId, ncgr.save());
-            return "{\"ok\":true,\"unmatched\":" + res.unmatchedPixels + ",\"cellIndex\":" + cellIndex + "}";
+            CellBank.ImportResult res = rebuildPalette
+                    ? bank.applyImageRebuildingPalette(cellIndex, src, ncgr, pal)
+                    : bank.applyImage(cellIndex, src, ncgr, pal);
+            if (!dryRun)
+            {
+                writeResource(romHandle, ncgrContainer, ncgrId, ncgr.save());
+                if (rebuildPalette) writeResource(romHandle, nclrContainer, nclrId, res.palette.save());
+            }
+            return "{\"ok\":true,\"unmatched\":" + res.unmatchedPixels + ",\"cellIndex\":" + cellIndex
+                    + ",\"paletteRebuilt\":" + rebuildPalette + ",\"dryRun\":" + dryRun + "}";
         }
         catch (Throwable t)
         {
