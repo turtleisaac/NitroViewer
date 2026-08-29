@@ -66,6 +66,7 @@ export default function ModelViewer() {
 
   const mountRef = useRef<HTMLDivElement>(null);
   const three = useRef<Three | null>(null);
+  const gltfStrRef = useRef<string | null>(null);
 
   const [info, setInfo] = useState<{ hasEmbeddedTextures: boolean; models: string[] } | null>(null);
   const [modelIndex, setModelIndex] = useState(0);
@@ -177,6 +178,7 @@ export default function ModelViewer() {
       .exportModelGltf(romHandle, selection.ref, modelIndex, useEmbedded ? null : nsbtx, nsbca)
       .then((gltfStr) => {
         if (!alive || !three.current) return;
+        gltfStrRef.current = gltfStr;
         new GLTFLoader().parse(
           gltfStr,
           "",
@@ -254,6 +256,20 @@ export default function ModelViewer() {
     return () => cancelAnimationFrame(raf);
   }, [playing, busy, info, animNames.length, loadTick]);
 
+  const saveGltf = () => {
+    if (!gltfStrRef.current) return;
+    const base = (selection.name.split(/[/:]/).pop() || "model").replace(/[^\w.\-]+/g, "_");
+    const blob = new Blob([gltfStrRef.current], { type: "model/gltf+json" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `${base}.gltf`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+  };
+
   return (
     <div className="model">
       <div className="controls">
@@ -330,7 +346,12 @@ export default function ModelViewer() {
         {error && <div className="viewport-msg error">{error}</div>}
         {busy && !error && <div className="viewport-msg">Building 3D…</div>}
       </div>
-      <div className="sprite-meta">Drag to orbit · scroll to zoom · right-drag to pan</div>
+      <div className="sprite-meta">
+        <span>Drag to orbit · scroll to zoom · right-drag to pan</span>
+        {loadTick > 0 && !error && (
+          <button className="link-btn" onClick={saveGltf}>Save glTF ↓</button>
+        )}
+      </div>
     </div>
   );
 }
