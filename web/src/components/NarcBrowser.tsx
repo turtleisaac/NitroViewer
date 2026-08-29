@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { useStore } from "../state/store";
-import type { NarcEntry } from "../transport";
+import { refKey, type NarcEntry } from "../transport";
 
 export function NarcBrowser() {
   const selection = useStore((s) => s.selection)!;
@@ -10,18 +10,20 @@ export function NarcBrowser() {
   const [err, setErr] = useState<string>();
   const rootRef = useRef<HTMLDivElement>(null);
 
-  const romFileId = selection.ref.id;
+  const selKey = refKey(selection.ref);
   useEffect(() => {
     let alive = true;
     setState(null);
     setErr(undefined);
-    ensureNarc(romFileId)
+    // Open by the selection's own (container,id) — works for a ROM-file NARC and a NARC-in-NARC alike.
+    ensureNarc(selection.ref)
       .then((r) => alive && setState(r))
       .catch((e) => alive && setErr((e as Error).message));
     return () => {
       alive = false;
     };
-  }, [romFileId, ensureNarc]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selKey, ensureNarc]);
 
   // Preserve how far the user scrolled the file grid: restore on (re)open, save on scroll — so pressing
   // the breadcrumb to come back lands where they left off instead of at the top. The scroll happens on

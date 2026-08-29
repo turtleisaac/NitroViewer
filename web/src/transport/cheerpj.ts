@@ -109,6 +109,10 @@ export class CheerpjTransport implements NitroViewerClient {
     return this.enqueue(async () => unwrap(await this.f.openNarc(handle, romFileId)));
   }
 
+  openNarcAt(handle: number, ref: ResourceRef): Promise<{ narcHandle: number; numFiles: number }> {
+    return this.enqueue(async () => unwrap(await this.f.openNarcAt(handle, ref.container, ref.id)));
+  }
+
   listNarc(narcHandle: number): Promise<NarcEntry[]> {
     return this.enqueue(async () => unwrap<{ files: NarcEntry[] }>(await this.f.listNarc(narcHandle)).files);
   }

@@ -46,9 +46,10 @@ public final class CheerpjFacade implements NitroViewerService
 {
     private final Map<Integer, NintendoDsRom> roms = new ConcurrentHashMap<>();
     private final Map<Integer, Narc> narcs = new ConcurrentHashMap<>();
-    // Which (romHandle, romFileId) each narc-handle was opened from, so an edited NARC sub-file can be
-    // repacked into the ROM file it lives in. Without this link importRaw couldn't persist NARC edits.
-    private final Map<Integer, int[]> narcRomFile = new ConcurrentHashMap<>(); // narcHandle -> {romHandle, romFileId}
+    // The (container,id) resource each narc-handle was opened from, so an edited sub-file can be repacked
+    // back up the chain. container < 0 = a ROM file; container >= 0 = a sub-file of that parent narc-handle
+    // (a NARC-in-NARC). writeResource walks this recursively, so nested NARCs edit + save correctly.
+    private final Map<Integer, int[]> narcParent = new ConcurrentHashMap<>(); // narcHandle -> {container, id}
     private final AtomicInteger romSeq = new AtomicInteger(1);
     private final AtomicInteger narcSeq = new AtomicInteger(1);
     private volatile String lastError = "";
@@ -149,15 +150,22 @@ public final class CheerpjFacade implements NitroViewerService
     @Override
     public String openNarc(int romHandle, int romFileId)
     {
+        return openNarcAt(romHandle, -1, romFileId); // a top-level ROM file is just container -1
+    }
+
+    @Override
+    public String openNarcAt(int romHandle, int container, int id)
+    {
         try
         {
             NintendoDsRom rom = rom(romHandle);
-            byte[] raw = rom.getFile(romFileId);
-            byte[] data = maybeDecompress(raw);
+            // Resolve from anywhere: a ROM file (container < 0) OR a sub-file of an already-open NARC
+            // (container >= 0) — i.e. a NARC-in-NARC.
+            byte[] data = maybeDecompress(resolveRaw(rom, container, id));
             Narc narc = new Narc(data);
             int handle = narcSeq.getAndIncrement();
             narcs.put(handle, narc);
-            narcRomFile.put(handle, new int[]{romHandle, romFileId});
+            narcParent.put(handle, new int[]{container, id});
             return "{\"narcHandle\":" + handle + ",\"numFiles\":" + narc.getNumFiles() + "}";
         }
         catch (Throwable t) { return err(t); }
@@ -357,23 +365,23 @@ public final class CheerpjFacade implements NitroViewerService
 
     /**
      * Persist {@code bytes} to the addressed resource. ROM file ({@code container < 0}) → direct
-     * {@code setFile}; NARC entry → update the sub-file then repack the NARC into the ROM file it was
-     * opened from (tracked in {@link #narcRomFile}). Shared by {@link #importRaw} and {@link #importPng}.
+     * {@code setFile}. NARC entry → update the sub-file, then repack that NARC and write it back into
+     * whatever it was opened from — recursively, so a NARC-in-NARC edit repacks all the way up to the
+     * ROM file. Shared by {@link #importRaw} and {@link #importPng}.
      */
     private void writeResource(int romHandle, int container, int id, byte[] bytes)
     {
-        NintendoDsRom rom = rom(romHandle);
         if (container < 0)
         {
-            rom.setFile(id, bytes);
+            rom(romHandle).setFile(id, bytes);
             return;
         }
         Narc narc = narc(container);
         narc.setFile(id, bytes);
-        int[] link = narcRomFile.get(container);
-        if (link == null || link[0] != romHandle)
-            throw new IllegalStateException("NARC handle " + container + " not linked to a ROM file");
-        rom.setFile(link[1], narc.save());
+        int[] parent = narcParent.get(container);
+        if (parent == null)
+            throw new IllegalStateException("NARC handle " + container + " has no known parent to repack into");
+        writeResource(romHandle, parent[0], parent[1], narc.save()); // recurse up the chain
     }
 
     @Override

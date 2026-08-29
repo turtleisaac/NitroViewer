@@ -45,8 +45,8 @@ interface AppState {
   tree: TreeFolder | null;
   expanded: Set<string>;
 
-  narcs: Record<number, { romFileId: number; entries: NarcEntry[] }>; // by narcHandle
-  fileToNarc: Record<number, number>; // romFileId -> narcHandle
+  narcs: Record<number, { ref: ResourceRef; entries: NarcEntry[] }>; // by narcHandle; ref = opened-from
+  narcByRef: Record<string, number>; // refKey(opened-from) -> narcHandle (dedupes re-opens, incl. nested)
   formats: Record<string, FormatInfo>; // refKey -> format
   idToPath: Record<number, string>; // ROM file id -> full FNT path (e.g. /poketool/trgra/trbgra.narc)
 
@@ -71,7 +71,7 @@ interface AppState {
   openRom: (file: File) => Promise<void>;
   toggleFolder: (path: string) => void;
   select: (ref: ResourceRef, name: string) => Promise<void>;
-  ensureNarc: (romFileId: number) => Promise<{ narcHandle: number; entries: NarcEntry[] }>;
+  ensureNarc: (ref: ResourceRef) => Promise<{ narcHandle: number; entries: NarcEntry[] }>;
   containerItems: (container: number) => ResourceItem[];
   importFile: (ref: ResourceRef, bytes: Uint8Array) => Promise<void>;
   importPng: (
@@ -151,7 +151,7 @@ export const useStore = create<AppState>((set, get) => ({
   expanded: new Set<string>(["/"]),
 
   narcs: {},
-  fileToNarc: {},
+  narcByRef: {},
   formats: {},
   idToPath: {},
 
@@ -216,7 +216,7 @@ export const useStore = create<AppState>((set, get) => ({
         romName: file.name,
         expanded: new Set<string>(["/"]),
         narcs: {},
-        fileToNarc: {},
+        narcByRef: {},
         formats: {},
         idToPath: buildPathMap(tree),
         selection: null,
@@ -243,16 +243,18 @@ export const useStore = create<AppState>((set, get) => ({
       return { expanded: next };
     }),
 
-  ensureNarc: async (romFileId) => {
-    const { client, romHandle, fileToNarc, narcs } = get();
+  ensureNarc: async (ref) => {
+    const { client, romHandle, narcByRef, narcs } = get();
     if (romHandle == null) throw new Error("no ROM open");
-    const existing = fileToNarc[romFileId];
+    const key = refKey(ref);
+    const existing = narcByRef[key];
     if (existing != null) return { narcHandle: existing, entries: narcs[existing].entries };
-    const { narcHandle } = await client.openNarc(romHandle, romFileId);
+    // container < 0 = a ROM file; container >= 0 = a sub-file of an open NARC (a NARC-in-NARC).
+    const { narcHandle } = await client.openNarcAt(romHandle, ref);
     const entries = await client.listNarc(narcHandle);
     set((s) => ({
-      narcs: { ...s.narcs, [narcHandle]: { romFileId, entries } },
-      fileToNarc: { ...s.fileToNarc, [romFileId]: narcHandle },
+      narcs: { ...s.narcs, [narcHandle]: { ref, entries } },
+      narcByRef: { ...s.narcByRef, [key]: narcHandle },
     }));
     return { narcHandle, entries };
   },

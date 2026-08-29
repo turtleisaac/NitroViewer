@@ -43,6 +43,14 @@ public interface NitroViewerService
     /** @return {"narcHandle":int,"numFiles":int} | {"error":str} */
     String openNarc(int romHandle, int romFileId);
 
+    /**
+     * Open a NARC addressed by a (container,id) resource: {@code container < 0} = a ROM file;
+     * {@code container >= 0} = sub-file {@code id} of the open NARC with that handle (a NARC-in-NARC).
+     * Edits repack up the chain (see writeResource). {@code openNarc} is the {@code container < 0} case.
+     * @return {"narcHandle":int,"numFiles":int} | {"error":str}
+     */
+    String openNarcAt(int romHandle, int container, int id);
+
     /** @return {"files":[{"index","size","format"}]} */
     String listNarc(int narcHandle);
 

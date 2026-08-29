@@ -1,6 +1,6 @@
 import { lazy, Suspense, useRef, useState, type ReactNode } from "react";
 import { useStore } from "../state/store";
-import { refKey, ROM_CONTAINER } from "../transport";
+import { refKey, type ResourceRef } from "../transport";
 import { base64ToBytes, download } from "../util";
 import { NarcBrowser } from "./NarcBrowser";
 import { PaletteViewer } from "./PaletteViewer";
@@ -87,46 +87,40 @@ function Breadcrumb() {
   const narcs = useStore((s) => s.narcs);
   const select = useStore((s) => s.select);
   const revealFolder = useStore((s) => s.revealFolder);
-  const { container, id } = selection.ref;
-
-  const insideNarc = container >= 0;
-  const narcRomFileId = insideNarc ? narcs[container]?.romFileId : undefined;
-  const fullPath = insideNarc
-    ? (narcRomFileId != null ? idToPath[narcRomFileId] : undefined) ?? `NARC #${container}`
-    : idToPath[id] ?? selection.name;
-
-  const parts = fullPath.split("/").filter(Boolean); // e.g. ["poketool","trgra","trbgra.narc"]
-  const crumbs: ReactNode[] = [];
-  let acc = "/";
-  parts.forEach((part, i) => {
-    const isLast = i === parts.length - 1;
-    if (i > 0) crumbs.push(<span key={`s${i}`} className="crumb-sep">›</span>);
-    if (!isLast) {
-      const folderPath = (acc += part + "/"); // "/poketool/", then "/poketool/trgra/"
-      crumbs.push(
-        <button key={i} className="crumb crumb--link" title={`Show ${folderPath} in the tree`}
-                onClick={() => revealFolder(folderPath)}>
-          {part}
-        </button>
+  // Build the crumb chain by walking up: a ROM file → its FNT folder segments (each expands the tree) +
+  // the file itself; a file inside a NARC → the crumbs to that NARC (a "back to its list" link) then the
+  // entry index. Recurses through NARC-in-NARC, so every level is navigable.
+  type Crumb = { label: string; onClick?: () => void };
+  const crumbsFor = (ref: ResourceRef): Crumb[] => {
+    if (ref.container < 0) {
+      const full = idToPath[ref.id] ?? String(ref.id);
+      const parts = full.split("/").filter(Boolean);
+      return parts.map((part, i) =>
+        i === parts.length - 1
+          ? { label: part } // the file/NARC itself
+          : { label: part, onClick: () => revealFolder("/" + parts.slice(0, i + 1).join("/") + "/") }
       );
-    } else if (insideNarc) {
-      // the NARC file itself → back to its listing
-      crumbs.push(
-        <button key={i} className="crumb crumb--link" title={`Back to ${fullPath}`}
-                onClick={() => narcRomFileId != null && void select({ container: ROM_CONTAINER, id: narcRomFileId }, part)}>
-          {part}
-        </button>
-      );
-    } else {
-      crumbs.push(<span key={i} className="crumb crumb--current">{part}</span>);
     }
-  });
-  if (insideNarc) {
-    crumbs.push(<span key="es" className="crumb-sep">›</span>);
-    crumbs.push(<span key="e" className="crumb crumb--current">#{id}</span>);
-  }
+    const narcRef = narcs[ref.container]?.ref;
+    const base = narcRef ? crumbsFor(narcRef) : [{ label: `NARC #${ref.container}` } as Crumb];
+    const last = base[base.length - 1];
+    if (narcRef && last) last.onClick = () => void select(narcRef, last.label); // back to that NARC's list
+    return [...base, { label: `#${ref.id}` }];
+  };
 
-  return <span className="insp-crumbs" title={insideNarc ? `${fullPath} › #${id}` : fullPath}>{crumbs}</span>;
+  const chain = crumbsFor(selection.ref);
+  const nodes: ReactNode[] = [];
+  chain.forEach((c, i) => {
+    if (i > 0) nodes.push(<span key={`s${i}`} className="crumb-sep">›</span>);
+    nodes.push(
+      c.onClick ? (
+        <button key={i} className="crumb crumb--link" onClick={c.onClick}>{c.label}</button>
+      ) : (
+        <span key={i} className="crumb crumb--current">{c.label}</span>
+      )
+    );
+  });
+  return <span className="insp-crumbs" title={chain.map((c) => c.label).join(" › ")}>{nodes}</span>;
 }
 
 export function InspectorPane() {
@@ -142,7 +136,7 @@ export function InspectorPane() {
   }
 
   const fmt = selection.format;
-  const isNarc = fmt === "NARC" && selection.ref.container === ROM_CONTAINER;
+  const isNarc = fmt === "NARC"; // a NARC anywhere — including a NARC-in-NARC — opens the browser
   const isImage = fmt === "NCGR" || fmt === "NSCR" || fmt === "NCER" || fmt === "NANR";
 
   return (

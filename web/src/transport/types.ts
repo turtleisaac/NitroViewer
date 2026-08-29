@@ -89,6 +89,8 @@ export interface NitroViewerClient {
   detectFormat(handle: number, ref: ResourceRef): Promise<FormatInfo>;
 
   openNarc(handle: number, romFileId: number): Promise<{ narcHandle: number; numFiles: number }>;
+  /** Open a NARC from any resource — a ROM file (container < 0) or a sub-file of an open NARC (nested). */
+  openNarcAt(handle: number, ref: ResourceRef): Promise<{ narcHandle: number; numFiles: number }>;
   listNarc(narcHandle: number): Promise<NarcEntry[]>;
 
   decodeNcgr(
