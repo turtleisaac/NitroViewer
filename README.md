@@ -4,8 +4,8 @@ NitroViewer
 [![License: GNU GPL 3.0](https://img.shields.io/badge/license-GPLv3-blue.svg?logo=gnu&logoColor=white)](https://www.gnu.org/licenses/gpl-3.0)
 [![Live](https://img.shields.io/badge/live-nitroviewer.com-5b7cfa)](https://nitroviewer.com)
 
-**NitroViewer** is a modern, in-browser viewer and editor for Nintendo DS ROMs &mdash; a web
-replacement for [Tinke](https://github.com/pleonex/tinke). Open a `.nds`, browse its filesystem, and
+**NitroViewer** is a modern viewer and editor for Nintendo DS ROMs &mdash; a web replacement for
+[Tinke](https://github.com/pleonex/tinke). Open a `.nds`, browse its filesystem, and
 view or edit its graphics and 3D models. Nothing is uploaded; everything runs on your device.
 
 Live at **[nitroviewer.com](https://nitroviewer.com)**.
