@@ -6,8 +6,9 @@ A modern, in-browser Nintendo DS ROM viewer/editor — a replacement for Tinke, 
 > **The ROM never leaves the tab.** Everything (parse, decode, render) runs client-side. nitroviewer.com
 > is a static site on GitHub Pages.
 
-This doc covers: current state, how to work in the repo, the hard-won quirks, and — the main event —
-**the next flagship: file importing + ROM saving** (the write/edit half of Tinke we haven't built yet).
+This doc covers: current state, how to work in the repo, the hard-won quirks, and the remaining open
+items. The write/edit half (§6) now has a **working MVP** — replace any file, import a PNG over a sprite,
+and Save ROM. What's left (asset encoders, the per-game manifest, polish) is snapshotted in **§9**.
 
 ---
 
@@ -33,6 +34,13 @@ This doc covers: current state, how to work in the repo, the hard-won quirks, an
 - **Scanned (bitmap) NCGR handling:** a scanned NCGR viewed through an NCER (DPPt trainer sprites,
   `trbgra.narc`) can't be tile-composed by Nds4j — it now renders the NCGR **bitmap directly** (the
   assembled sprite) with a note, instead of throwing.
+- **Navigation / UX:** full-path **breadcrumbs** in the inspector header — folder segments expand +
+  scroll the tree to them, the NARC segment jumps back to that NARC's file list; tree rows carry a
+  full-path tooltip; the **NARC file grid remembers its scroll position** across a breadcrumb-back; a
+  **loading spinner** covers the ROM-parse gap. Disambiguates HGSS's numeric `a/X/Y/Z`.
+- **SEO / landing:** `<title>` + meta description/keywords/canonical, Open Graph + Twitter cards, JSON-LD
+  `WebApplication`, `favicon.svg`, `site.webmanifest`, `robots.txt`, `sitemap.xml`; the **OG image is a
+  real capture of the 3D viewer rendering the manene model**. Decluttered header/landing copy.
 - **Infra:** responsive layout, GitHub Actions CI/CD to Pages, 19 JUnit facade tests + 4 Nds4j quantiser
   tests + 10 vitest tests.
 
@@ -393,3 +401,45 @@ Per-unit or per-entry: **`tileWidth`** (the big one — kills the "linear strip"
   corrections into DB entries, so the app *learns* the right groupings once and never re-guesses.
 - Community-editable: adding a game is just adding a JSON file; no code change. Consider a lightweight
   schema (`$schema` + CI validation) so contributed entries stay well-formed.
+
+---
+
+## 9. Open items (snapshot)
+
+A single up-to-date list of what's left. Details live in the referenced sections.
+
+**Write/edit (finish the flagship — §6.2/§6.4).** PNG→NCGR/NCLR is done. Remaining:
+- glTF/OBJ → NSBMD import (facade write path exists; `ObjImporter`/`ImdImporter`/`ModelBuilder` are the
+  encoders). Palette import (NCLR). Per-format import UIs.
+- Undo/redo (snapshot edited bytes), batch import from an unpacked folder.
+
+**Per-game asset manifest / "game DB" (§8) — not built.** A resolver (`state/grouping.ts`) + `gamedb/*.json`
+so groupings/tile-widths/scanned flags come from data, not heuristics — incl. **cross-NARC** sets (model in
+one NARC, textures in another). Manifest-first, `pairing.ts` heuristics fall back. Highest-leverage
+correctness win; would retire most of the read-side pairing guesswork below.
+
+**Read-side polish (§5).** Smarter model↔NSBCA/track pairing (nearest-index today); model lighting/material
+polish + a ground grid; SPA emitter isolation / adjustable frame count/size / background toggle; NANR
+default-clip edge cases.
+
+**Nds4j-blocked.** Bitmap-OBJ NCER composition (so scanned sprites compose per-cell instead of the raw-
+bitmap fallback) — a reverse-engineering task. New formats need parsers first: **NFTR** (fonts),
+**NMCR/NMAR** (multi-cell).
+
+**UX niceties.** The **Tile width** control is in *tiles* but users think in *pixels* (64px = 8) — consider
+relabelling or accepting pixels. Cross-file live invalidation: editing an NCGR while a paired NCER/NANR
+viewer is open doesn't refresh that view until reselect (in-container edits already refresh).
+
+**SEO / discoverability.** Shipped: full meta + OG/Twitter + JSON-LD + favicon/manifest/robots/sitemap.
+Still worth doing:
+- **Crawlable landing content.** The served HTML is an empty `#root` + meta — Googlebot renders JS but
+  many crawlers/social scrapers don't. Add static hero copy (or a `<noscript>` block, or prerender the
+  landing route) so there's real indexable text, not just tags.
+- **Perf / Core Web Vitals** (a ranking factor): `preconnect`/`dns-prefetch` to the CheerpJ CDN
+  (`cjrtnc.leaningtech.com`); lazy/defer non-critical work; a Lighthouse pass.
+- **Social/robots polish:** `og:image:alt`, `og:locale`, an `apple-touch-icon` (180×180 PNG) + a 32×32
+  PNG favicon fallback, `theme-color` (done).
+- **Off-platform (needs the owner):** verify the site in Google Search Console + Bing Webmaster and submit
+  `sitemap.xml`; set the GitHub repo description/topics; link from the Nds4j README (backlink).
+- **Structured data extras:** `featureList`, `screenshot`, `softwareVersion`, `author`/`publisher`,
+  `sameAs` (GitHub) on the `WebApplication` JSON-LD.
