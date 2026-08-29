@@ -26,21 +26,32 @@ and Save ROM. What's left (asset encoders, the per-game manifest, polish) is sna
   pickers. Animation is driven by a **`setInterval` timer** (rAF gets throttled on iOS Safari) with a
   capped `devicePixelRatio` + WebGL context-loss recovery, so it plays on iPhone. **Model↔NSBCA
   auto-pairing is a nearest-index heuristic and is often wrong** (see §9).
-- **Write/edit/save (MVP done — §6):** **Import…** replaces any file's bytes (ROM file or NARC sub-file,
-  auto-repacked into its ROM file); **Save ROM** serialises the edited image and downloads the `.nds`;
-  dirty indicator + `beforeunload` guard; viewers re-decode edited bytes immediately.
-- **Asset import — PNG→NCGR/NCLR done:** SpriteViewer **Import PNG…** replaces a sprite's pixels,
-  propagating down to the NCGR (and NCLR when rebuilding). Headless quantisers live in Nds4j
-  (`IndexedImage.applyImageMatched`/`applyImageQuantized`, replacing the deprecated JPanel path); the UI
-  offers **Match to palette** vs **Rebuild palette** with the unmatched-pixel count. Faithful round-trip
-  (export→recolour→re-import) verified on the HG player sprite.
+- **Write/edit/save — the full write half is DONE (§6):** replace/import files and assets, then Save ROM.
+  Every viewer that renders a 2D/3D asset can import over it; all edits are **undoable** (↶/↷); the ROM stays
+  dirty until **Save ROM** downloads the `.nds`; and edits **preserve LZ compression** — a file the ROM stored
+  compressed is re-compressed on write (decompressed for view/export/link, re-compressed for storage;
+  `matchCompression` at every NARC-nesting level). The import surface:
+  - **Import… / Export** (header): raw **replace** / **extract** of *any* file — extract is decompressed with
+    its real name + format extension. The **NARC browser** adds per-entry ↓ extract / ↑ replace and
+    **Export/Import folder (zip)** for a whole NARC; **tree folders** have a ↓ *extract-subtree-to-zip*.
+  - **PNG → NCGR** (Import PNG…): match-to-palette or rebuild-palette, with the unmatched-pixel count.
+  - **PNG → NCLR** (PaletteViewer): Export/Import a swatch-strip PNG.
+  - **PNG → NSCR** (background): decompose a painted background into NCGR tileset + NSCR tilemap (H/V-flip
+    tile dedup, per-cell sub-palette), matching **or** rebuilding the NCLR.
+  - **PNG → NCER / NANR** (composed cell / animation frame): decompose the assembled sprite back into the
+    NCGR through its OAMs, matching **or** rebuilding the NCLR (per-OAM sub-palettes, slot 0 = transparent).
+  - **OBJ → NSBMD** (Import OBJ ↑): re-encode a mesh — the `.obj` alone (untextured) or with a texture image
+    (embedded TEX0). glTF export, Capture PNG, raw export all remain.
+- **Game DB (§8) — built:** `state/grouping.ts` + `gamedb/gamedb.json`, manifest-first with `pairing.ts`
+  fallback: a **"◆ Game DB" badge**, render hints, and declared groupings, sourced from PokEditor-Core's
+  sprite-NARC layouts. Drives model↔NSBCA pairing **by clip name** and the **D/P battle-sprite scan
+  direction** fix (they decode as garbled static otherwise).
 - **Scanned (bitmap) NCGR handling:** a scanned NCGR viewed through an NCER (DPPt trainer sprites,
-  `trbgra.narc`) can't be tile-composed by Nds4j — it now renders the NCGR **bitmap directly** (the
-  assembled sprite) with a note, instead of throwing.
-- **Navigation / UX:** full-path **breadcrumbs** in the inspector header — folder segments expand +
-  scroll the tree to them, the NARC segment jumps back to that NARC's file list; tree rows carry a
-  full-path tooltip; the **NARC file grid remembers its scroll position** across a breadcrumb-back; a
-  **loading spinner** covers the ROM-parse gap. Disambiguates HGSS's numeric `a/X/Y/Z`.
+  `trbgra.narc`) renders the NCGR **bitmap directly** (it can't be tile-composed); cell import is refused there.
+- **Navigation / UX:** full-path **breadcrumbs** (folder segments expand + scroll the tree; the NARC segment
+  jumps back to its file list); a **filesystem search** box (→ flat, clickable results by path); a **hex
+  viewer** (decompressed) for any file with no dedicated viewer; the NARC grid remembers its scroll position;
+  a loading spinner covers the ROM-parse gap. Disambiguates HGSS's numeric `a/X/Y/Z`.
 - **SEO / landing:** full `<title>` + meta description/keywords/canonical, Open Graph + Twitter cards
   (incl. `og:image:alt`/`og:locale`), JSON-LD `WebApplication` (with `featureList`/`screenshot`/`author`/
   `sameAs`), `favicon.svg` + `favicon-32.png` + `apple-touch-icon.png`, `site.webmanifest`, `robots.txt`,
@@ -48,14 +59,16 @@ and Save ROM. What's left (asset encoders, the per-game manifest, polish) is sna
   rendering the manene model**. **Crawlable static landing content** lives in `#root` (hero + features +
   formats + FAQ) so non-JS crawlers get real text; React replaces it on mount. Positioning is a **Tinke
   replacement** (copy avoids "free"/"in your browser").
-- **Infra:** responsive layout, GitHub Actions CI/CD to Pages, 19 JUnit facade tests + 4 Nds4j quantiser
-  tests + 10 vitest tests.
+- **Infra:** responsive layout, GitHub Actions CI/CD to Pages, **~27 JUnit facade tests + ~11 Nds4j
+  image/write-back tests + 30 vitest tests** (pairing + game-DB grouping). CheerpJ's JRE is **Java 8** — see
+  §4 (any Nds4j code the facade calls must avoid Java 9+ APIs; nitroviewer-core is guarded with
+  `maven.compiler.release=8`).
 
-**Not done:** more asset import (glTF/OBJ→NSBMD — facade write path exists, encoders are §6.2), bitmap-OBJ
-NCER composition (Nds4j RE task), formats Nds4j can't parse yet (NFTR fonts, NMCR/NMAR), SPA-track niceties.
+**Not done (larger — need parsers/RE):** glTF *import* (OBJ import is done); **sound (SDAT)**; **NFTR** fonts;
+**NMCR/NMAR**; bitmap-OBJ NCER composition (so scanned sprites compose per-cell). See §9 for the full snapshot.
 
-> **Sprite viewing tip:** NCGRs are often stored as a linear strip — set the **Tile width** control
-> (in *tiles*: 64px = 8) to see the real 2D sprite; auto (0) can look like garbled strips.
+> **Sprite viewing tip:** the **Width (px)** control (NCGR) sets the sprite width in pixels (step 8; 0 = auto)
+> — auto can look like a garbled linear strip.
 
 ---
 
@@ -181,13 +194,12 @@ frames' buffers to detect animation. Keep throwaway driver scripts in a scratch 
 
 ## 5. Read-side backlog (small)
 
-- Smarter model↔NSBCA/track pairing (currently nearest-at-or-after by index; sometimes wrong). The
-  systematic fix is the **per-game asset manifest in §8** (declare the groupings; heuristics fall back).
-- ~~NANR: auto-select a multi-frame clip~~ **DONE** (`SpriteViewer` jumps to the first `frames > 1`
-  animation and auto-plays).
-- ~~"capture PNG" of the 3D view~~ **DONE** (`ModelViewer` "Capture PNG ↓";
-  `preserveDrawingBuffer: true` + on-demand `toDataURL`). Still open: model lighting/material polish, a
-  ground grid.
+- ~~Smarter model↔NSBCA pairing~~ **DONE** — by clip name (`getAnimationSetInfo` + `pickAnimByName`): a model
+  scopes to the NSBCAs whose clips share its base name ("manene" ↔ "manene_aruku"), never a neighbour's; the
+  picker labels each NSBCA by clip name. The game DB (§8) can still pin exact sets.
+- ~~NANR: auto-select a multi-frame clip~~ **DONE** (`SpriteViewer` jumps to the first `frames > 1` clip).
+- ~~"capture PNG" of the 3D view~~ **DONE**. ~~ground grid~~ **DONE** (`ModelViewer` Grid toggle + Reset view).
+  Still open: model lighting/material polish (DS models are unlit — mostly N/A).
 - Formats Nds4j can't parse yet: **NFTR** (fonts), **NMCR/NMAR** (multi-cell) — need Nds4j support first.
 - SPA: emitter isolation, adjustable frame count/size, background toggle.
 
@@ -199,15 +211,30 @@ This is the big remaining half of Tinke: **replace/import files and assets, then
 The architecture already supports it — the facade holds a **mutable in-memory `NintendoDsRom`** per handle.
 The model is: **edits accumulate in that ROM; "Save ROM" serialises and downloads the `.nds`.**
 
-> **STATUS: MVP shipped & verified (2026-08-28).** Phase-1 (`importRaw` + `saveRom` + Save button +
-> dirty flag) is done and proven end-to-end. The **128 MB `byte[]` save path across CheerpJ works**:
-> `saveRom` returns the raw `byte[]` (JS gets an `Int8Array`, wrapped in a Blob); HeartGold round-trips
-> a 126.6 MB `.nds` in-browser in headless Chrome. JUnit round-trip tests (NARC sub-file **and** top-level
-> ROM file → save → reopen → bytes match, siblings unchanged) pass. Remaining: Phase-2 asset import
-> (PNG→NCGR, glTF→NSBMD via the §6.2/§6.1 encoders) and Phase-3 polish (undo/redo, per-format UIs, batch).
-> **Facade contract note:** `saveRom` returns `byte[]` (not JSON) and, on failure, an **empty array** —
-> call `lastError()` for the message (both awaited inside one transport `enqueue`, so still serial).
-> `openNarc` now records `narcRomFile[narcHandle] = {romHandle, romFileId}` so `importRaw` can repack.
+> **STATUS: COMPLETE & verified (2026-08-29).** All three phases are done and proven end-to-end (JUnit +
+> headless-browser E2E). The write half now covers **every 2D/3D format**, undoable, saved via `saveRom`:
+>
+> | Import | Facade method | Nds4j primitive | modes |
+> |---|---|---|---|
+> | raw file replace | `importRaw` | `setFile` (repacks up the NARC chain) | — |
+> | extract (decompressed) | `exportFile` | `maybeDecompress` | — |
+> | whole NARC ⇄ folder | `exportNarcZip` / `importNarcZip` | `Narc.setFiles` + `java.util.zip` | — |
+> | folder subtree extract | `exportFolderZip` | FNT walk + `java.util.zip` | — |
+> | PNG → NCGR | `importPng` | `IndexedImage.applyImageMatched`/`applyImageQuantized` | match / rebuild |
+> | PNG → NCLR | `importPalette` | `new Palette(Color[])` | — |
+> | PNG → NSCR | `importScreenPng` | `Screen.applyImage`/`applyImageRebuildingPalette` | match / rebuild |
+> | PNG → NCER / NANR | `importCellPng` / `importNanrPng` | `CellBank.applyImage`/`applyImageRebuildingPalette` | match / rebuild |
+> | OBJ → NSBMD | `importObj` / `importObjTextured` | `ObjImporter` + `ModelBuilder.build{Un,}Textured` | ±texture |
+>
+> - **Compression is preserved on write** (`matchCompression` in `writeResource`): a slot that held LZ bytes
+>   is re-compressed with the same LZ10/LZ11 type (guards `isCompressed` false-positives; keeps undo byte-exact).
+> - **Undo/redo:** per-edit prior-byte snapshots (`store.undoStack`/`redoStack`); dirty clears when empty.
+> - The **128 MB `byte[]` save path across CheerpJ works**: `saveRom` returns raw `byte[]` (JS gets an
+>   `Int8Array` → Blob), and on failure an **empty array** — call `lastError()` (both awaited in one
+>   transport `enqueue`, still serial). `openNarcAt` records `narcParent[narcHandle]` so edits repack up.
+> - **CheerpJ marshalling rule (learned the hard way):** facade methods take `int/boolean/String` + a
+>   **single trailing `byte[]`**; a `byte[]` in a middle position or a `(…,String,byte[],String)` shape fails
+>   overload resolution (`NoSuchMethodError`). OBJ+texture is framed into one `byte[]` (`[u32 objLen][obj][img]`).
 
 ### 6.1 Nds4j write APIs (confirmed, real signatures)
 - `NintendoDsRom.setFile(int index, byte[] data)` / `setFileByName(String path, byte[])` — replace a ROM file.
@@ -282,14 +309,22 @@ Right now the facade doesn't store that link.
 
 ## 7. Key files
 - `nitroviewer-core/src/main/java/com/nitroviewer/core/`
-  - `NitroViewerService.java` — the contract. `CheerpjFacade.java` — the implementation (add write methods here).
+  - `NitroViewerService.java` — the contract. `CheerpjFacade.java` — the implementation. Write/extract methods:
+    `importRaw`, `exportFile`, `importPng`, `importPalette`, `importScreenPng`, `importCellPng`,
+    `importNanrPng`, `importObj`/`importObjTextured`, `exportNarcZip`/`importNarcZip`, `exportFolderZip`,
+    `saveRom`/`lastError`; `matchCompression` (LZ-preserving `writeResource`); `getAnimationSetInfo`.
+  - `CheerpjFacadeTest.java` (ROM-gated, `-Drom.dir=…`) covers the write round-trips.
 - `web/src/`
-  - `transport/{types,cheerpj,index}.ts` — client interface + CheerpJ transport (add write methods here).
-  - `state/store.ts` — zustand store (add dirty state here); `state/pairing.ts` — pure pairing (+ tests).
-  - `components/` — `InspectorPane` (format→viewer router), `SpriteViewer`, `PaletteViewer`, `TextureViewer`,
-    `ModelViewer` (3D + tracks), `ParticleViewer`, `NarcBrowser`, `TreePane`.
+  - `transport/{types,cheerpj,index}.ts` — client interface + CheerpJ transport.
+  - `state/store.ts` — zustand store (dirty/undo/redo, all `import*` actions); `state/pairing.ts` (+ by-name
+    anim pairing); **`state/grouping.ts` + `gamedb/gamedb.json`** — the game DB (§8); `*.test.ts` for both.
+  - `components/` — `InspectorPane` (format→viewer router + header Import/Export), `SpriteViewer`
+    (NCGR/NSCR/NCER/NANR view **+ import**), `PaletteViewer`, `TextureViewer`, `ModelViewer` (3D + tracks +
+    OBJ import + grid), `ParticleViewer`, `NarcBrowser` (per-entry + folder-zip), `TreePane` (search + folder
+    extract), `InfoViewer` (hex).
 - `.github/workflows/deploy.yml` · `scripts/{build-jars,serve-static,serve-spike}.{sh,py}` · `Makefile`
-- Memory: `~/.claude/projects/…/memory/nitroviewer-cheerpj-spike.md` has the condensed quirks.
+- Memory: `~/.claude/projects/…/memory/nitroviewer-cheerpj-spike.md` (condensed quirks, kept current) and
+  `nitroviewer-game-db.md` (the authoritative sprite-NARC layouts from PokEditor-Core).
 
 ---
 
@@ -430,13 +465,16 @@ Per-unit or per-entry: **`tileWidth`** (the big one — kills the "linear strip"
 A single up-to-date list of what's left. Details live in the referenced sections. **Much of the 2026-08-29
 batch below is now done** (marked ✅); the residual work is called out under each.
 
-**Write/edit (§6.2/§6.4).** PNG→NCGR/NCLR ✅. Now also: **✅ Palette import (NCLR)** (`importPalette` +
-PaletteViewer Export/Import swatch strip), **✅ OBJ → NSBMD import** (`importObj` via `ObjImporter` +
-`ModelBuilder`; untextured; ModelViewer "Import OBJ ↑"), **✅ Undo/redo** (per-edit prior-byte snapshots in
-the store; header ↶/↷; dirty clears when the stack empties). Remaining:
-- **glTF → NSBMD** import (the app *exports* glTF; import needs a glTF **mesh reader** — accessors → the
-  same `ModelBuilder` path). **Textured** OBJ import (facade + `buildTextured` exist; wire a texture picker).
-  Batch import from an unpacked folder. Per-format import UIs.
+**Write/edit (§6) — the write half is COMPLETE.** ✅ PNG→NCGR/NCLR, ✅ NSCR background (`importScreenPng`,
+match/rebuild), ✅ NCER/NANR composed cell + animation frame (`importCellPng`/`importNanrPng`, match/rebuild —
+per-OAM sub-palettes, slot 0 transparent), ✅ OBJ→NSBMD **±texture** (`importObj`/`importObjTextured`), ✅
+palette import, ✅ raw extract/replace of any file (`exportFile`), ✅ whole-NARC + folder ZIP
+(`exportNarcZip`/`importNarcZip`/`exportFolderZip`), ✅ **LZ compression preserved on write**
+(`matchCompression`), ✅ undo/redo, ✅ Save ROM. All verified JUnit + headless-browser E2E (see §6 table).
+**Remaining:**
+- **glTF → NSBMD** import — the app *exports* glTF; import needs a glTF **mesh reader** (accessors → the same
+  `ModelBuilder` path). Batch import from an unpacked folder. A whole-ROM zip via a `byte[]`-out path (the
+  folder extract uses base64-in-JSON — fine for subtrees, heavy for a full 100 MB+ ROM).
 
 **✅ Per-game asset manifest / "game DB" (§8) — built.** `state/grouping.ts` (`resolveGame`/`resolveNarcInfo`/
 `resolveRenderHints`/`resolveSpriteUnit`+`groupUnit`) + `gamedb/gamedb.json`, keyed by game code with `*`
@@ -457,13 +495,20 @@ no vertex-skinned models, so don't chase GPU/CPU skinning.)*
 model). Remaining: SPA emitter isolation / adjustable frame count/size / background toggle; NANR default-clip
 edge cases. (DS models are unlit by design — no lighting to add.)
 
-**Nds4j-blocked.** Bitmap-OBJ NCER composition (so scanned sprites compose per-cell instead of the raw-
-bitmap fallback) — a reverse-engineering task. New formats need parsers first: **NFTR** (fonts),
-**NMCR/NMAR** (multi-cell).
+**Larger gaps (need parsers / RE — each a real project).** **Sound (SDAT)** — no audio support at all;
+biggest genuine parity gap (needs SDAT parsing in Nds4j). **NFTR** fonts and **NMCR/NMAR** multi-cell — need
+Nds4j parsers. **glTF import** — needs a glTF accessor/mesh reader. **Bitmap-OBJ NCER composition** — so
+scanned sprites (DPPt trbgra) compose per-cell instead of the raw-bitmap fallback (a Nds4j RE task).
+*(Note: the NCER/NANR **write-back** that used to be listed here is DONE — §6; only the scanned-bitmap
+compose is still blocked.)*
 
-**UX niceties.** ✅ **Tile width control is now in pixels** ("Width (px)", step 8; converts to 8px tiles).
-✅ Cross-file live invalidation improved: `editVersion` re-decodes the SpriteViewer/ModelViewer/PaletteViewer
-after any import (in-place edits refresh without reselect).
+**Game DB residual.** Grow coverage per game (only render-hint/grouping entries seeded so far); cross-NARC
+`sets` resolution (schema + resolver stubs exist, not yet consumed by ModelViewer); an "export overrides →
+manifest stub" dev action. The **D/P battle-sprite scan direction** fix already ships via the game DB.
+
+**UX niceties.** ✅ **Width (px)** control; ✅ filesystem search; ✅ hex viewer; ✅ cross-file live invalidation
+(`editVersion` re-decodes every viewer after any import). Remaining: the NANR import edits the frame's *cell*
+(cell-sized image), not the transformed frame canvas — functional but slightly indirect.
 
 **Tech debt — mobile/iOS header crowding.** The write-half controls added to the top bar (Undo/Redo,
 Save ROM, dirty badge, status) have made the header cramped on narrow screens and worsened the already-shaky
