@@ -1,0 +1,431 @@
+/*
+ * NitroViewer - a modern web replacement for Tinke, powered by Nds4j.
+ * Released under the GNU GPL v3 (see LICENSE).
+ */
+
+package com.nitroviewer.core;
+
+import io.github.turtleisaac.nds4j.Fnt;
+import io.github.turtleisaac.nds4j.Narc;
+import io.github.turtleisaac.nds4j.NintendoDsRom;
+import io.github.turtleisaac.nds4j.framework.NitroLz;
+import io.github.turtleisaac.nds4j.images.CellAnimation;
+import io.github.turtleisaac.nds4j.images.CellBank;
+import io.github.turtleisaac.nds4j.images.IndexedImage;
+import io.github.turtleisaac.nds4j.images.Palette;
+import io.github.turtleisaac.nds4j.images.Screen;
+
+import javax.imageio.ImageIO;
+import java.awt.Color;
+import java.awt.image.BufferedImage;
+import java.io.ByteArrayOutputStream;
+import java.nio.charset.StandardCharsets;
+import java.util.Base64;
+import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.atomic.AtomicInteger;
+
+/**
+ * In-browser (CheerpJ) implementation of {@link NitroViewerService} over Nds4j. Instantiated once
+ * by the frontend; holds open ROMs and NARCs keyed by integer handles. See the interface for the
+ * calling conventions (all returns are JSON; nothing throws across the boundary).
+ */
+public final class CheerpjFacade implements NitroViewerService
+{
+    private final Map<Integer, NintendoDsRom> roms = new ConcurrentHashMap<>();
+    private final Map<Integer, Narc> narcs = new ConcurrentHashMap<>();
+    private final AtomicInteger romSeq = new AtomicInteger(1);
+    private final AtomicInteger narcSeq = new AtomicInteger(1);
+
+    // --- session -----------------------------------------------------------------------------
+
+    @Override
+    public String openRom(byte[] romBytes)
+    {
+        int len = romBytes == null ? -1 : romBytes.length;
+        try
+        {
+            int handle = romSeq.getAndIncrement();
+            roms.put(handle, new NintendoDsRom(romBytes));
+            return "{\"ok\":true,\"handle\":" + handle + ",\"len\":" + len + "}";
+        }
+        catch (Throwable t)
+        {
+            return "{\"ok\":false,\"error\":" + jstr(describe(t)) + ",\"len\":" + len + "}";
+        }
+    }
+
+    @Override
+    public String getRomInfo(int romHandle)
+    {
+        try
+        {
+            NintendoDsRom rom = rom(romHandle);
+            return "{\"title\":" + jstr(rom.getTitle())
+                    + ",\"gameCode\":" + jstr(rom.getGameCode())
+                    + ",\"numFiles\":" + rom.getNumFiles() + "}";
+        }
+        catch (Throwable t) { return err(t); }
+    }
+
+    @Override
+    public void closeRom(int romHandle)
+    {
+        roms.remove(romHandle);
+    }
+
+    // --- filesystem --------------------------------------------------------------------------
+
+    @Override
+    public String listTree(int romHandle)
+    {
+        try
+        {
+            Fnt.Folder root = Fnt.load(rom(romHandle).getFnt());
+            StringBuilder sb = new StringBuilder();
+            writeFolder(sb, "/", root);
+            return sb.toString();
+        }
+        catch (Throwable t) { return err(t); }
+    }
+
+    private void writeFolder(StringBuilder sb, String name, Fnt.Folder folder)
+    {
+        sb.append("{\"name\":").append(jstr(name)).append(",\"folders\":[");
+        boolean first = true;
+        for (Map.Entry<String, Fnt.Folder> e : folder.getFolders().entrySet())
+        {
+            if (!first) sb.append(',');
+            first = false;
+            writeFolder(sb, e.getKey(), e.getValue());
+        }
+        sb.append("],\"files\":[");
+        int id = folder.getFirstId();
+        first = true;
+        for (String fileName : folder.getFiles())
+        {
+            if (!first) sb.append(',');
+            first = false;
+            sb.append("{\"name\":").append(jstr(fileName)).append(",\"id\":").append(id).append('}');
+            id++;
+        }
+        sb.append("]}");
+    }
+
+    @Override
+    public String detectFormat(int romHandle, int container, int id)
+    {
+        try
+        {
+            NintendoDsRom rom = rom(romHandle);
+            byte[] raw = resolveRaw(rom, container, id);
+            boolean compressed = NitroLz.isCompressed(raw);
+            byte[] data = compressed ? NitroLz.decompress(raw) : raw;
+            return "{\"format\":" + jstr(formatOf(data))
+                    + ",\"compressed\":" + compressed
+                    + ",\"size\":" + raw.length + "}";
+        }
+        catch (Throwable t) { return err(t); }
+    }
+
+    // --- NARC --------------------------------------------------------------------------------
+
+    @Override
+    public String openNarc(int romHandle, int romFileId)
+    {
+        try
+        {
+            NintendoDsRom rom = rom(romHandle);
+            byte[] raw = rom.getFile(romFileId);
+            byte[] data = NitroLz.isCompressed(raw) ? NitroLz.decompress(raw) : raw;
+            Narc narc = new Narc(data);
+            int handle = narcSeq.getAndIncrement();
+            narcs.put(handle, narc);
+            return "{\"narcHandle\":" + handle + ",\"numFiles\":" + narc.getNumFiles() + "}";
+        }
+        catch (Throwable t) { return err(t); }
+    }
+
+    @Override
+    public String listNarc(int narcHandle)
+    {
+        try
+        {
+            Narc narc = narc(narcHandle);
+            StringBuilder sb = new StringBuilder("{\"files\":[");
+            for (int i = 0; i < narc.getNumFiles(); i++)
+            {
+                if (i > 0) sb.append(',');
+                byte[] raw = narc.getFile(i);
+                byte[] data = NitroLz.isCompressed(raw) ? NitroLz.decompress(raw) : raw;
+                sb.append("{\"index\":").append(i)
+                        .append(",\"size\":").append(raw.length)
+                        .append(",\"format\":").append(jstr(formatOf(data))).append('}');
+            }
+            return sb.append("]}").toString();
+        }
+        catch (Throwable t) { return err(t); }
+    }
+
+    // --- 2D decode ---------------------------------------------------------------------------
+
+    @Override
+    public String decodeNcgr(int romHandle, int ncgrContainer, int ncgrId,
+                             int nclrContainer, int nclrId, int tilesWidth,
+                             boolean transparent, int paletteIndex)
+    {
+        try
+        {
+            NintendoDsRom rom = rom(romHandle);
+            IndexedImage ncgr = ncgr(rom, ncgrContainer, ncgrId, tilesWidth);
+            ncgr.setPalette(new Palette(resolve(rom, nclrContainer, nclrId), 0));
+            return imageJson(transparent ? ncgr.getTransparentImage() : ncgr.getImage());
+        }
+        catch (Throwable t) { return err(t); }
+    }
+
+    @Override
+    public String decodePalette(int romHandle, int nclrContainer, int nclrId)
+    {
+        try
+        {
+            NintendoDsRom rom = rom(romHandle);
+            Palette pal = new Palette(resolve(rom, nclrContainer, nclrId), 0);
+            Color[] colors = pal.getColors();
+            StringBuilder sb = new StringBuilder("{\"count\":").append(colors.length).append(",\"colors\":[");
+            for (int i = 0; i < colors.length; i++)
+            {
+                if (i > 0) sb.append(',');
+                sb.append(jstr(hex(colors[i])));
+            }
+            return sb.append("]}").toString();
+        }
+        catch (Throwable t) { return err(t); }
+    }
+
+    @Override
+    public String decodeNscr(int romHandle, int nscrContainer, int nscrId,
+                             int ncgrContainer, int ncgrId, int nclrContainer, int nclrId,
+                             boolean transparent)
+    {
+        try
+        {
+            NintendoDsRom rom = rom(romHandle);
+            Screen screen = new Screen(resolve(rom, nscrContainer, nscrId));
+            IndexedImage ncgr = ncgr(rom, ncgrContainer, ncgrId, 0);
+            Palette pal = new Palette(resolve(rom, nclrContainer, nclrId), 0);
+            return imageJson(transparent ? screen.getTransparentImage(ncgr, pal)
+                                         : screen.getImage(ncgr, pal));
+        }
+        catch (Throwable t) { return err(t); }
+    }
+
+    @Override
+    public String decodeNcerMeta(int romHandle, int ncerContainer, int ncerId)
+    {
+        try
+        {
+            CellBank bank = new CellBank(resolve(rom(romHandle), ncerContainer, ncerId));
+            return "{\"cellCount\":" + bank.getNumCells() + "}";
+        }
+        catch (Throwable t) { return err(t); }
+    }
+
+    @Override
+    public String decodeNcer(int romHandle, int ncerContainer, int ncerId,
+                             int ncgrContainer, int ncgrId, int nclrContainer, int nclrId,
+                             int cellIndex, boolean transparent)
+    {
+        try
+        {
+            NintendoDsRom rom = rom(romHandle);
+            IndexedImage ncgr = ncgr(rom, ncgrContainer, ncgrId, 0);
+            ncgr.setPalette(new Palette(resolve(rom, nclrContainer, nclrId), 0));
+            CellBank bank = new CellBank(resolve(rom, ncerContainer, ncerId));
+            bank.setParentImage(ncgr);
+            return imageJson(transparent ? bank.getTransparentNcerImage(cellIndex)
+                                         : bank.getNcerImage(cellIndex));
+        }
+        catch (Throwable t) { return err(t); }
+    }
+
+    @Override
+    public String decodeNanrMeta(int romHandle, int nanrContainer, int nanrId)
+    {
+        try
+        {
+            CellAnimation anim = new CellAnimation(resolve(rom(romHandle), nanrContainer, nanrId));
+            CellAnimation.Animation[] animations = anim.getAnimations();
+            StringBuilder sb = new StringBuilder("{\"animations\":[");
+            for (int i = 0; i < animations.length; i++)
+            {
+                if (i > 0) sb.append(',');
+                sb.append("{\"frames\":").append(animations[i].getFrames().length).append('}');
+            }
+            return sb.append("]}").toString();
+        }
+        catch (Throwable t) { return err(t); }
+    }
+
+    @Override
+    public String decodeNanr(int romHandle, int nanrContainer, int nanrId,
+                             int ncerContainer, int ncerId, int ncgrContainer, int ncgrId,
+                             int nclrContainer, int nclrId, int animIndex, int frameIndex,
+                             boolean transparent)
+    {
+        try
+        {
+            NintendoDsRom rom = rom(romHandle);
+            IndexedImage ncgr = ncgr(rom, ncgrContainer, ncgrId, 0);
+            ncgr.setPalette(new Palette(resolve(rom, nclrContainer, nclrId), 0));
+            CellBank bank = new CellBank(resolve(rom, ncerContainer, ncerId));
+            bank.setParentImage(ncgr);
+            CellAnimation anim = new CellAnimation(resolve(rom, nanrContainer, nanrId));
+            anim.setCellBank(bank);
+            CellAnimation.Animation.Frame frame = anim.getAnimations()[animIndex].getFrames()[frameIndex];
+            return imageJson(anim.getFrameImage(frame));
+        }
+        catch (Throwable t) { return err(t); }
+    }
+
+    // --- export ------------------------------------------------------------------------------
+
+    @Override
+    public String exportRaw(int romHandle, int container, int id)
+    {
+        try
+        {
+            byte[] raw = resolveRaw(rom(romHandle), container, id);
+            return "{\"size\":" + raw.length + ",\"base64\":" + jstr(base64(raw)) + "}";
+        }
+        catch (Throwable t) { return err(t); }
+    }
+
+    // --- resolution helpers ------------------------------------------------------------------
+
+    private NintendoDsRom rom(int handle)
+    {
+        NintendoDsRom rom = roms.get(handle);
+        if (rom == null) throw new IllegalArgumentException("no ROM for handle " + handle);
+        return rom;
+    }
+
+    private Narc narc(int handle)
+    {
+        Narc narc = narcs.get(handle);
+        if (narc == null) throw new IllegalArgumentException("no NARC for handle " + handle);
+        return narc;
+    }
+
+    /** Raw (as-stored) bytes for a (container,id): container &lt; 0 =&gt; ROM file, else NARC entry. */
+    private byte[] resolveRaw(NintendoDsRom rom, int container, int id)
+    {
+        return container < 0 ? rom.getFile(id) : narc(container).getFile(id);
+    }
+
+    /** Resolved bytes, LZ-decompressed if needed — the form the format parsers expect. */
+    private byte[] resolve(NintendoDsRom rom, int container, int id)
+    {
+        byte[] raw = resolveRaw(rom, container, id);
+        return NitroLz.isCompressed(raw) ? NitroLz.decompress(raw) : raw;
+    }
+
+    /** 0 tilesWidth/bitDepth => Nds4j reads the geometry from the NCGR header. */
+    private IndexedImage ncgr(NintendoDsRom rom, int container, int id, int tilesWidth)
+    {
+        return new IndexedImage(resolve(rom, container, id), tilesWidth, 0, 1, 1, true);
+    }
+
+    // --- encoding helpers --------------------------------------------------------------------
+
+    private static String imageJson(BufferedImage img)
+    {
+        return "{\"width\":" + img.getWidth() + ",\"height\":" + img.getHeight()
+                + ",\"png\":" + jstr(pngDataUrl(img)) + "}";
+    }
+
+    private static String pngDataUrl(BufferedImage img)
+    {
+        try
+        {
+            ByteArrayOutputStream baos = new ByteArrayOutputStream();
+            ImageIO.write(img, "png", baos);
+            return "data:image/png;base64," + base64(baos.toByteArray());
+        }
+        catch (Exception e)
+        {
+            throw new RuntimeException("PNG encode failed: " + e.getMessage(), e);
+        }
+    }
+
+    private static String base64(byte[] b)
+    {
+        return Base64.getEncoder().encodeToString(b);
+    }
+
+    private static String hex(Color c)
+    {
+        return String.format("#%02x%02x%02x", c.getRed(), c.getGreen(), c.getBlue());
+    }
+
+    private static String magic(byte[] d)
+    {
+        return d == null || d.length < 4 ? "" : new String(d, 0, 4, StandardCharsets.ISO_8859_1);
+    }
+
+    /** Friendly format name from the 4-char stamp (stamps are byte-reversed on disk). */
+    private static String formatOf(byte[] d)
+    {
+        switch (magic(d))
+        {
+            case "NARC": return "NARC";
+            case "RGCN": return "NCGR";
+            case "RLCN": case "RPCN": return "NCLR";
+            case "RCSN": return "NSCR";
+            case "RECN": return "NCER";
+            case "RNAN": return "NANR";
+            case "BMD0": return "NSBMD";
+            case "BTX0": return "NSBTX";
+            case "BCA0": return "NSBCA";
+            case "BTP0": return "NSBTP";
+            case "BTA0": return "NSBTA";
+            case "BVA0": return "NSBVA";
+            case "BMA0": return "NSBMA";
+            default: return "";
+        }
+    }
+
+    private static String describe(Throwable t)
+    {
+        String msg = t.getMessage();
+        return t.getClass().getSimpleName() + (msg == null ? "" : ": " + msg);
+    }
+
+    private static String err(Throwable t)
+    {
+        return "{\"error\":" + jstr(describe(t)) + "}";
+    }
+
+    /** Encode a Java string as a JSON string literal (quotes + minimal escaping). null -&gt; "null". */
+    private static String jstr(String s)
+    {
+        if (s == null) return "null";
+        StringBuilder sb = new StringBuilder(s.length() + 2).append('"');
+        for (int i = 0; i < s.length(); i++)
+        {
+            char c = s.charAt(i);
+            switch (c)
+            {
+                case '"':  sb.append("\\\""); break;
+                case '\\': sb.append("\\\\"); break;
+                case '\n': sb.append("\\n");  break;
+                case '\r': sb.append("\\r");  break;
+                case '\t': sb.append("\\t");  break;
+                default:
+                    if (c < 0x20) sb.append(String.format("\\u%04x", (int) c));
+                    else sb.append(c);
+            }
+        }
+        return sb.append('"').toString();
+    }
+}
