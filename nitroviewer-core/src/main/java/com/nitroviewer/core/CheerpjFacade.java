@@ -20,6 +20,7 @@ import java.awt.Color;
 import java.awt.image.BufferedImage;
 import java.io.ByteArrayOutputStream;
 import java.nio.charset.StandardCharsets;
+import java.util.Arrays;
 import java.util.Base64;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
@@ -178,8 +179,20 @@ public final class CheerpjFacade implements NitroViewerService
         {
             NintendoDsRom rom = rom(romHandle);
             IndexedImage ncgr = ncgr(rom, ncgrContainer, ncgrId, tilesWidth);
-            ncgr.setPalette(new Palette(resolve(rom, nclrContainer, nclrId), 0));
-            return imageJson(transparent ? ncgr.getTransparentImage() : ncgr.getImage());
+            Palette pal = new Palette(resolve(rom, nclrContainer, nclrId), 0);
+
+            // 4bpp images index into 16-colour sub-palettes; select which one. 8bpp uses all 256.
+            Color[] colors = pal.getColors();
+            int subPalettes = ncgr.getBitDepth() == 4 ? Math.max(1, colors.length / 16) : 1;
+            if (ncgr.getBitDepth() == 4 && colors.length > 16)
+            {
+                int idx = Math.max(0, Math.min(paletteIndex, subPalettes - 1));
+                pal = new Palette(Arrays.copyOfRange(colors, idx * 16, idx * 16 + 16));
+            }
+
+            ncgr.setPalette(pal);
+            BufferedImage img = transparent ? ncgr.getTransparentImage() : ncgr.getImage();
+            return imageJson(img, subPalettes);
         }
         catch (Throwable t) { return err(t); }
     }
@@ -340,7 +353,13 @@ public final class CheerpjFacade implements NitroViewerService
 
     private static String imageJson(BufferedImage img)
     {
+        return imageJson(img, 1);
+    }
+
+    private static String imageJson(BufferedImage img, int subPalettes)
+    {
         return "{\"width\":" + img.getWidth() + ",\"height\":" + img.getHeight()
+                + ",\"subPalettes\":" + subPalettes
                 + ",\"png\":" + jstr(pngDataUrl(img)) + "}";
     }
 

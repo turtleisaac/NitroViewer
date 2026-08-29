@@ -104,17 +104,40 @@ export function SpriteViewer() {
   const [animFrames, setAnimFrames] = useState<number[]>([]);
   const [zoom, setZoom] = useState(2);
   const [playing, setPlaying] = useState(false);
+  const [subPalettes, setSubPalettes] = useState(1);
 
   const [image, setImage] = useState<DecodedImage | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
+  // All resources of the selected file's own format, ordered by container index.
+  const selfPeers = useMemo(
+    () => items.filter((i) => i.format === fmt).slice().sort((a, b) => a.ref.id - b.ref.id),
+    [items, fmt]
+  );
+
+  // Pick the best sibling of a given type to pair with the selection:
+  //  - if the sibling list is parallel to the self list (e.g. sprite[k] ↔ palette[k]), match by
+  //    ordinal position; otherwise fall back to the nearest by container index.
+  const pickSibling = (cands: ResourceItem[]): ResourceRef | undefined => {
+    if (cands.length === 0) return undefined;
+    const sorted = cands.slice().sort((a, b) => a.ref.id - b.ref.id);
+    const ord = selfPeers.findIndex((i) => i.ref.id === selection.ref.id);
+    if (sorted.length === selfPeers.length && ord >= 0) return sorted[ord].ref;
+    return sorted.reduce((best, c) =>
+      Math.abs(c.ref.id - selection.ref.id) < Math.abs(best.ref.id - selection.ref.id) ? c : best
+    ).ref;
+  };
+
   // Auto-pair when the selection (or its container's contents) changes.
   useEffect(() => {
-    setPair({ ncgr: ncgrs[0]?.ref, nclr: nclrs[0]?.ref, ncer: ncers[0]?.ref });
+    setPair({ ncgr: pickSibling(ncgrs), nclr: pickSibling(nclrs), ncer: pickSibling(ncers) });
     setCellIndex(0);
     setAnimIndex(0);
     setFrameIndex(0);
+    setPaletteIndex(0);
+    setSubPalettes(1);
+    setTilesWidth(0);
     setPlaying(false);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selKey, items]);
@@ -187,7 +210,10 @@ export function SpriteViewer() {
         } else {
           throw new Error("Unsupported: " + fmt);
         }
-        if (alive) setImage(img);
+        if (alive) {
+          setImage(img);
+          setSubPalettes(img.subPalettes ?? 1);
+        }
       } catch (e) {
         if (alive) {
           setError((e as Error).message);
@@ -224,10 +250,7 @@ export function SpriteViewer() {
               <span>Tile width</span>
               <input type="number" min={0} value={tilesWidth} onChange={(e) => setTilesWidth(Math.max(0, +e.target.value | 0))} />
             </label>
-            <label className="ctrl">
-              <span>Palette #</span>
-              <input type="number" min={0} value={paletteIndex} onChange={(e) => setPaletteIndex(Math.max(0, +e.target.value | 0))} />
-            </label>
+            <Stepper label="Palette" value={paletteIndex} max={subPalettes - 1} onChange={setPaletteIndex} />
           </>
         )}
         {fmt === "NCER" && <Stepper label="Cell" value={cellIndex} max={cellCount - 1} onChange={setCellIndex} />}

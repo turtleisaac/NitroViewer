@@ -43,6 +43,7 @@ export interface DecodedImage {
   width: number;
   height: number;
   png: string; // data:image/png;base64,...
+  subPalettes?: number; // number of selectable 16-colour sub-palettes (NCGR); 1 if not applicable
 }
 
 export interface PaletteData {
