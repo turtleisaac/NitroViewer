@@ -131,8 +131,8 @@ public final class CheerpjFacade implements NitroViewerService
         {
             NintendoDsRom rom = rom(romHandle);
             byte[] raw = resolveRaw(rom, container, id);
-            boolean compressed = NitroLz.isCompressed(raw);
-            byte[] data = compressed ? NitroLz.decompress(raw) : raw;
+            byte[] data = maybeDecompress(raw);
+            boolean compressed = data != raw;
             return "{\"format\":" + jstr(formatOf(data))
                     + ",\"compressed\":" + compressed
                     + ",\"size\":" + raw.length + "}";
@@ -149,7 +149,7 @@ public final class CheerpjFacade implements NitroViewerService
         {
             NintendoDsRom rom = rom(romHandle);
             byte[] raw = rom.getFile(romFileId);
-            byte[] data = NitroLz.isCompressed(raw) ? NitroLz.decompress(raw) : raw;
+            byte[] data = maybeDecompress(raw);
             Narc narc = new Narc(data);
             int handle = narcSeq.getAndIncrement();
             narcs.put(handle, narc);
@@ -169,7 +169,7 @@ public final class CheerpjFacade implements NitroViewerService
             {
                 if (i > 0) sb.append(',');
                 byte[] raw = narc.getFile(i);
-                byte[] data = NitroLz.isCompressed(raw) ? NitroLz.decompress(raw) : raw;
+                byte[] data = maybeDecompress(raw);
                 sb.append("{\"index\":").append(i)
                         .append(",\"size\":").append(raw.length)
                         .append(",\"format\":").append(jstr(formatOf(data))).append('}');
@@ -591,8 +591,27 @@ public final class CheerpjFacade implements NitroViewerService
     /** Resolved bytes, LZ-decompressed if needed — the form the format parsers expect. */
     private byte[] resolve(NintendoDsRom rom, int container, int id)
     {
-        byte[] raw = resolveRaw(rom, container, id);
-        return NitroLz.isCompressed(raw) ? NitroLz.decompress(raw) : raw;
+        return maybeDecompress(resolveRaw(rom, container, id));
+    }
+
+    /**
+     * Decompress {@code raw} if it looks LZ-compressed, but fall back to the raw bytes if decompression
+     * fails: {@link NitroLz#isCompressed} is a header-nibble heuristic that false-positives on some
+     * uncompressed files (e.g. sub-files of Platinum's area_build.narc), where decompress would
+     * otherwise throw an ArrayIndexOutOfBoundsException from a bogus back-reference.
+     */
+    private static byte[] maybeDecompress(byte[] raw)
+    {
+        if (!NitroLz.isCompressed(raw))
+            return raw;
+        try
+        {
+            return NitroLz.decompress(raw);
+        }
+        catch (Throwable t)
+        {
+            return raw;
+        }
     }
 
     /** 0 tilesWidth/bitDepth => Nds4j reads the geometry from the NCGR header. */

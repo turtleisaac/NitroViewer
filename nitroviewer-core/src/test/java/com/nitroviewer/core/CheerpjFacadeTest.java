@@ -198,6 +198,28 @@ class CheerpjFacadeTest
         assertThat(res).doesNotContain("\"error\"").contains("\"frames\":[").contains("data:image/png;base64,");
     }
 
+    @Test
+    @DisplayName("a NARC whose sub-file trips the LZ heuristic (Platinum area_build.narc) still lists")
+    void lzFalsePositiveNarcLists()
+    {
+        byte[] plat = TestRoms.require("Platinum.nds");
+        CheerpjFacade s = new CheerpjFacade();
+        int r = intField(s.openRom(plat), "handle");
+        int id = findFileByName(s, r, "area_build.narc");
+        Assumptions.assumeTrue(id >= 0, "area_build.narc not found in Platinum");
+        String open = s.openNarc(r, id);
+        assertThat(open).doesNotContain("\"error\"");
+        String list = s.listNarc(intField(open, "narcHandle"));
+        assertThat(list).doesNotContain("\"error\"").contains("\"files\":[");
+    }
+
+    private int findFileByName(CheerpjFacade s, int r, String name)
+    {
+        Matcher m = Pattern.compile("\\{\"name\":\"" + Pattern.quote(name) + "\",\"id\":(\\d+)\\}")
+                .matcher(s.listTree(r));
+        return m.find() ? Integer.parseInt(m.group(1)) : -1;
+    }
+
     /** First file (loose or in a NARC) of the given format. */
     private int[] findFirst(CheerpjFacade s, int r, String fmt)
     {
