@@ -13,6 +13,8 @@ import io.github.turtleisaac.nds4j.g3d.GltfExporter;
 import io.github.turtleisaac.nds4j.g3d.MaterialColorAnimationSet;
 import io.github.turtleisaac.nds4j.g3d.Model;
 import io.github.turtleisaac.nds4j.g3d.ModelSet;
+import io.github.turtleisaac.nds4j.g3d.ParticleRenderer;
+import io.github.turtleisaac.nds4j.g3d.ParticleSet;
 import io.github.turtleisaac.nds4j.g3d.SkeletalAnimationSet;
 import io.github.turtleisaac.nds4j.g3d.TexturePatternAnimationSet;
 import io.github.turtleisaac.nds4j.g3d.TextureSet;
@@ -545,6 +547,25 @@ public final class CheerpjFacade implements NitroViewerService
         catch (Throwable t) { return err(t); }
     }
 
+    @Override
+    public String renderParticles(int romHandle, int container, int id, int width, int height, int frameCount)
+    {
+        try
+        {
+            ParticleSet set = new ParticleSet(resolve(rom(romHandle), container, id));
+            java.util.List<BufferedImage> frames = new ParticleRenderer(width, height).render(set, frameCount);
+            StringBuilder sb = new StringBuilder("{\"emitterCount\":").append(set.getEmitterCount())
+                    .append(",\"frames\":[");
+            for (int i = 0; i < frames.size(); i++)
+            {
+                if (i > 0) sb.append(',');
+                sb.append(jstr(pngDataUrl(frames.get(i))));
+            }
+            return sb.append("]}").toString();
+        }
+        catch (Throwable t) { return err(t); }
+    }
+
     // --- resolution helpers ------------------------------------------------------------------
 
     private NintendoDsRom rom(int handle)
@@ -641,6 +662,7 @@ public final class CheerpjFacade implements NitroViewerService
             case "BTA0": return "NSBTA";
             case "BVA0": return "NSBVA";
             case "BMA0": return "NSBMA";
+            case " APS": return "SPA";
             default: return "";
         }
     }

@@ -149,4 +149,11 @@ export interface NitroViewerClient {
     nsbtx: ResourceRef | null,
     nsbca: ResourceRef | null
   ): Promise<string>;
+  renderParticles(
+    handle: number,
+    ref: ResourceRef,
+    width: number,
+    height: number,
+    frameCount: number
+  ): Promise<{ emitterCount: number; frames: string[] }>;
 }

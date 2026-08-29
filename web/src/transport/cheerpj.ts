@@ -246,6 +246,18 @@ export class CheerpjTransport implements NitroViewerClient {
     );
   }
 
+  renderParticles(
+    handle: number,
+    ref: ResourceRef,
+    width: number,
+    height: number,
+    frameCount: number
+  ): Promise<{ emitterCount: number; frames: string[] }> {
+    return this.enqueue(async () =>
+      unwrap(await this.f.renderParticles(handle, ref.container, ref.id, width, height, frameCount))
+    );
+  }
+
   exportModelGltf(
     handle: number,
     nsbmd: ResourceRef,

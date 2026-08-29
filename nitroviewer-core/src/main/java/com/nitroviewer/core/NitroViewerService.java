@@ -116,4 +116,11 @@ public interface NitroViewerService
      */
     String getTexturePatternAnim(int romHandle, int nsbtpContainer, int nsbtpId, int animIndex,
                                  int nsbmdContainer, int nsbmdId, int nsbtxContainer, int nsbtxId);
+
+    /**
+     * Render an SPA particle effect to a sequence of frames (Nds4j's ParticleRenderer simulates the
+     * whole archive over a dark background).
+     * @return {"emitterCount":int,"frames":["dataURL",...]} | {"error"}
+     */
+    String renderParticles(int romHandle, int container, int id, int width, int height, int frameCount);
 }

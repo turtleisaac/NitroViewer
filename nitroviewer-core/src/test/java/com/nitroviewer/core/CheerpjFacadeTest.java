@@ -185,6 +185,41 @@ class CheerpjFacadeTest
         }
     }
 
+    @Test
+    @DisplayName("an SPA particle effect renders to frames (Platinum)")
+    void particlesRender()
+    {
+        byte[] plat = TestRoms.require("Platinum.nds");
+        CheerpjFacade s = new CheerpjFacade();
+        int r = intField(s.openRom(plat), "handle");
+        int[] spa = findFirst(s, r, "SPA");
+        Assumptions.assumeTrue(spa != null, "no SPA found in Platinum");
+        String res = s.renderParticles(r, spa[0], spa[1], 96, 96, 6);
+        assertThat(res).doesNotContain("\"error\"").contains("\"frames\":[").contains("data:image/png;base64,");
+    }
+
+    /** First file (loose or in a NARC) of the given format. */
+    private int[] findFirst(CheerpjFacade s, int r, String fmt)
+    {
+        int n = intField(s.getRomInfo(r), "numFiles");
+        for (int f = 0; f < n; f++)
+        {
+            String ff = formatField(s.detectFormat(r, -1, f));
+            if (fmt.equals(ff))
+                return new int[]{-1, f};
+            if ("NARC".equals(ff))
+            {
+                String o = s.openNarc(r, f);
+                if (o.contains("\"error\""))
+                    continue;
+                Integer i = firstIndexOfFormat(s.listNarc(intField(o, "narcHandle")), fmt);
+                if (i != null)
+                    return new int[]{intField(o, "narcHandle"), i};
+            }
+        }
+        return null;
+    }
+
     /** One pass over the ROM collecting the first NSBMA/NSBVA/NSBTP (loose or in a NARC). */
     private java.util.Map<String, int[]> findTracks(CheerpjFacade s, int r)
     {
