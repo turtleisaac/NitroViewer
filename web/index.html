@@ -77,9 +77,67 @@
     <!-- CheerpJ runtime loader. Defines the global cheerpjInit / cheerpjRunLibrary the transport
          layer calls. Must load before the app runs; a classic script in <head> does that. -->
     <script src="https://cjrtnc.leaningtech.com/4.3/loader.js"></script>
+
+    <!-- Critical styles for the static landing below (shown in raw HTML + during app boot). -->
+    <style>
+      #root .seo-landing { color: #e7e9ef; background: #0d0e12; min-height: 100vh;
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif; }
+      .seo-landing .seo-bar { display: flex; align-items: baseline; gap: 10px; padding: 16px 20px;
+        border-bottom: 1px solid #262a34; font-weight: 650; }
+      .seo-landing .seo-bar .dot { color: #5b7cfa; }
+      .seo-landing .seo-bar .sub { font-weight: 400; font-size: 12px; color: #6a7182; }
+      .seo-landing main { max-width: 760px; margin: 0 auto; padding: 40px 22px 64px; line-height: 1.6; }
+      .seo-landing h1 { font-size: 26px; margin: 0 0 14px; }
+      .seo-landing h2 { font-size: 18px; margin: 30px 0 10px; }
+      .seo-landing h3 { font-size: 14px; margin: 18px 0 4px; color: #cdd4e6; }
+      .seo-landing p, .seo-landing li { color: #9aa1b1; }
+      .seo-landing ul { padding-left: 20px; }
+      .seo-landing a { color: #9fb6ff; }
+      .seo-landing .seo-loading { color: #5b7cfa; font-size: 13px; }
+    </style>
   </head>
   <body>
-    <div id="root"></div>
+    <!-- Static, crawlable landing content. Search engines and social scrapers (many don't run JS) read
+         this from the raw HTML; it also serves as the pre-boot loading state. React replaces #root once
+         the app mounts. -->
+    <div id="root">
+      <div class="seo-landing">
+        <div class="seo-bar"><span class="dot">◆</span> NitroViewer <span class="sub">DS ROM viewer</span></div>
+        <main>
+          <h1>NitroViewer — Nintendo DS ROM Viewer &amp; Editor</h1>
+          <p>
+            NitroViewer is a modern, free web app for browsing and editing Nintendo DS ROMs — a
+            replacement for <a href="https://github.com/pleonex/tinke">Tinke</a>. Open a <code>.nds</code>
+            file to explore its filesystem and view or edit its graphics and 3D models.
+          </p>
+          <p class="seo-loading">Loading the app…</p>
+
+          <h2>What you can do</h2>
+          <ul>
+            <li>Browse a ROM's filesystem and its NARC archives.</li>
+            <li>View and edit 2D graphics — NCGR sprites, NCLR palettes, NSCR tilemaps, NCER cells and NANR animations.</li>
+            <li>View NSBMD 3D models with NSBTX textures and NSBCA / NSBMA / NSBVA / NSBTP animations, plus SPA particle effects.</li>
+            <li>Import a PNG over a sprite and save the modified <code>.nds</code>; export PNG, glTF and raw files.</li>
+          </ul>
+
+          <h2>Supported formats</h2>
+          <p>NDS ROM, NARC, NCGR, NCLR, NSCR, NCER, NANR, NSBMD, NSBTX, NSBCA, NSBMA, NSBVA, NSBTP and SPA.</p>
+
+          <h2>Frequently asked questions</h2>
+          <h3>Is NitroViewer free?</h3>
+          <p>Yes — it's free and open-source (GPLv3), built on the
+            <a href="https://github.com/turtleisaac/Nds4j">Nds4j</a> library.</p>
+          <h3>Is it a Tinke replacement?</h3>
+          <p>Yes. NitroViewer is a modern, web-based equivalent of the classic Tinke desktop tool for
+            Nintendo DS files.</p>
+          <h3>Which games work with it?</h3>
+          <p>Any Nintendo DS ROM. It's especially useful for Pokémon Generation IV and V ROM hacking —
+            Diamond, Pearl, Platinum, HeartGold, SoulSilver, Black and White.</p>
+          <h3>Do I need to install anything?</h3>
+          <p>No. NitroViewer runs in your web browser — there's nothing to download or install.</p>
+        </main>
+      </div>
+    </div>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>
