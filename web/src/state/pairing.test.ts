@@ -21,11 +21,25 @@ describe("pickSibling", () => {
     expect(pickSibling(nclrs, ncgrs, 2)).toEqual({ container: 0, id: 12 });
   });
 
-  it("falls back to nearest container index when the lists are not parallel", () => {
+  it("groups consecutive sprites onto a shared palette when there are fewer palettes", () => {
     const ncgrs = [item(0, "NCGR"), item(1, "NCGR"), item(2, "NCGR"), item(3, "NCGR")];
-    const nclrs = [item(10, "NCLR"), item(20, "NCLR")]; // fewer palettes than sprites
-    expect(pickSibling(nclrs, ncgrs, 3)).toEqual({ container: 0, id: 10 }); // 3 nearer 10
-    expect(pickSibling(nclrs, ncgrs, 18)).toEqual({ container: 0, id: 20 }); // 18 nearer 20
+    const nclrs = [item(10, "NCLR"), item(20, "NCLR")]; // 4 sprites, 2 palettes
+    expect(pickSibling(nclrs, ncgrs, 0)).toEqual({ container: 0, id: 10 });
+    expect(pickSibling(nclrs, ncgrs, 1)).toEqual({ container: 0, id: 10 });
+    expect(pickSibling(nclrs, ncgrs, 2)).toEqual({ container: 0, id: 20 });
+    expect(pickSibling(nclrs, ncgrs, 3)).toEqual({ container: 0, id: 20 });
+  });
+
+  it("spreads sprites across palettes when there are more palettes than sprites", () => {
+    const ncgrs = [item(0, "NCGR"), item(1, "NCGR")];
+    const nclrs = [item(10, "NCLR"), item(11, "NCLR"), item(12, "NCLR"), item(13, "NCLR")];
+    expect(pickSibling(nclrs, ncgrs, 0)).toEqual({ container: 0, id: 10 });
+    expect(pickSibling(nclrs, ncgrs, 1)).toEqual({ container: 0, id: 12 });
+  });
+
+  it("falls back to nearest container index when the selection is not among its peers", () => {
+    const nclrs = [item(10, "NCLR"), item(30, "NCLR")];
+    expect(pickSibling(nclrs, [], 25)).toEqual({ container: 0, id: 30 });
   });
 
   it("returns the only candidate for a singleton bundle (NANR → its one NCER)", () => {

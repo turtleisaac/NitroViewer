@@ -75,6 +75,7 @@ export function SpriteViewer() {
   const romHandle = useStore((s) => s.romHandle)!;
   const narcs = useStore((s) => s.narcs);
   const romSiblings = useStore((s) => s.romSiblings);
+  const setPairingOverride = useStore((s) => s.setPairingOverride);
 
   const fmt = selection.format;
   const container = selection.ref.container;
@@ -117,10 +118,16 @@ export function SpriteViewer() {
     [items, fmt]
   );
 
-  // Auto-pair when the selection (or its container's contents) changes.
+  // Auto-pair when the selection (or its container's contents) changes — but honour any manual
+  // pairing the user previously chose for this resource (read without subscribing to avoid re-runs).
   useEffect(() => {
     const pick = (cands: ResourceItem[]) => pickSibling(cands, selfPeers, selection.ref.id);
-    setPair({ ncgr: pick(ncgrs), nclr: pick(nclrs), ncer: pick(ncers) });
+    const saved = useStore.getState().pairingOverrides[selKey] ?? {};
+    setPair({
+      ncgr: saved.ncgr ?? pick(ncgrs),
+      nclr: saved.nclr ?? pick(nclrs),
+      ncer: saved.ncer ?? pick(ncers),
+    });
     setCellIndex(0);
     setAnimIndex(0);
     setFrameIndex(0);
@@ -229,9 +236,9 @@ export function SpriteViewer() {
   return (
     <div className="sprite">
       <div className="controls">
-        {fmt !== "NCGR" && <RefSelect label="Tileset (NCGR)" items={ncgrs} value={pair.ncgr} onChange={(r) => setPair((p) => ({ ...p, ncgr: r }))} />}
-        {fmt === "NANR" && <RefSelect label="Cells (NCER)" items={ncers} value={pair.ncer} onChange={(r) => setPair((p) => ({ ...p, ncer: r }))} />}
-        <RefSelect label="Palette (NCLR)" items={nclrs} value={pair.nclr} onChange={(r) => setPair((p) => ({ ...p, nclr: r }))} />
+        {fmt !== "NCGR" && <RefSelect label="Tileset (NCGR)" items={ncgrs} value={pair.ncgr} onChange={(r) => { setPair((p) => ({ ...p, ncgr: r })); setPairingOverride(selKey, { ncgr: r }); }} />}
+        {fmt === "NANR" && <RefSelect label="Cells (NCER)" items={ncers} value={pair.ncer} onChange={(r) => { setPair((p) => ({ ...p, ncer: r })); setPairingOverride(selKey, { ncer: r }); }} />}
+        <RefSelect label="Palette (NCLR)" items={nclrs} value={pair.nclr} onChange={(r) => { setPair((p) => ({ ...p, nclr: r })); setPairingOverride(selKey, { nclr: r }); }} />
 
         {fmt === "NCGR" && (
           <>

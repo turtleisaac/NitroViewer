@@ -25,6 +25,12 @@ export interface Selection {
   size: number;
 }
 
+export interface PairOverride {
+  ncgr?: ResourceRef;
+  nclr?: ResourceRef;
+  ncer?: ResourceRef;
+}
+
 interface AppState {
   client: NitroViewerClient;
   booted: boolean;
@@ -44,9 +50,12 @@ interface AppState {
   selection: Selection | null;
   romSiblings: ResourceItem[]; // pairing candidates when a loose ROM file is selected
   navOpen: boolean; // tree drawer open (only affects narrow screens)
+  // Manual pairing choices the user made, keyed by refKey, so they survive re-selecting a resource.
+  pairingOverrides: Record<string, PairOverride>;
 
   boot: () => Promise<void>;
   setNavOpen: (open: boolean) => void;
+  setPairingOverride: (key: string, partial: PairOverride) => void;
   openRom: (file: File) => Promise<void>;
   toggleFolder: (path: string) => void;
   select: (ref: ResourceRef, name: string) => Promise<void>;
@@ -82,8 +91,14 @@ export const useStore = create<AppState>((set, get) => ({
   selection: null,
   romSiblings: [],
   navOpen: false,
+  pairingOverrides: {},
 
   setNavOpen: (open) => set({ navOpen: open }),
+
+  setPairingOverride: (key, partial) =>
+    set((s) => ({
+      pairingOverrides: { ...s.pairingOverrides, [key]: { ...s.pairingOverrides[key], ...partial } },
+    })),
 
   boot: async () => {
     const { client, booted } = get();
@@ -114,6 +129,7 @@ export const useStore = create<AppState>((set, get) => ({
         formats: {},
         selection: null,
         romSiblings: [],
+        pairingOverrides: {},
         status: `${romInfo.title.trim() || file.name} · ${romInfo.numFiles} files`,
       });
     } catch (e) {

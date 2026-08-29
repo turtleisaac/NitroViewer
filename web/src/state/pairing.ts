@@ -8,9 +8,12 @@ import type { ResourceItem } from "./store";
  * @param selfPeers all resources of the *selected* file's own format, in container order
  * @param selfId    the selected file's container index (ref.id)
  *
- * Heuristic: if the candidate list is parallel to the self list (same length — the Gen IV
- * `sprite[k] ↔ palette[k]` layout), pair by ordinal position. Otherwise pick the candidate whose
- * container index is nearest the selection. Returns undefined only when there are no candidates.
+ * Heuristic: map the selection's ordinal position among its own kind proportionally onto the
+ * candidate list. When the lists are the same length this is an exact 1:1 (`sprite[k] ↔ palette[k]`);
+ * when there are fewer palettes than sprites it groups consecutive sprites onto a shared palette
+ * (the common Gen IV layout); when there are more it spreads them. If the selection somehow isn't
+ * among its peers, fall back to the candidate whose container index is nearest. Returns undefined
+ * only when there are no candidates.
  */
 export function pickSibling(
   cands: ResourceItem[],
@@ -20,7 +23,10 @@ export function pickSibling(
   if (cands.length === 0) return undefined;
   const sorted = cands.slice().sort((a, b) => a.ref.id - b.ref.id);
   const ord = selfPeers.findIndex((i) => i.ref.id === selfId);
-  if (sorted.length === selfPeers.length && ord >= 0) return sorted[ord].ref;
+  if (ord >= 0 && selfPeers.length > 0) {
+    const idx = Math.min(sorted.length - 1, Math.floor((ord * sorted.length) / selfPeers.length));
+    return sorted[idx].ref;
+  }
   return sorted.reduce((best, c) =>
     Math.abs(c.ref.id - selfId) < Math.abs(best.ref.id - selfId) ? c : best
   ).ref;
