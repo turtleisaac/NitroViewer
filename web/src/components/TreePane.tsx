@@ -1,6 +1,7 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useStore } from "../state/store";
 import { ROM_CONTAINER, type TreeFolder } from "../transport";
+import { base64ToBytes, download } from "../util";
 
 function FolderNode({ folder, path }: { folder: TreeFolder; path: string }) {
   const expanded = useStore((s) => s.expanded);
@@ -8,12 +9,38 @@ function FolderNode({ folder, path }: { folder: TreeFolder; path: string }) {
   const select = useStore((s) => s.select);
   const selection = useStore((s) => s.selection);
   const isOpen = expanded.has(path);
+  const [extracting, setExtracting] = useState(false);
+
+  // Extract this folder subtree (decompressed) to a ZIP mirroring the layout — Tinke's "extract folder".
+  const extractFolder = async (e: React.MouseEvent) => {
+    e.stopPropagation();
+    const st = useStore.getState();
+    if (st.romHandle == null) return;
+    setExtracting(true);
+    try {
+      const r = await st.client.exportFolderZip(st.romHandle, path);
+      const base = (path.replace(/\/$/, "").split("/").pop() || "filesystem").replace(/[^\w.\-]+/g, "_");
+      download(`${base}.zip`, base64ToBytes(r.base64), "application/zip");
+    } catch (err) {
+      alert("Extract folder failed: " + (err as Error).message);
+    } finally {
+      setExtracting(false);
+    }
+  };
 
   return (
     <div className="tree-folder">
       <div className="tree-row folder" data-path={path} onClick={() => toggle(path)}>
         <span className="twisty">{isOpen ? "▾" : "▸"}</span>
         <span className="folder-name">{folder.name}</span>
+        <button
+          className="icon-btn tree-extract"
+          title="Extract this folder to a zip"
+          disabled={extracting}
+          onClick={extractFolder}
+        >
+          {extracting ? "…" : "↓"}
+        </button>
       </div>
       {isOpen && (
         <div className="tree-children">

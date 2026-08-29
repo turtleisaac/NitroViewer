@@ -80,6 +80,13 @@ body { background: var(--bg); color: var(--text); font-size: 13px; }
 }
 .tree-row:hover { background: var(--bg-2); }
 .tree-row.selected { background: #24304f; color: #fff; }
+.tree-row.folder { position: relative; }
+.tree-extract {
+  position: absolute; right: 5px; top: 50%; transform: translateY(-50%);
+  width: 19px; height: 19px; font-size: 11px; opacity: 0;
+}
+.tree-row.folder:hover .tree-extract { opacity: 1; }
+.folder-name { flex: 1; }
 .twisty { width: 12px; display: inline-block; text-align: center; color: var(--text-faint); font-size: 10px; }
 .folder-name { color: #cdd4e6; }
 .file-name { color: var(--text-dim); }

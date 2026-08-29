@@ -197,12 +197,12 @@ public final class CheerpjFacade implements NitroViewerService
     @Override
     public String decodeNcgr(int romHandle, int ncgrContainer, int ncgrId,
                              int nclrContainer, int nclrId, int tilesWidth,
-                             boolean transparent, int paletteIndex)
+                             boolean transparent, int paletteIndex, boolean scanFrontToBack)
     {
         try
         {
             NintendoDsRom rom = rom(romHandle);
-            IndexedImage ncgr = ncgr(rom, ncgrContainer, ncgrId, tilesWidth);
+            IndexedImage ncgr = ncgr(rom, ncgrContainer, ncgrId, tilesWidth, scanFrontToBack);
             Palette pal = new Palette(resolve(rom, nclrContainer, nclrId), 0);
 
             // 4bpp images index into 16-colour sub-palettes; select which one. 8bpp uses all 256.
@@ -360,6 +360,58 @@ public final class CheerpjFacade implements NitroViewerService
                     + ",\"base64\":" + jstr(base64(data)) + "}";
         }
         catch (Throwable t) { return err(t); }
+    }
+
+    @Override
+    public String exportFolderZip(int romHandle, String folderPath)
+    {
+        try
+        {
+            NintendoDsRom rom = rom(romHandle);
+            Fnt.Folder folder = findFolderByPath(Fnt.load(rom.getFnt()), folderPath);
+            if (folder == null)
+                return "{\"ok\":false,\"error\":" + jstr("No folder at path " + folderPath) + "}";
+            ByteArrayOutputStream baos = new ByteArrayOutputStream();
+            java.util.zip.ZipOutputStream zip = new java.util.zip.ZipOutputStream(baos);
+            int[] count = {0};
+            zipFolder(zip, rom, folder, "", count); // recurse, mirroring the directory layout
+            zip.close();
+            return "{\"ok\":true,\"count\":" + count[0] + ",\"base64\":" + jstr(base64(baos.toByteArray())) + "}";
+        }
+        catch (Throwable t)
+        {
+            return "{\"ok\":false,\"error\":" + jstr(describe(t)) + "}";
+        }
+    }
+
+    /** Navigate the FNT to the folder at {@code path} (e.g. "/application/balloon"); root for "" or "/". */
+    private static Fnt.Folder findFolderByPath(Fnt.Folder root, String path)
+    {
+        Fnt.Folder cur = root;
+        for (String seg : path.split("/"))
+        {
+            if (seg.isEmpty()) continue;
+            cur = cur.getFolders().get(seg);
+            if (cur == null) return null;
+        }
+        return cur;
+    }
+
+    /** Zip every file under {@code folder} (decompressed) with paths relative to it, recursing subfolders. */
+    private void zipFolder(java.util.zip.ZipOutputStream zip, NintendoDsRom rom, Fnt.Folder folder,
+                           String prefix, int[] count) throws java.io.IOException
+    {
+        int id = folder.getFirstId();
+        for (String fileName : folder.getFiles())
+        {
+            zip.putNextEntry(new java.util.zip.ZipEntry(prefix + fileName));
+            zip.write(maybeDecompress(rom.getFile(id)));
+            zip.closeEntry();
+            count[0]++;
+            id++;
+        }
+        for (Map.Entry<String, Fnt.Folder> e : folder.getFolders().entrySet())
+            zipFolder(zip, rom, e.getValue(), prefix + e.getKey() + "/", count);
     }
 
     @Override
@@ -1044,7 +1096,17 @@ public final class CheerpjFacade implements NitroViewerService
     /** 0 tilesWidth/bitDepth => Nds4j reads the geometry from the NCGR header. */
     private IndexedImage ncgr(NintendoDsRom rom, int container, int id, int tilesWidth)
     {
-        return new IndexedImage(resolve(rom, container, id), tilesWidth, 0, 1, 1, true);
+        return ncgr(rom, container, id, tilesWidth, true);
+    }
+
+    /**
+     * As {@link #ncgr(NintendoDsRom, int, int, int)}, but with an explicit scan direction. Only matters for
+     * scanned (bitmap) NCGRs: Pt/HG/SS scan front-to-back, Diamond/Pearl back-to-front — decoding a D/P
+     * scanned sprite front-to-back yields garbled static. The game DB supplies the direction per NARC.
+     */
+    private IndexedImage ncgr(NintendoDsRom rom, int container, int id, int tilesWidth, boolean scanFrontToBack)
+    {
+        return new IndexedImage(resolve(rom, container, id), tilesWidth, 0, 1, 1, scanFrontToBack);
     }
 
     // --- encoding helpers --------------------------------------------------------------------

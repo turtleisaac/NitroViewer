@@ -125,6 +125,10 @@ export class CheerpjTransport implements NitroViewerClient {
     return this.enqueue(async () => unwrap<{ files: NarcEntry[] }>(await this.f.listNarc(narcHandle)).files);
   }
 
+  exportFolderZip(handle: number, folderPath: string): Promise<{ ok: boolean; count: number; base64: string }> {
+    return this.enqueue(async () => unwrap(await this.f.exportFolderZip(handle, folderPath)));
+  }
+
   exportNarcZip(handle: number, ref: ResourceRef): Promise<{ ok: boolean; count: number; base64: string }> {
     return this.enqueue(async () => unwrap(await this.f.exportNarcZip(handle, ref.container, ref.id)));
   }
@@ -140,12 +144,13 @@ export class CheerpjTransport implements NitroViewerClient {
     nclr: ResourceRef,
     tilesWidth: number,
     transparent: boolean,
-    paletteIndex: number
+    paletteIndex: number,
+    scanFrontToBack: boolean
   ): Promise<DecodedImage> {
     return this.enqueue(async () =>
       unwrap<DecodedImage>(
         await this.f.decodeNcgr(
-          handle, ncgr.container, ncgr.id, nclr.container, nclr.id, tilesWidth, transparent, paletteIndex
+          handle, ncgr.container, ncgr.id, nclr.container, nclr.id, tilesWidth, transparent, paletteIndex, scanFrontToBack
         )
       )
     );

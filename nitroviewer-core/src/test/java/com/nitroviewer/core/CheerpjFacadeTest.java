@@ -90,7 +90,7 @@ class CheerpjFacadeTest
         Assumptions.assumeTrue(found != null, "no NCGR+NCLR NARC found in ROM");
         int narc = found[0], ncgr = found[1], nclr = found[2];
 
-        String img = svc.decodeNcgr(rom, narc, ncgr, narc, nclr, 0, true, 0);
+        String img = svc.decodeNcgr(rom, narc, ncgr, narc, nclr, 0, true, 0, true);
         assertThat(img).contains("data:image/png;base64,");
         assertThat(intField(img, "width")).isGreaterThan(0);
         assertThat(intField(img, "height")).isGreaterThan(0);
@@ -109,8 +109,8 @@ class CheerpjFacadeTest
         Assumptions.assumeTrue(sp != null, "no 4bpp NCGR with multiple sub-palettes found");
         int narc = sp[0], ncgr = sp[1], nclr = sp[2];
 
-        String a = svc.decodeNcgr(rom, narc, ncgr, narc, nclr, 0, true, 0);
-        String b = svc.decodeNcgr(rom, narc, ncgr, narc, nclr, 0, true, 1);
+        String a = svc.decodeNcgr(rom, narc, ncgr, narc, nclr, 0, true, 0, true);
+        String b = svc.decodeNcgr(rom, narc, ncgr, narc, nclr, 0, true, 1, true);
         assertThat(intField(a, "subPalettes")).isGreaterThan(1);
         assertThat(strField(a, "png")).isNotEqualTo(strField(b, "png"));
     }
@@ -171,7 +171,7 @@ class CheerpjFacadeTest
         int r1 = intField(s1.openRom(romBytes), "handle");
         int narc1 = intField(s1.openNarc(r1, romFileId), "narcHandle");
 
-        String dec = s1.decodeNcgr(r1, narc1, ncgr, narc1, nclr, 0, false, 0);
+        String dec = s1.decodeNcgr(r1, narc1, ncgr, narc1, nclr, 0, false, 0, true);
         int w = intField(dec, "width"), h = intField(dec, "height");
         byte[] ncgrBefore = java.util.Base64.getDecoder().decode(strField(s1.exportRaw(r1, narc1, ncgr), "base64"));
 
@@ -196,7 +196,7 @@ class CheerpjFacadeTest
         CheerpjFacade s2 = new CheerpjFacade();
         int r2 = intField(s2.openRom(saved), "handle");
         int narc2 = intField(s2.openNarc(r2, romFileId), "narcHandle");
-        assertThat(intField(s2.decodeNcgr(r2, narc2, ncgr, narc2, nclr, 0, false, 0), "width")).isEqualTo(w);
+        assertThat(intField(s2.decodeNcgr(r2, narc2, ncgr, narc2, nclr, 0, false, 0, true), "width")).isEqualTo(w);
         byte[] reread = java.util.Base64.getDecoder().decode(strField(s2.exportRaw(r2, narc2, ncgr), "base64"));
         assertThat(reread).as("edit persisted through save + reopen").isEqualTo(ncgrAfter);
     }
@@ -214,8 +214,8 @@ class CheerpjFacadeTest
         int narc1 = intField(s1.openNarc(r1, romFileId), "narcHandle");
         String palBefore = s1.decodePalette(r1, narc1, nclr);
 
-        int w = intField(s1.decodeNcgr(r1, narc1, ncgr, narc1, nclr, 0, false, 0), "width");
-        int h = intField(s1.decodeNcgr(r1, narc1, ncgr, narc1, nclr, 0, false, 0), "height");
+        int w = intField(s1.decodeNcgr(r1, narc1, ncgr, narc1, nclr, 0, false, 0, true), "width");
+        int h = intField(s1.decodeNcgr(r1, narc1, ncgr, narc1, nclr, 0, false, 0, true), "height");
         byte[] png = gradientPng(w, h); // many colours → forces a real median-cut
 
         assertThat(s1.importPng(r1, narc1, ncgr, narc1, nclr, 0, 0, true, false, png)).contains("\"paletteRebuilt\":true");
@@ -619,7 +619,7 @@ class CheerpjFacadeTest
                 continue;
             for (int ncgr : indicesOfFormat(list, "NCGR"))
             {
-                String img = svc.decodeNcgr(rom, narc, ncgr, narc, nclr, 0, true, 0);
+                String img = svc.decodeNcgr(rom, narc, ncgr, narc, nclr, 0, true, 0, true);
                 if (!img.contains("\"error\"") && intField(img, "subPalettes") > 1)
                     return new int[]{narc, ncgr, nclr};
             }

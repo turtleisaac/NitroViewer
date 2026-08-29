@@ -100,6 +100,8 @@ export interface NitroViewerClient {
   /** Open a NARC from any resource — a ROM file (container < 0) or a sub-file of an open NARC (nested). */
   openNarcAt(handle: number, ref: ResourceRef): Promise<{ narcHandle: number; numFiles: number }>;
   listNarc(narcHandle: number): Promise<NarcEntry[]>;
+  /** Export an FNT folder subtree (or the whole filesystem for "/") as a ZIP mirroring the layout. */
+  exportFolderZip(handle: number, folderPath: string): Promise<{ ok: boolean; count: number; base64: string }>;
   /** Export a whole NARC (addressed as a resource) as a ZIP of its decompressed sub-files. */
   exportNarcZip(handle: number, ref: ResourceRef): Promise<{ ok: boolean; count: number; base64: string }>;
   /** Rebuild a NARC from a ZIP of files and write it back (the "import a folder as a NARC" op). */
@@ -111,7 +113,8 @@ export interface NitroViewerClient {
     nclr: ResourceRef,
     tilesWidth: number,
     transparent: boolean,
-    paletteIndex: number
+    paletteIndex: number,
+    scanFrontToBack: boolean
   ): Promise<DecodedImage>;
   decodePalette(handle: number, nclr: ResourceRef): Promise<PaletteData>;
   decodeNscr(

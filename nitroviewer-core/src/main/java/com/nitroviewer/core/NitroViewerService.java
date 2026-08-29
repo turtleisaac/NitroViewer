@@ -55,6 +55,13 @@ public interface NitroViewerService
     String listNarc(int narcHandle);
 
     /**
+     * Export an FNT folder subtree (e.g. {@code "/application/balloon"}, or {@code ""}/{@code "/"} for the
+     * whole filesystem) as a ZIP mirroring the directory layout, each file decompressed.
+     * @return {"ok":true,"count":int,"base64":str} | {"ok":false,"error":str}
+     */
+    String exportFolderZip(int romHandle, String folderPath);
+
+    /**
      * Export a whole NARC as a ZIP of its (decompressed) sub-files, named {@code 0000.<ext>} in order —
      * the "extract NARC to a folder" operation. The NARC is addressed as a resource (a ROM file, or a
      * sub-file of an open NARC), NOT a narc-handle.
@@ -71,9 +78,10 @@ public interface NitroViewerService
     String importNarcZip(int romHandle, int container, int id, byte[] zipBytes);
 
     // --- 2D graphics decode (each returns {"width","height","png"} | {"error"}) ---
+    /** {@code scanFrontToBack} only affects scanned (bitmap) NCGRs: Pt/HG/SS=true, Diamond/Pearl=false. */
     String decodeNcgr(int romHandle,
                       int ncgrContainer, int ncgrId, int nclrContainer, int nclrId,
-                      int tilesWidth, boolean transparent, int paletteIndex);
+                      int tilesWidth, boolean transparent, int paletteIndex, boolean scanFrontToBack);
 
     /** @return {"count":int,"colors":["#rrggbb",...]} | {"error"} */
     String decodePalette(int romHandle, int nclrContainer, int nclrId);

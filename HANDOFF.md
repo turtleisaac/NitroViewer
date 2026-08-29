@@ -465,6 +465,11 @@ bitmap fallback) — a reverse-engineering task. New formats need parsers first:
 ✅ Cross-file live invalidation improved: `editVersion` re-decodes the SpriteViewer/ModelViewer/PaletteViewer
 after any import (in-place edits refresh without reselect).
 
+**Tech debt — mobile/iOS header crowding.** The write-half controls added to the top bar (Undo/Redo,
+Save ROM, dirty badge, status) have made the header cramped on narrow screens and worsened the already-shaky
+iOS layout. Needs a responsive pass: collapse Undo/Redo to icon-only (or an overflow/"⋯" menu) below a
+breakpoint, and re-check the topbar wrap/scroll on iOS Safari. (See the iOS 3D notes in the CheerpJ memory.)
+
 **SEO / discoverability.** On-page is **done**, now incl. ✅ **`FAQPage` JSON-LD** (mirrors the visible FAQ)
 + ✅ **`softwareVersion`**/`isAccessibleForFree`. What's left is **off-platform** (needs the owner):
 - Verify the site in **Google Search Console + Bing Webmaster** and submit `sitemap.xml` (paste a

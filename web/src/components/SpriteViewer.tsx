@@ -116,6 +116,7 @@ export function SpriteViewer() {
   const [pair, setPair] = useState<{ ncgr?: ResourceRef; nclr?: ResourceRef; ncer?: ResourceRef }>({});
   const [transparent, setTransparent] = useState(true);
   const [tilesWidth, setTilesWidth] = useState(0);
+  const [scanFrontToBack, setScanFrontToBack] = useState(true); // scanned-NCGR direction (D/P = false)
   const [paletteIndex, setPaletteIndex] = useState(0);
   const [cellIndex, setCellIndex] = useState(0);
   const [cellCount, setCellCount] = useState(0);
@@ -176,6 +177,7 @@ export function SpriteViewer() {
     setSubPalettes(1);
     setTilesWidth(hints?.tileWidth ? Math.max(1, Math.round(hints.tileWidth / 8)) : 0);
     setTransparent(hints?.transparent ?? true);
+    setScanFrontToBack(hints?.scanDirection !== "back-to-front"); // D/P battle sprites scan back-to-front
     setPlaying(false);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selKey]);
@@ -229,6 +231,7 @@ export function SpriteViewer() {
     ncer: pair.ncer && refKey(pair.ncer),
     transparent,
     tilesWidth,
+    scanFrontToBack,
     paletteIndex,
     cellIndex,
     animIndex,
@@ -245,7 +248,7 @@ export function SpriteViewer() {
         let img: DecodedImage;
         if (fmt === "NCGR") {
           if (!pair.nclr) throw new Error("No palette (NCLR) in this container — pick one to color the tiles.");
-          img = await client.decodeNcgr(romHandle, selection.ref, pair.nclr, tilesWidth, transparent, paletteIndex);
+          img = await client.decodeNcgr(romHandle, selection.ref, pair.nclr, tilesWidth, transparent, paletteIndex, scanFrontToBack);
         } else if (fmt === "NSCR") {
           if (!pair.ncgr || !pair.nclr) throw new Error("A screen needs an NCGR tileset and an NCLR palette.");
           img = await client.decodeNscr(romHandle, selection.ref, pair.ncgr, pair.nclr, transparent);
