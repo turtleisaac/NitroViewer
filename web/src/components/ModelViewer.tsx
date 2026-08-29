@@ -166,10 +166,11 @@ export default function ModelViewer() {
   // never a perpetual RAF loop — that starves CheerpJ's cooperative Java execution and hangs exports.
   useEffect(() => {
     const mount = mountRef.current!;
-    // preserveDrawingBuffer lets "Save PNG" read the canvas back after an on-demand render (WebGL
-    // otherwise clears the buffer once the frame is composited).
-    const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true, preserveDrawingBuffer: true });
-    renderer.setPixelRatio(window.devicePixelRatio);
+    const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+    // Cap the pixel ratio: high-DPI phones report 3, which quadruples the framebuffer vs 2 and piles
+    // GPU memory onto the animation's 60fps loop — enough that iOS Safari throttles/suspends rAF under
+    // memory pressure (the model still orbits on demand, but the animation freezes). 2 is plenty.
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
     renderer.setSize(mount.clientWidth, mount.clientHeight || 400);
     mount.appendChild(renderer.domElement);
 
@@ -184,6 +185,14 @@ export default function ModelViewer() {
 
     const render = () => renderer.render(scene, camera);
     controls.addEventListener("change", render);
+
+    // Recover from a lost WebGL context (iOS Safari drops it under memory pressure) instead of
+    // freezing silently: preventDefault lets the browser restore it, then we re-render.
+    const canvas = renderer.domElement;
+    const onLost = (e: Event) => e.preventDefault();
+    const onRestored = () => render();
+    canvas.addEventListener("webglcontextlost", onLost, false);
+    canvas.addEventListener("webglcontextrestored", onRestored, false);
 
     const state: Three = {
       renderer, scene, camera, controls, root, render,
@@ -212,6 +221,8 @@ export default function ModelViewer() {
     return () => {
       ro.disconnect();
       controls.removeEventListener("change", render);
+      canvas.removeEventListener("webglcontextlost", onLost);
+      canvas.removeEventListener("webglcontextrestored", onRestored);
       controls.dispose();
       renderer.dispose();
       if (renderer.domElement.parentNode === mount) mount.removeChild(renderer.domElement);
