@@ -12,6 +12,7 @@ import io.github.turtleisaac.nds4j.framework.NitroLz;
 import io.github.turtleisaac.nds4j.g3d.GltfExporter;
 import io.github.turtleisaac.nds4j.g3d.Model;
 import io.github.turtleisaac.nds4j.g3d.ModelSet;
+import io.github.turtleisaac.nds4j.g3d.SkeletalAnimationSet;
 import io.github.turtleisaac.nds4j.g3d.TextureSet;
 import io.github.turtleisaac.nds4j.images.CellAnimation;
 import io.github.turtleisaac.nds4j.images.CellBank;
@@ -342,7 +343,7 @@ public final class CheerpjFacade implements NitroViewerService
 
     @Override
     public String exportModelGltf(int romHandle, int nsbmdContainer, int nsbmdId, int modelIndex,
-                                  int nsbtxContainer, int nsbtxId)
+                                  int nsbtxContainer, int nsbtxId, int nsbcaContainer, int nsbcaId)
     {
         try
         {
@@ -352,15 +353,22 @@ public final class CheerpjFacade implements NitroViewerService
             if (modelIndex < 0 || modelIndex >= models.size())
                 return "ERROR: model index " + modelIndex + " out of range (" + models.size() + ")";
 
-            TextureSet tex;
+            // Textures are optional: an explicit NSBTX, else the embedded TEX0, else untextured
+            // (GltfExporter accepts a null TextureSet and emits materials without textures).
+            TextureSet tex = null;
             if (nsbtxId >= 0)
                 tex = new TextureSet(resolve(rom, nsbtxContainer, nsbtxId));
             else if (ms.hasEmbeddedTextures())
                 tex = ms.getEmbeddedTextures();
-            else
-                return "ERROR: this model has no embedded textures — select an NSBTX to pair with it";
 
-            return GltfExporter.toGltf(models.get(modelIndex), tex);
+            Model model = models.get(modelIndex);
+            if (nsbcaId >= 0)
+            {
+                // Bake the NSBCA's skeletal animations into the glTF (three.js plays them natively).
+                SkeletalAnimationSet anims = new SkeletalAnimationSet(resolve(rom, nsbcaContainer, nsbcaId));
+                return GltfExporter.toGltf(model, tex, anims.getAnimations(), null);
+            }
+            return GltfExporter.toGltf(model, tex);
         }
         catch (Throwable t)
         {

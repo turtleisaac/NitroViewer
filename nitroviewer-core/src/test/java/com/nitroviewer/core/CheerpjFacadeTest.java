@@ -125,11 +125,24 @@ class CheerpjFacadeTest
         String info = svc.getModelSetInfo(rom, container, id);
         assertThat(info).contains("\"hasEmbeddedTextures\":true").contains("\"models\":[");
 
-        String gltf = svc.exportModelGltf(rom, container, id, 0, 0, -1);
+        String gltf = svc.exportModelGltf(rom, container, id, 0, 0, -1, 0, -1);
         assertThat(gltf).doesNotStartWith("ERROR:");
         assertThat(gltf).contains("\"asset\"").contains("\"meshes\"").contains("\"accessors\"");
         // self-contained: geometry + textures inlined as data URIs
         assertThat(gltf).contains("data:");
+    }
+
+    @Test
+    @DisplayName("a model paired with an NSBCA exports glTF with skeletal animations")
+    void animatedModelExportsGltf()
+    {
+        int[] found = findAnimatableModel();
+        Assumptions.assumeTrue(found != null, "no NARC with NSBMD (embedded textures) + NSBCA found");
+        int narc = found[0], nsbmd = found[1], nsbca = found[2];
+
+        String gltf = svc.exportModelGltf(rom, narc, nsbmd, 0, 0, -1, narc, nsbca);
+        assertThat(gltf).doesNotStartWith("ERROR:");
+        assertThat(gltf).contains("\"animations\"").contains("\"samplers\"").contains("\"channels\"");
     }
 
     // --- ROM scanning helpers -----------------------------------------------------------------
@@ -204,6 +217,28 @@ class CheerpjFacadeTest
                         && svc.getModelSetInfo(rom, narc, nsbmd).contains("\"hasEmbeddedTextures\":true"))
                     return new int[]{narc, nsbmd};
             }
+        }
+        return null;
+    }
+
+    /** First NARC holding an NSBMD (with embedded textures) AND an NSBCA: {narc, nsbmd, nsbca} or null. */
+    private int[] findAnimatableModel()
+    {
+        int numFiles = intField(svc.getRomInfo(rom), "numFiles");
+        for (int f = 0; f < numFiles; f++)
+        {
+            if (!"NARC".equals(formatField(svc.detectFormat(rom, -1, f))))
+                continue;
+            String open = svc.openNarc(rom, f);
+            if (open.contains("\"error\""))
+                continue;
+            int narc = intField(open, "narcHandle");
+            String list = svc.listNarc(narc);
+            Integer nsbmd = firstIndexOfFormat(list, "NSBMD");
+            Integer nsbca = firstIndexOfFormat(list, "NSBCA");
+            if (nsbmd != null && nsbca != null
+                    && svc.getModelSetInfo(rom, narc, nsbmd).contains("\"hasEmbeddedTextures\":true"))
+                return new int[]{narc, nsbmd, nsbca};
         }
         return null;
     }

@@ -205,13 +205,15 @@ export class CheerpjTransport implements NitroViewerClient {
     handle: number,
     nsbmd: ResourceRef,
     modelIndex: number,
-    nsbtx: ResourceRef | null
+    nsbtx: ResourceRef | null,
+    nsbca: ResourceRef | null
   ): Promise<string> {
     return this.enqueue(async () => {
       // exportModelGltf returns raw glTF (or "ERROR: ..."), not the JSON-wrapped contract.
       const res: string = await this.f.exportModelGltf(
         handle, nsbmd.container, nsbmd.id, modelIndex,
-        nsbtx ? nsbtx.container : 0, nsbtx ? nsbtx.id : -1
+        nsbtx ? nsbtx.container : 0, nsbtx ? nsbtx.id : -1,
+        nsbca ? nsbca.container : 0, nsbca ? nsbca.id : -1
       );
       if (res.startsWith("ERROR:")) throw new Error(res.slice(6).trim());
       return res;

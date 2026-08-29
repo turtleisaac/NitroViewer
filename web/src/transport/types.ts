@@ -105,11 +105,15 @@ export interface NitroViewerClient {
     handle: number,
     ref: ResourceRef
   ): Promise<{ hasEmbeddedTextures: boolean; models: string[] }>;
-  /** Returns a self-contained glTF 2.0 document (JSON string). nsbtx = null → embedded textures. */
+  /**
+   * Returns a self-contained glTF 2.0 document (JSON string). nsbtx = null → embedded textures;
+   * nsbca = null → static model, otherwise the NSBCA's skeletal animations are baked in.
+   */
   exportModelGltf(
     handle: number,
     nsbmd: ResourceRef,
     modelIndex: number,
-    nsbtx: ResourceRef | null
+    nsbtx: ResourceRef | null,
+    nsbca: ResourceRef | null
   ): Promise<string>;
 }
