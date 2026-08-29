@@ -57,10 +57,11 @@ jobs:
           cache: npm
           cache-dependency-path: NitroViewer/web/package-lock.json
 
-      - name: Build SPA
+      - name: Test + build SPA
         working-directory: NitroViewer/web
         run: |
           npm ci
+          npm test
           npm run build
 
       - name: Configure Pages

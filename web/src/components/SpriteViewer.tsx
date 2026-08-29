@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { useStore, type ResourceItem } from "../state/store";
+import { pickSibling } from "../state/pairing";
 import { refKey, type DecodedImage, type ResourceRef } from "../transport";
 import { base64ToBytes, download } from "../util";
 
@@ -116,22 +117,10 @@ export function SpriteViewer() {
     [items, fmt]
   );
 
-  // Pick the best sibling of a given type to pair with the selection:
-  //  - if the sibling list is parallel to the self list (e.g. sprite[k] ↔ palette[k]), match by
-  //    ordinal position; otherwise fall back to the nearest by container index.
-  const pickSibling = (cands: ResourceItem[]): ResourceRef | undefined => {
-    if (cands.length === 0) return undefined;
-    const sorted = cands.slice().sort((a, b) => a.ref.id - b.ref.id);
-    const ord = selfPeers.findIndex((i) => i.ref.id === selection.ref.id);
-    if (sorted.length === selfPeers.length && ord >= 0) return sorted[ord].ref;
-    return sorted.reduce((best, c) =>
-      Math.abs(c.ref.id - selection.ref.id) < Math.abs(best.ref.id - selection.ref.id) ? c : best
-    ).ref;
-  };
-
   // Auto-pair when the selection (or its container's contents) changes.
   useEffect(() => {
-    setPair({ ncgr: pickSibling(ncgrs), nclr: pickSibling(nclrs), ncer: pickSibling(ncers) });
+    const pick = (cands: ResourceItem[]) => pickSibling(cands, selfPeers, selection.ref.id);
+    setPair({ ncgr: pick(ncgrs), nclr: pick(nclrs), ncer: pick(ncers) });
     setCellIndex(0);
     setAnimIndex(0);
     setFrameIndex(0);
