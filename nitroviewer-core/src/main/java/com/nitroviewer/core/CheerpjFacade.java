@@ -24,6 +24,16 @@ import io.github.turtleisaac.nds4j.images.CellBank;
 import io.github.turtleisaac.nds4j.images.IndexedImage;
 import io.github.turtleisaac.nds4j.images.Palette;
 import io.github.turtleisaac.nds4j.images.Screen;
+import io.github.turtleisaac.nds4j.sound.Sequence;
+import io.github.turtleisaac.nds4j.sound.SequenceMidi;
+import io.github.turtleisaac.nds4j.sound.SequenceNotes;
+import io.github.turtleisaac.nds4j.sound.SequencePlayer;
+import io.github.turtleisaac.nds4j.sound.SoundArchive;
+import io.github.turtleisaac.nds4j.sound.SoundFontExporter;
+import io.github.turtleisaac.nds4j.sound.Stream;
+import io.github.turtleisaac.nds4j.sound.Wave;
+import io.github.turtleisaac.nds4j.sound.WaveArchive;
+import io.github.turtleisaac.nds4j.sound.WaveformRenderer;
 
 import javax.imageio.ImageIO;
 import java.awt.Color;
@@ -1154,6 +1164,321 @@ public final class CheerpjFacade implements NitroViewerService
         catch (Throwable t) { return err(t); }
     }
 
+    // --- sound -------------------------------------------------------------------------------
+
+    @Override
+    public String getSdatInfo(int romHandle, int container, int id)
+    {
+        try
+        {
+            SoundArchive sdat = SoundArchive.fromBytes(resolve(rom(romHandle), container, id));
+            StringBuilder sb = new StringBuilder("{");
+            writeSdatSection(sb, sdat, SoundArchive.RecordType.SEQUENCE, "sequences", true);
+            sb.append(',');
+            writeSdatSection(sb, sdat, SoundArchive.RecordType.BANK, "banks", false);
+            sb.append(',');
+            writeSdatWaveArchives(sb, sdat);
+            sb.append(',');
+            writeSdatSection(sb, sdat, SoundArchive.RecordType.STREAM, "streams", false);
+            sb.append(',');
+            writeSdatSection(sb, sdat, SoundArchive.RecordType.SEQUENCE_ARCHIVE, "sequenceArchives", false);
+            return sb.append('}').toString();
+        }
+        catch (Throwable t) { return err(t); }
+    }
+
+    private static void writeSdatSection(StringBuilder sb, SoundArchive sdat,
+                                         SoundArchive.RecordType type, String key, boolean withBank)
+    {
+        sb.append('"').append(key).append("\":[");
+        boolean first = true;
+        int n = sdat.getRecordCount(type);
+        for (int i = 0; i < n; i++)
+        {
+            if (sdat.getInfoRecord(type, i) == null) continue;
+            if (!first) sb.append(',');
+            first = false;
+            sb.append("{\"index\":").append(i)
+                    .append(",\"name\":").append(jstr(sdat.getName(type, i)));
+            if (withBank) sb.append(",\"bankId\":").append(sdat.getSequenceBankId(i));
+            sb.append('}');
+        }
+        sb.append(']');
+    }
+
+    private static void writeSdatWaveArchives(StringBuilder sb, SoundArchive sdat)
+    {
+        sb.append("\"waveArchives\":[");
+        boolean first = true;
+        SoundArchive.RecordType type = SoundArchive.RecordType.WAVE_ARCHIVE;
+        int n = sdat.getRecordCount(type);
+        for (int i = 0; i < n; i++)
+        {
+            if (sdat.getInfoRecord(type, i) == null) continue;
+            if (!first) sb.append(',');
+            first = false;
+            int waveCount = 0;
+            byte[] f = sdat.getFileFor(type, i);
+            if (f != null && f.length >= 0x3C)
+                waveCount = (f[0x38] & 0xFF) | ((f[0x39] & 0xFF) << 8)
+                        | ((f[0x3A] & 0xFF) << 16) | ((f[0x3B] & 0xFF) << 24);
+            sb.append("{\"index\":").append(i)
+                    .append(",\"name\":").append(jstr(sdat.getName(type, i)))
+                    .append(",\"waveCount\":").append(waveCount).append('}');
+        }
+        sb.append(']');
+    }
+
+    @Override
+    public String getSequenceNotes(int romHandle, int container, int id, int seqIndex)
+    {
+        try
+        {
+            byte[] data = resolve(rom(romHandle), container, id);
+            Sequence seq;
+            String name = null;
+            int bankId = -1;
+            if (magic(data).equals("SDAT"))
+            {
+                SoundArchive sdat = SoundArchive.fromBytes(data);
+                byte[] sseq = sdat.getFileFor(SoundArchive.RecordType.SEQUENCE, seqIndex);
+                if (sseq == null) throw new IllegalArgumentException("no sequence " + seqIndex);
+                seq = Sequence.fromBytes(sseq);
+                name = sdat.getName(SoundArchive.RecordType.SEQUENCE, seqIndex);
+                bankId = sdat.getSequenceBankId(seqIndex);
+            }
+            else if (magic(data).equals("SSEQ"))
+                seq = Sequence.fromBytes(data);
+            else
+                throw new IllegalArgumentException("not an SDAT or SSEQ");
+
+            SequenceNotes.Result r = SequenceNotes.extract(seq);
+            StringBuilder sb = new StringBuilder("{\"ticks\":").append(r.ticks)
+                    .append(",\"tempo\":").append(r.tempo)
+                    .append(",\"trackCount\":").append(r.trackCount)
+                    .append(",\"bankId\":").append(bankId)
+                    .append(",\"name\":").append(jstr(name))
+                    .append(",\"notes\":[");
+            for (int i = 0; i < r.notes.size(); i++)
+            {
+                if (i > 0) sb.append(',');
+                SequenceNotes.Note n = r.notes.get(i);
+                sb.append("{\"track\":").append(n.track)
+                        .append(",\"tick\":").append(n.tick)
+                        .append(",\"duration\":").append(n.duration)
+                        .append(",\"key\":").append(n.key)
+                        .append(",\"velocity\":").append(n.velocity)
+                        .append(",\"program\":").append(n.program).append('}');
+            }
+            return sb.append("]}").toString();
+        }
+        catch (Throwable t) { return err(t); }
+    }
+
+    @Override
+    public String renderSequenceWav(int romHandle, int container, int id, int seqIndex, int maxSeconds)
+    {
+        try
+        {
+            byte[] data = resolve(rom(romHandle), container, id);
+            if (!magic(data).equals("SDAT"))
+                throw new IllegalArgumentException("sequence playback needs an SDAT (bank + samples)");
+            if (maxSeconds < 1) maxSeconds = 1;
+            if (maxSeconds > 40) maxSeconds = 40;
+            SequencePlayer player = SequencePlayer.forSequence(SoundArchive.fromBytes(data), seqIndex);
+            if (player == null) throw new IllegalArgumentException("sequence " + seqIndex + " has no bank");
+            int rate = 22050;
+            byte[] wav = player.toWav(rate, maxSeconds);
+            // seconds ≈ frames / rate; stereo 16-bit WAV data size is wav.length - 44
+            double seconds = wav.length <= 44 ? 0 : (wav.length - 44) / 4.0 / rate;
+            return "{\"sampleRate\":" + rate
+                    + ",\"seconds\":" + String.format(java.util.Locale.US, "%.3f", seconds)
+                    + ",\"base64\":" + jstr(base64(wav)) + "}";
+        }
+        catch (Throwable t) { return err(t); }
+    }
+
+    @Override
+    public String getWaveArchiveInfo(int romHandle, int container, int id, int waveArcIndex)
+    {
+        try
+        {
+            WaveArchive swar = waveArchiveOf(rom(romHandle), container, id, waveArcIndex);
+            StringBuilder sb = new StringBuilder("{\"waves\":[");
+            for (int i = 0; i < swar.getWaveCount(); i++)
+            {
+                if (i > 0) sb.append(',');
+                Wave w = swar.getWave(i);
+                sb.append("{\"index\":").append(i)
+                        .append(",\"sampleRate\":").append(w.getSampleRate())
+                        .append(",\"samples\":").append(w.getSampleCount())
+                        .append(",\"type\":").append(jstr(waveTypeName(w.getWaveType())))
+                        .append(",\"loops\":").append(w.loops()).append('}');
+            }
+            return sb.append("]}").toString();
+        }
+        catch (Throwable t) { return err(t); }
+    }
+
+    @Override
+    public String getWavePreview(int romHandle, int container, int id, int waveArcIndex, int waveIndex)
+    {
+        try
+        {
+            byte[] data = resolve(rom(romHandle), container, id);
+            Wave w;
+            if (magic(data).equals("SWAV"))
+                w = Wave.fromSwavFile(data);
+            else
+                w = waveArchiveOf(rom(romHandle), container, id, waveArcIndex).getWave(waveIndex);
+            short[] pcm = w.decode();
+            BufferedImage img = WaveformRenderer.render(pcm, 720, 96);
+            return "{\"sampleRate\":" + w.getSampleRate()
+                    + ",\"samples\":" + pcm.length
+                    + ",\"loops\":" + w.loops()
+                    + ",\"type\":" + jstr(waveTypeName(w.getWaveType()))
+                    + ",\"png\":" + jstr(pngDataUrl(img))
+                    + ",\"wavBase64\":" + jstr(base64(w.toWav())) + "}";
+        }
+        catch (Throwable t) { return err(t); }
+    }
+
+    @Override
+    public String getStreamPreview(int romHandle, int container, int id, int streamIndex)
+    {
+        try
+        {
+            byte[] data = resolve(rom(romHandle), container, id);
+            Stream strm;
+            if (magic(data).equals("STRM"))
+                strm = Stream.fromBytes(data);
+            else if (magic(data).equals("SDAT"))
+            {
+                byte[] f = SoundArchive.fromBytes(data).getFileFor(SoundArchive.RecordType.STREAM, streamIndex);
+                if (f == null) throw new IllegalArgumentException("no stream " + streamIndex);
+                strm = Stream.fromBytes(f);
+            }
+            else
+                throw new IllegalArgumentException("not an SDAT or STRM");
+            short[] mono = strm.decodeMonoDownmix();
+            BufferedImage img = WaveformRenderer.render(mono, 720, 96);
+            return "{\"sampleRate\":" + strm.getSampleRate()
+                    + ",\"channels\":" + strm.getChannels()
+                    + ",\"samples\":" + (int) strm.getNumSamples()
+                    + ",\"png\":" + jstr(pngDataUrl(img))
+                    + ",\"wavBase64\":" + jstr(base64(strm.toWav())) + "}";
+        }
+        catch (Throwable t) { return err(t); }
+    }
+
+    @Override
+    public String importWav(int romHandle, int container, int id, int waveArcIndex, int waveIndex, byte[] wavBytes)
+    {
+        try
+        {
+            if (wavBytes == null) throw new IllegalArgumentException("no WAV bytes");
+            NintendoDsRom rom = rom(romHandle);
+            byte[] data = resolve(rom, container, id);
+            String mag = magic(data);
+            Wave result;
+            byte[] written;
+            if (mag.equals("SDAT"))
+            {
+                SoundArchive sdat = SoundArchive.fromBytes(data);
+                sdat.importWav(waveArcIndex, waveIndex, wavBytes);
+                WaveArchive swar = WaveArchive.fromBytes(sdat.getFileFor(SoundArchive.RecordType.WAVE_ARCHIVE, waveArcIndex));
+                result = swar.getWave(waveIndex);
+                written = sdat.save();
+            }
+            else if (mag.equals("SWAR"))
+            {
+                WaveArchive swar = WaveArchive.fromBytes(data);
+                swar.importWav(waveIndex, wavBytes);
+                result = swar.getWave(waveIndex);
+                written = swar.save();
+            }
+            else if (mag.equals("SWAV"))
+            {
+                Wave old = Wave.fromSwavFile(data);
+                result = Wave.fromWav(wavBytes, old.getWaveType(), old.loops());
+                written = result.toSwavFile();
+            }
+            else
+                throw new IllegalArgumentException("WAV import targets an SDAT, SWAR, or SWAV");
+            writeResource(romHandle, container, id, written);
+            return "{\"ok\":true,\"sampleRate\":" + result.getSampleRate()
+                    + ",\"samples\":" + result.getSampleCount()
+                    + ",\"type\":" + jstr(waveTypeName(result.getWaveType())) + "}";
+        }
+        catch (Throwable t)
+        {
+            return "{\"ok\":false,\"error\":" + jstr(describe(t)) + "}";
+        }
+    }
+
+    @Override
+    public String exportSequenceMidi(int romHandle, int container, int id, int seqIndex)
+    {
+        try
+        {
+            byte[] data = resolve(rom(romHandle), container, id);
+            Sequence seq;
+            if (magic(data).equals("SDAT"))
+            {
+                byte[] sseq = SoundArchive.fromBytes(data).getFileFor(SoundArchive.RecordType.SEQUENCE, seqIndex);
+                if (sseq == null) throw new IllegalArgumentException("no sequence " + seqIndex);
+                seq = Sequence.fromBytes(sseq);
+            }
+            else if (magic(data).equals("SSEQ"))
+                seq = Sequence.fromBytes(data);
+            else
+                throw new IllegalArgumentException("not an SDAT or SSEQ");
+            return "{\"base64\":" + jstr(base64(SequenceMidi.convertForDaw(seq))) + "}";
+        }
+        catch (Throwable t) { return err(t); }
+    }
+
+    @Override
+    public String exportBankSf2(int romHandle, int container, int id, int bankIndex)
+    {
+        try
+        {
+            byte[] data = resolve(rom(romHandle), container, id);
+            if (!magic(data).equals("SDAT"))
+                throw new IllegalArgumentException("SoundFont export needs an SDAT");
+            SoundArchive sdat = SoundArchive.fromBytes(data);
+            String name = sdat.getName(SoundArchive.RecordType.BANK, bankIndex);
+            if (name == null) name = "bank" + bankIndex;
+            byte[] sf2 = SoundFontExporter.fromBank(sdat, bankIndex, name);
+            return "{\"base64\":" + jstr(base64(sf2)) + "}";
+        }
+        catch (Throwable t) { return err(t); }
+    }
+
+    private WaveArchive waveArchiveOf(NintendoDsRom rom, int container, int id, int waveArcIndex)
+    {
+        byte[] data = resolve(rom, container, id);
+        if (magic(data).equals("SWAR")) return WaveArchive.fromBytes(data);
+        if (magic(data).equals("SDAT"))
+        {
+            byte[] f = SoundArchive.fromBytes(data).getFileFor(SoundArchive.RecordType.WAVE_ARCHIVE, waveArcIndex);
+            if (f == null) throw new IllegalArgumentException("no wave archive " + waveArcIndex);
+            return WaveArchive.fromBytes(f);
+        }
+        throw new IllegalArgumentException("not an SDAT or SWAR");
+    }
+
+    private static String waveTypeName(int type)
+    {
+        switch (type)
+        {
+            case Wave.PCM8: return "PCM8";
+            case Wave.PCM16: return "PCM16";
+            case Wave.ADPCM: return "ADPCM";
+            default: return "type" + type;
+        }
+    }
+
     // --- resolution helpers ------------------------------------------------------------------
 
     private NintendoDsRom rom(int handle)
@@ -1292,6 +1617,13 @@ public final class CheerpjFacade implements NitroViewerService
             case "BVA0": return "NSBVA";
             case "BMA0": return "NSBMA";
             case " APS": return "SPA";
+            case "SDAT": return "SDAT";
+            case "SSEQ": return "SSEQ";
+            case "SSAR": return "SSAR";
+            case "SBNK": return "SBNK";
+            case "SWAR": return "SWAR";
+            case "SWAV": return "SWAV";
+            case "STRM": return "STRM";
             default: return "";
         }
     }

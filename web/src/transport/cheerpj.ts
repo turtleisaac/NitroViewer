@@ -14,10 +14,15 @@ import type {
   PngImportResult,
   ResourceRef,
   RomInfo,
+  SdatInfo,
   ScreenImportResult,
+  SequenceNotes,
+  StreamPreview,
   TexturePatternAnim,
   TreeFolder,
   VisibilityAnim,
+  WaveInfo,
+  WavePreview,
 } from "./types";
 
 // Globals defined by the CheerpJ loader.js script tag in index.html.
@@ -35,7 +40,7 @@ const APP_DIR = typeof location !== "undefined" ? location.pathname.replace(/[^/
 // Cache-bust the jar URLs so a rebuilt/redeployed jar isn't shadowed by CheerpJ's URL-keyed jar cache
 // (which otherwise loads a stale class — an old facade method is silently missing → NoSuchMethodError).
 // Dev changes every load (jars change constantly); prod uses a fixed version, bumped when a jar changes.
-const JAR_VERSION = import.meta.env.DEV ? String(Date.now()) : "2";
+const JAR_VERSION = import.meta.env.DEV ? String(Date.now()) : "3";
 const jar = (name: string) => `/app${APP_DIR}jars/${name}?v=${JAR_VERSION}`;
 const CLASSPATH = `${jar("nitroviewer-core.jar")}:${jar("Nds4j.jar")}`;
 
@@ -437,6 +442,79 @@ export class CheerpjTransport implements NitroViewerClient {
   ): Promise<{ emitterCount: number; frames: string[] }> {
     return this.enqueue(async () =>
       unwrap(await this.f.renderParticles(handle, ref.container, ref.id, width, height, frameCount))
+    );
+  }
+
+  getSdatInfo(handle: number, ref: ResourceRef): Promise<SdatInfo> {
+    return this.enqueue(async () => unwrap(await this.f.getSdatInfo(handle, ref.container, ref.id)));
+  }
+
+  getSequenceNotes(handle: number, ref: ResourceRef, seqIndex: number): Promise<SequenceNotes> {
+    return this.enqueue(async () =>
+      unwrap(await this.f.getSequenceNotes(handle, ref.container, ref.id, seqIndex))
+    );
+  }
+
+  renderSequenceWav(
+    handle: number,
+    ref: ResourceRef,
+    seqIndex: number,
+    maxSeconds: number
+  ): Promise<{ sampleRate: number; seconds: number; base64: string }> {
+    return this.enqueue(async () =>
+      unwrap(await this.f.renderSequenceWav(handle, ref.container, ref.id, seqIndex, maxSeconds))
+    );
+  }
+
+  getWaveArchiveInfo(
+    handle: number,
+    ref: ResourceRef,
+    waveArcIndex: number
+  ): Promise<{ waves: WaveInfo[] }> {
+    return this.enqueue(async () =>
+      unwrap(await this.f.getWaveArchiveInfo(handle, ref.container, ref.id, waveArcIndex))
+    );
+  }
+
+  getWavePreview(
+    handle: number,
+    ref: ResourceRef,
+    waveArcIndex: number,
+    waveIndex: number
+  ): Promise<WavePreview> {
+    return this.enqueue(async () =>
+      unwrap(await this.f.getWavePreview(handle, ref.container, ref.id, waveArcIndex, waveIndex))
+    );
+  }
+
+  getStreamPreview(handle: number, ref: ResourceRef, streamIndex: number): Promise<StreamPreview> {
+    return this.enqueue(async () =>
+      unwrap(await this.f.getStreamPreview(handle, ref.container, ref.id, streamIndex))
+    );
+  }
+
+  importWav(
+    handle: number,
+    ref: ResourceRef,
+    waveArcIndex: number,
+    waveIndex: number,
+    wavBytes: Uint8Array
+  ): Promise<{ ok: boolean; sampleRate: number; samples: number; type: string }> {
+    const signed = new Int8Array(wavBytes.buffer, wavBytes.byteOffset, wavBytes.byteLength);
+    return this.enqueue(async () =>
+      unwrap(await this.f.importWav(handle, ref.container, ref.id, waveArcIndex, waveIndex, signed))
+    );
+  }
+
+  exportSequenceMidi(handle: number, ref: ResourceRef, seqIndex: number): Promise<{ base64: string }> {
+    return this.enqueue(async () =>
+      unwrap(await this.f.exportSequenceMidi(handle, ref.container, ref.id, seqIndex))
+    );
+  }
+
+  exportBankSf2(handle: number, ref: ResourceRef, bankIndex: number): Promise<{ base64: string }> {
+    return this.enqueue(async () =>
+      unwrap(await this.f.exportBankSf2(handle, ref.container, ref.id, bankIndex))
     );
   }
 

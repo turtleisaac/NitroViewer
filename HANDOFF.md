@@ -42,6 +42,9 @@ and Save ROM. What's left (asset encoders, the per-game manifest, polish) is sna
     NCGR through its OAMs, matching **or** rebuilding the NCLR (per-OAM sub-palettes, slot 0 = transparent).
   - **OBJ → NSBMD** (Import OBJ ↑): re-encode a mesh — the `.obj` alone (untextured) or with a texture image
     (embedded TEX0). glTF export, Capture PNG, raw export all remain.
+  - **WAV → SDAT/SWAR/SWAV**: import a PCM WAV over a wave (encoded as the slot's existing PCM8/PCM16/ADPCM).
+- **Sound:** SDAT browser (sequences / waves / streams / banks), SSEQ note-track canvas + play (synth → WAV),
+  SWAV/STRM preview + play, MIDI / SoundFont export.
 - **Game DB (§8) — built:** `state/grouping.ts` + `gamedb/gamedb.json`, manifest-first with `pairing.ts`
   fallback: a **"◆ Game DB" badge**, render hints, and declared groupings, sourced from PokEditor-Core's
   sprite-NARC layouts. Drives model↔NSBCA pairing **by clip name** and the **D/P battle-sprite scan
@@ -64,7 +67,7 @@ and Save ROM. What's left (asset encoders, the per-game manifest, polish) is sna
   §4 (any Nds4j code the facade calls must avoid Java 9+ APIs; nitroviewer-core is guarded with
   `maven.compiler.release=8`).
 
-**Not done (larger — need parsers/RE):** glTF *import* (OBJ import is done); **sound (SDAT)**; **NFTR** fonts;
+**Not done (larger — need parsers/RE):** glTF *import* (OBJ import is done); **NFTR** fonts;
 **NMCR/NMAR**; bitmap-OBJ NCER composition (so scanned sprites compose per-cell). See §9 for the full snapshot.
 
 > **Sprite viewing tip:** the **Width (px)** control (NCGR) sets the sprite width in pixels (step 8; 0 = auto)
@@ -495,8 +498,13 @@ no vertex-skinned models, so don't chase GPU/CPU skinning.)*
 model). Remaining: SPA emitter isolation / adjustable frame count/size / background toggle; NANR default-clip
 edge cases. (DS models are unlit by design — no lighting to add.)
 
-**Larger gaps (need parsers / RE — each a real project).** **Sound (SDAT)** — no audio support at all;
-biggest genuine parity gap (needs SDAT parsing in Nds4j). **NFTR** fonts and **NMCR/NMAR** multi-cell — need
+**✅ Sound (SDAT).** SDAT / SSEQ / SWAR / SWAV / STRM listeners over Nds4j's sequenced-audio stack:
+browse sequences / wave archives / streams / banks; play a sequence (software synth → WAV) or a wave /
+stream; a canvas **note track** (piano-roll) for SSEQ; **Import WAV** over a wave in an SDAT (or a
+standalone SWAR/SWAV); export MIDI / SoundFont. Sequence playback is a Java-side render (slow under
+CheerpJ — the UI shows “Rendering…”).
+
+**Larger gaps (need parsers / RE — each a real project).** **NFTR** fonts and **NMCR/NMAR** multi-cell — need
 Nds4j parsers. **glTF import** — needs a glTF accessor/mesh reader. **Bitmap-OBJ NCER composition** — so
 scanned sprites (DPPt trbgra) compose per-cell instead of the raw-bitmap fallback (a Nds4j RE task).
 *(Note: the NCER/NANR **write-back** that used to be listed here is DONE — §6; only the scanned-bitmap

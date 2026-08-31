@@ -118,6 +118,12 @@ interface AppState {
     bytes: Uint8Array
   ) => Promise<ScreenImportResult>;
   importNarcZip: (narc: ResourceRef, zipBytes: Uint8Array) => Promise<{ count: number }>;
+  importWav: (
+    ref: ResourceRef,
+    waveArcIndex: number,
+    waveIndex: number,
+    wavBytes: Uint8Array
+  ) => Promise<{ sampleRate: number; samples: number; type: string }>;
   importCellPng: (
     ncer: ResourceRef,
     ncgr: ResourceRef,
@@ -486,6 +492,17 @@ export const useStore = create<AppState>((set, get) => ({
       await refreshAfterEdit(get, set, romHandle, [narc]);
     }
     return { count: res.count };
+  },
+
+  importWav: async (ref, waveArcIndex, waveIndex, wavBytes) => {
+    const { client, romHandle } = get();
+    if (romHandle == null) throw new Error("no ROM open");
+    const snap = await snapshot(client, romHandle, [ref], "Import WAV");
+    const res = await client.importWav(romHandle, ref, waveArcIndex, waveIndex, wavBytes);
+    if (!res.ok) throw new Error("importWav failed");
+    set((s) => ({ undoStack: [...s.undoStack, snap], redoStack: [] }));
+    await refreshAfterEdit(get, set, romHandle, [ref]);
+    return { sampleRate: res.sampleRate, samples: res.samples, type: res.type };
   },
 
   saveRom: async () => {

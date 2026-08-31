@@ -4,6 +4,7 @@ const FORMAT_EXT: Record<string, string> = {
   NARC: "narc", NCGR: "ncgr", NCLR: "nclr", NSCR: "nscr", NCER: "ncer", NANR: "nanr",
   NSBMD: "nsbmd", NSBTX: "nsbtx", NSBCA: "nsbca", NSBTP: "nsbtp", NSBTA: "nsbta",
   NSBVA: "nsbva", NSBMA: "nsbma", SPA: "spa",
+  SDAT: "sdat", SSEQ: "sseq", SSAR: "ssar", SBNK: "sbnk", SWAR: "swar", SWAV: "swav", STRM: "strm",
 };
 
 /** A download filename for an extracted file: keeps a real FNT name (with extension), else `<base>.<ext>`. */

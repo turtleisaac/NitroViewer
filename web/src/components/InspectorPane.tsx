@@ -8,6 +8,7 @@ import { SpriteViewer } from "./SpriteViewer";
 import { TextureViewer } from "./TextureViewer";
 import { ParticleViewer } from "./ParticleViewer";
 import { InfoViewer } from "./InfoViewer";
+import { SoundViewer } from "./SoundViewer";
 
 // three.js is heavy; only load the 3D viewer (and three) when a model is actually opened.
 const ModelViewer = lazy(() => import("./ModelViewer"));
@@ -138,6 +139,7 @@ export function InspectorPane() {
   const fmt = selection.format;
   const isNarc = fmt === "NARC"; // a NARC anywhere — including a NARC-in-NARC — opens the browser
   const isImage = fmt === "NCGR" || fmt === "NSCR" || fmt === "NCER" || fmt === "NANR";
+  const isSound = fmt === "SDAT" || fmt === "SSEQ" || fmt === "SWAR" || fmt === "SWAV" || fmt === "STRM";
 
   return (
     <section className="pane inspector">
@@ -167,6 +169,8 @@ export function InspectorPane() {
             <TextureViewer key={vkey} />
           ) : fmt === "SPA" ? (
             <ParticleViewer key={vkey} />
+          ) : isSound ? (
+            <SoundViewer key={refKey(selection.ref)} />
           ) : fmt === "NSBMD" ? (
             <Suspense fallback={<div className="placeholder">Loading 3D viewer…</div>}>
               <ModelViewer key={vkey} />

@@ -940,6 +940,58 @@ class CheerpjFacadeTest
         assertThat(saved.get(0)).isEqualTo(before.get(0));
     }
 
+    @Test
+    @DisplayName("SDAT is detected and lists sequences; a sequence has notes")
+    void sdatListener()
+    {
+        int sdatId = findFormat("SDAT");
+        Assumptions.assumeTrue(sdatId >= 0, "no SDAT in ROM");
+        assertThat(formatField(svc.detectFormat(rom, -1, sdatId))).isEqualTo("SDAT");
+
+        String info = svc.getSdatInfo(rom, -1, sdatId);
+        assertThat(info).contains("\"sequences\":[").contains("\"waveArchives\":[");
+        Matcher seq = Pattern.compile("\"sequences\":\\[\\{\"index\":(\\d+)").matcher(info);
+        assertThat(seq.find()).as("at least one sequence").isTrue();
+        int seqIndex = Integer.parseInt(seq.group(1));
+        assertThat(intField(info, "bankId")).isGreaterThanOrEqualTo(0);
+
+        String notes = svc.getSequenceNotes(rom, -1, sdatId, seqIndex);
+        assertThat(notes).contains("\"notes\":[");
+        assertThat(intField(notes, "ticks")).isGreaterThanOrEqualTo(0);
+    }
+
+    @Test
+    @DisplayName("importWav over an SDAT wave rewrites the archive")
+    void sdatImportWav()
+    {
+        int sdatId = findFormat("SDAT");
+        Assumptions.assumeTrue(sdatId >= 0, "no SDAT in ROM");
+        String info = svc.getSdatInfo(rom, -1, sdatId);
+        Assumptions.assumeTrue(info.contains("\"waveCount\":"), "SDAT has no wave archives");
+
+        int rom2 = intField(svc.openRom(romBytes), "handle");
+        Matcher arcM = Pattern.compile("\"waveArchives\":\\[\\{\"index\":(\\d+)").matcher(info);
+        Assumptions.assumeTrue(arcM.find(), "no wave archives");
+        int arc = Integer.parseInt(arcM.group(1));
+        String waves = svc.getWaveArchiveInfo(rom2, -1, sdatId, arc);
+        Assumptions.assumeTrue(!waves.contains("\"error\""), "wave archive missing");
+        Assumptions.assumeTrue(waves.contains("\"index\":"), "wave archive is empty");
+
+        byte[] wav = io.github.turtleisaac.nds4j.sound.WavFile.mono16(new short[128], 16000);
+        String res = svc.importWav(rom2, -1, sdatId, arc, 0, wav);
+        assertThat(res).contains("\"ok\":true").contains("\"samples\":");
+        assertThat(intField(res, "samples")).isGreaterThan(0);
+    }
+
+    private int findFormat(String fmt)
+    {
+        int n = intField(svc.getRomInfo(rom), "numFiles");
+        for (int f = 0; f < n; f++)
+            if (fmt.equals(formatField(svc.detectFormat(rom, -1, f))))
+                return f;
+        return -1;
+    }
+
     /** Decode a facade result's base64 field to bytes. */
     private static byte[] base64Field(String json)
     {

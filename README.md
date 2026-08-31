@@ -22,6 +22,8 @@ What it does
   with palette pairing, sub-palette selection, LZ decompression and PNG export.
 * **3D &amp; effects** &mdash; NSBMD models + NSBTX textures, NSBCA skeletal and
   NSBMA / NSBVA / NSBTP animations, and SPA particles; orbit/zoom, glTF export and PNG capture.
+* **Sound** &mdash; browse an SDAT, play SSEQ / SWAV / STRM, view an SSEQ as a note track, and import
+  a WAV over a wave.
 * **Edit &amp; save** &mdash; replace any file, or import a PNG over a sprite, then download the
   modified `.nds`.
 

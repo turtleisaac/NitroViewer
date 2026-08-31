@@ -277,4 +277,70 @@ public interface NitroViewerService
      * @return {"emitterCount":int,"frames":["dataURL",...]} | {"error"}
      */
     String renderParticles(int romHandle, int container, int id, int width, int height, int frameCount);
+
+    // --- sound (SDAT / SSEQ / SWAR / STRM) ---------------------------------------------------
+
+    /**
+     * Catalogue of an SDAT: sequences, banks, wave archives, streams (and sequence archives).
+     * @return {"sequences":[{index,name,bankId}], "banks":[{index,name}],
+     *         "waveArchives":[{index,name,waveCount}], "streams":[{index,name}],
+     *         "sequenceArchives":[{index,name}]} | {"error"}
+     */
+    String getSdatInfo(int romHandle, int container, int id);
+
+    /**
+     * Note events of one sequence (for the UI piano-roll). {@code seqIndex} is the SEQUENCE record
+     * index when the resource is an SDAT; ignored for a standalone SSEQ.
+     * @return {"ticks":int,"tempo":int,"trackCount":int,
+     *         "notes":[{track,tick,duration,key,velocity,program},...],
+     *         "name":str,"bankId":int} | {"error"}
+     */
+    String getSequenceNotes(int romHandle, int container, int id, int seqIndex);
+
+    /**
+     * Render a sequence to a stereo WAV via {@code SequencePlayer}. {@code maxSeconds} is a hard cap
+     * (clamped 1–40). Slow under CheerpJ — the UI should show a progress state.
+     * @return {"sampleRate":int,"seconds":number,"base64":str} | {"error"}
+     */
+    String renderSequenceWav(int romHandle, int container, int id, int seqIndex, int maxSeconds);
+
+    /**
+     * Decode one wave of a wave archive (or a standalone SWAV / the only wave of a SWAR).
+     * {@code waveArcIndex}/{@code waveIndex} apply to an SDAT; a standalone SWAR uses waveArcIndex=0
+     * and {@code waveIndex}; a standalone SWAV ignores both.
+     * @return {"sampleRate":int,"samples":int,"loops":bool,"type":str,"png":dataURL,"wavBase64":str} | {"error"}
+     */
+    String getWavePreview(int romHandle, int container, int id, int waveArcIndex, int waveIndex);
+
+    /**
+     * Decode a STRM (SDAT stream index, or a standalone STRM file).
+     * @return {"sampleRate":int,"channels":int,"samples":int,"png":dataURL,"wavBase64":str} | {"error"}
+     */
+    String getStreamPreview(int romHandle, int container, int id, int streamIndex);
+
+    /**
+     * List the waves in a wave archive (SDAT {@code waveArcIndex}, or a standalone SWAR).
+     * @return {"waves":[{index,sampleRate,samples,type,loops}]} | {"error"}
+     */
+    String getWaveArchiveInfo(int romHandle, int container, int id, int waveArcIndex);
+
+    /**
+     * Import a PCM WAV over a wave in an SDAT's wave archive (or a standalone SWAR). Encodes as the
+     * existing wave's type. Writes the edited SDAT/SWAR back into the ROM.
+     * @return {"ok":true,"sampleRate":int,"samples":int,"type":str} | {"ok":false,"error":str}
+     */
+    String importWav(int romHandle, int container, int id, int waveArcIndex, int waveIndex, byte[] wavBytes);
+
+    /**
+     * Export one SSEQ as a Standard MIDI File.
+     * @return {"base64":str} | {"error"}
+     */
+    String exportSequenceMidi(int romHandle, int container, int id, int seqIndex);
+
+    /**
+     * Export one SBNK (+ its SWARs) as a SoundFont 2 file. {@code bankIndex} is the BANK record
+     * index of an SDAT; a standalone SBNK is not supported (needs the parent SDAT's wave archives).
+     * @return {"base64":str} | {"error"}
+     */
+    String exportBankSf2(int romHandle, int container, int id, int bankIndex);
 }

@@ -88,6 +88,62 @@ export interface TexturePatternAnim {
   textures: Record<string, string>; // textureName -> data URL
 }
 
+export interface SdatNamed {
+  index: number;
+  name: string | null;
+}
+export interface SdatSequence extends SdatNamed {
+  bankId: number;
+}
+export interface SdatWaveArchive extends SdatNamed {
+  waveCount: number;
+}
+export interface SdatInfo {
+  sequences: SdatSequence[];
+  banks: SdatNamed[];
+  waveArchives: SdatWaveArchive[];
+  streams: SdatNamed[];
+  sequenceArchives: SdatNamed[];
+}
+export interface SeqNote {
+  track: number;
+  tick: number;
+  duration: number;
+  key: number;
+  velocity: number;
+  program: number;
+}
+export interface SequenceNotes {
+  ticks: number;
+  tempo: number;
+  trackCount: number;
+  bankId: number;
+  name: string | null;
+  notes: SeqNote[];
+}
+export interface WaveInfo {
+  index: number;
+  sampleRate: number;
+  samples: number;
+  type: string;
+  loops: boolean;
+}
+export interface WavePreview {
+  sampleRate: number;
+  samples: number;
+  loops: boolean;
+  type: string;
+  png: string;
+  wavBase64: string;
+}
+export interface StreamPreview {
+  sampleRate: number;
+  channels: number;
+  samples: number;
+  png: string;
+  wavBase64: string;
+}
+
 export interface NitroViewerClient {
   init(onProgress?: (msg: string) => void): Promise<void>;
 
@@ -270,4 +326,34 @@ export interface NitroViewerClient {
     height: number,
     frameCount: number
   ): Promise<{ emitterCount: number; frames: string[] }>;
+
+  getSdatInfo(handle: number, ref: ResourceRef): Promise<SdatInfo>;
+  getSequenceNotes(handle: number, ref: ResourceRef, seqIndex: number): Promise<SequenceNotes>;
+  renderSequenceWav(
+    handle: number,
+    ref: ResourceRef,
+    seqIndex: number,
+    maxSeconds: number
+  ): Promise<{ sampleRate: number; seconds: number; base64: string }>;
+  getWaveArchiveInfo(
+    handle: number,
+    ref: ResourceRef,
+    waveArcIndex: number
+  ): Promise<{ waves: WaveInfo[] }>;
+  getWavePreview(
+    handle: number,
+    ref: ResourceRef,
+    waveArcIndex: number,
+    waveIndex: number
+  ): Promise<WavePreview>;
+  getStreamPreview(handle: number, ref: ResourceRef, streamIndex: number): Promise<StreamPreview>;
+  importWav(
+    handle: number,
+    ref: ResourceRef,
+    waveArcIndex: number,
+    waveIndex: number,
+    wavBytes: Uint8Array
+  ): Promise<{ ok: boolean; sampleRate: number; samples: number; type: string }>;
+  exportSequenceMidi(handle: number, ref: ResourceRef, seqIndex: number): Promise<{ base64: string }>;
+  exportBankSf2(handle: number, ref: ResourceRef, bankIndex: number): Promise<{ base64: string }>;
 }
