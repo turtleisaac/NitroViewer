@@ -15,6 +15,12 @@ dist/
 *.log
 *.tsbuildinfo
 
+# Electron packager output (`make build` → release/)
+release/
+
+# Vendored CheerpJ runtime (downloaded by scripts/vendor-cheerpj.sh)
+web/vendor/cheerpj/
+
 # OS / editor
 .DS_Store
 .idea/

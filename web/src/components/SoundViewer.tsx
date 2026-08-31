@@ -270,34 +270,15 @@ function NoteRoll({
     setDragTick(null);
   };
 
+  console.log(onSolo);
+  console.log(onMute);
+
   const nTracks = Math.max(1, notes.trackCount);
   return (
     <div className="note-roll" ref={wrapRef}>
       <div className="note-gutter" style={{ width: NOTE_GUTTER }}>
         {Array.from({ length: nTracks }, (_, i) => (
           <div key={i} className="note-lane-ctrl" style={{ height: NOTE_LANE_HEIGHT }}>
-            <button
-              type="button"
-              className={"trk-btn" + (muted[i] ? " trk-btn--mute" : "")}
-              title={muted[i] ? "Unmute track" : "Mute track"}
-              onClick={(e) => {
-                e.stopPropagation();
-                onMute?.(i);
-              }}
-            >
-              M
-            </button>
-            <button
-              type="button"
-              className={"trk-btn" + (solo[i] ? " trk-btn--solo" : "")}
-              title={solo[i] ? "Unsolo track" : "Solo / isolate track"}
-              onClick={(e) => {
-                e.stopPropagation();
-                onSolo?.(i);
-              }}
-            >
-              S
-            </button>
             <span className="trk-num">{i}</span>
           </div>
         ))}
@@ -822,12 +803,13 @@ export function SoundViewer() {
                   )}
                   muted={muted}
                   solo={solo}
-                  onMute={(t) =>
+                  onMute={(t) => {
                     setMuted((m) => {
                       const next = Array.from({ length: notes.trackCount }, (_, i) => m[i] ?? false);
                       next[t] = !next[t];
                       return next;
                     })
+                  }
                   }
                   onSolo={(t) =>
                     setSolo((s) => {

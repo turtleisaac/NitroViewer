@@ -1,0 +1,166 @@
+name: Release desktop apps
+
+# Publishing a GitHub Release (or running this workflow by hand) packages the
+# Electron app on macOS, Windows, and Linux and, for a real release, attaches
+# the installers + SHA256SUMS to that release. macOS is signed/notarized when
+# CSC_LINK / APPLE_* secrets are set; otherwise the build stays unsigned.
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: desktop-release-${{ github.event.release.tag_name || github.run_id }}
+  cancel-in-progress: false
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-latest
+            electron_args: --mac --arm64 --x64
+          - os: windows-latest
+            electron_args: --win --x64 --arm64
+          - os: ubuntu-latest
+            electron_args: --linux --x64
+    runs-on: ${{ matrix.os }}
+    steps:
+      - name: Checkout NitroViewer
+        uses: actions/checkout@v4
+        with:
+          path: NitroViewer
+
+      - name: Checkout Nds4j
+        uses: actions/checkout@v4
+        with:
+          repository: turtleisaac/Nds4j
+          ref: feature/3d-formats
+          path: Nds4j
+
+      - name: Set up JDK
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+          cache: maven
+
+      - name: Build & stage jars
+        working-directory: NitroViewer
+        shell: bash
+        env:
+          NDS4J_DIR: ${{ github.workspace }}/Nds4j
+        run: ./scripts/build-jars.sh
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: NitroViewer/web/package-lock.json
+
+      - name: Cache CheerpJ runtime
+        uses: actions/cache@v4
+        with:
+          path: NitroViewer/web/vendor/cheerpj
+          key: cheerpj-4.3-${{ hashFiles('NitroViewer/scripts/vendor-cheerpj.sh') }}
+
+      - name: Vendor CheerpJ
+        working-directory: NitroViewer
+        shell: bash
+        run: ./scripts/vendor-cheerpj.sh
+
+      - name: Install JS deps
+        working-directory: NitroViewer/web
+        run: npm ci
+
+      - name: Set version from release tag
+        if: github.event_name == 'release'
+        working-directory: NitroViewer/web
+        shell: bash
+        run: |
+          TAG="${{ github.event.release.tag_name }}"
+          VERSION="${TAG#v}"
+          npm version "$VERSION" --no-git-tag-version --allow-same-version
+
+      - name: Test + build SPA
+        working-directory: NitroViewer/web
+        run: |
+          npm test
+          npm run build
+
+      - name: Package Electron app
+        working-directory: NitroViewer/web
+        shell: bash
+        env:
+          CSC_LINK: ${{ secrets.CSC_LINK }}
+          CSC_KEY_PASSWORD: ${{ secrets.CSC_KEY_PASSWORD }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          CSC_IDENTITY_AUTO_DISCOVERY: ${{ secrets.CSC_LINK && 'true' || 'false' }}
+        run: |
+          extra=()
+          if [ "${{ matrix.os }}" = "macos-latest" ] && [ -n "${APPLE_ID:-}" ] && [ -n "${APPLE_TEAM_ID:-}" ]; then
+            extra+=(-c.mac.notarize.teamId="$APPLE_TEAM_ID")
+          fi
+          npx electron-builder --publish never ${{ matrix.electron_args }} "${extra[@]}"
+
+      - name: Upload workflow artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: desktop-${{ matrix.os }}
+          path: |
+            NitroViewer/release/*.dmg
+            NitroViewer/release/*.exe
+            NitroViewer/release/*.zip
+            NitroViewer/release/*.AppImage
+            NitroViewer/release/*.deb
+            NitroViewer/release/*.tar.gz
+          if-no-files-found: error
+
+      - name: Attach to GitHub Release
+        if: github.event_name == 'release'
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            NitroViewer/release/*.dmg
+            NitroViewer/release/*.exe
+            NitroViewer/release/*.zip
+            NitroViewer/release/*.AppImage
+            NitroViewer/release/*.deb
+            NitroViewer/release/*.tar.gz
+
+  checksums:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download packaged apps
+        uses: actions/download-artifact@v4
+        with:
+          pattern: desktop-*
+          path: dist
+          merge-multiple: true
+
+      - name: SHA256SUMS
+        working-directory: dist
+        run: |
+          mapfile -t files < <(find . -maxdepth 1 -type f ! -name SHA256SUMS | sed 's|^\./||' | sort)
+          sha256sum "${files[@]}" | tee SHA256SUMS
+
+      - name: Upload SHA256SUMS
+        uses: actions/upload-artifact@v4
+        with:
+          name: SHA256SUMS
+          path: dist/SHA256SUMS
+
+      - name: Attach SHA256SUMS to GitHub Release
+        if: github.event_name == 'release'
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/SHA256SUMS
