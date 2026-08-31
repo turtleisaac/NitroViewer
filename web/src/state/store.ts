@@ -13,6 +13,7 @@ import {
   type TreeFolder,
 } from "../transport";
 import { base64ToBytes, download } from "../util";
+import { isSkippableUnpackedPath, zipStore } from "../zip";
 
 export interface ResourceItem {
   ref: ResourceRef;
@@ -75,12 +76,27 @@ interface AppState {
   undoStack: EditSnapshot[];
   redoStack: EditSnapshot[];
 
+  // In-tool editor draft (NCLR color picker / NCGR sprite editor). While dirty, the header ↶/↷
+  // buttons drive the draft's local history instead of the ROM snapshot stack, and navigating away
+  // (or Save ROM) asks before discarding unsaved color/pixel edits.
+  editorDirty: boolean;
+  editorCanUndo: boolean;
+  editorCanRedo: boolean;
+  editorCapturesUndo: boolean;
+  editorDiscardMessage: string;
+  editorUndo: (() => void) | null;
+  editorRedo: (() => void) | null;
+
   boot: () => Promise<void>;
   setNavOpen: (open: boolean) => void;
   revealFolder: (folderPath: string) => void;
   setNarcScroll: (narcHandle: number, top: number) => void;
   setPairingOverride: (key: string, partial: PairOverride) => void;
   openRom: (file: File) => Promise<void>;
+  openRomBytes: (name: string, bytes: Uint8Array) => Promise<void>;
+  /** Load via Nds4j {@code NintendoDsRom.fromUnpacked} (ndstool or ds-rom extract) from a folder picker. */
+  openUnpackedFolder: (files: FileList | File[]) => Promise<void>;
+  openUnpackedEntries: (label: string, files: { path: string; data: Uint8Array }[]) => Promise<void>;
   toggleFolder: (path: string) => void;
   select: (ref: ResourceRef, name: string) => Promise<void>;
   ensureNarc: (ref: ResourceRef) => Promise<{ narcHandle: number; entries: NarcEntry[] }>;
@@ -100,6 +116,34 @@ interface AppState {
   ) => Promise<PngImportResult>;
   saveRom: () => Promise<void>;
   importPalette: (nclr: ResourceRef, bytes: Uint8Array) => Promise<{ colors: number; unique: number }>;
+  setPaletteColors: (nclr: ResourceRef, colors: string[]) => Promise<{ colors: number; changed: number }>;
+  setNcgrPixels: (
+    ncgr: ResourceRef,
+    tilesWidth: number,
+    scanFrontToBack: boolean,
+    pixels: Uint8Array
+  ) => Promise<{ width: number; height: number }>;
+  /** Persist a sprite-editor save: pixels always, NCLR colors only when `colors` is provided. */
+  saveSpriteEdit: (
+    ncgr: ResourceRef,
+    nclr: ResourceRef | undefined,
+    tilesWidth: number,
+    scanFrontToBack: boolean,
+    pixels: Uint8Array,
+    colors?: string[]
+  ) => Promise<void>;
+  bindEditor: (
+    session: {
+      dirty: boolean;
+      canUndo: boolean;
+      canRedo: boolean;
+      /** When true, header ↶/↷ drive the draft even if it isn't dirty yet (sprite editor). */
+      captureUndo?: boolean;
+      discardMessage: string;
+      undo: () => void;
+      redo: () => void;
+    } | null
+  ) => void;
   importObj: (
     nsbmd: ResourceRef,
     objBytes: Uint8Array
@@ -228,6 +272,73 @@ async function refreshAfterEdit(
   set((s) => ({ dirty: true, editVersion: s.editVersion + 1 }));
 }
 
+async function commitOpenRom(
+  get: StoreApi<AppState>["getState"],
+  set: StoreApi<AppState>["setState"],
+  handle: number,
+  displayName: string
+) {
+  const { client } = get();
+  const [romInfo, tree] = await Promise.all([client.getRomInfo(handle), client.listTree(handle)]);
+  set({
+    romHandle: handle,
+    romInfo,
+    tree,
+    romName: displayName,
+    expanded: new Set<string>(["/"]),
+    narcs: {},
+    narcByRef: {},
+    formats: {},
+    idToPath: buildPathMap(tree),
+    selection: null,
+    romSiblings: [],
+    pairingOverrides: {},
+    narcScroll: {},
+    dirty: false,
+    editVersion: 0,
+    undoStack: [],
+    redoStack: [],
+    editorDirty: false,
+    editorCanUndo: false,
+    editorCanRedo: false,
+    editorCapturesUndo: false,
+    editorUndo: null,
+    editorRedo: null,
+    status: `${romInfo.title.trim() || displayName} · ${romInfo.numFiles} files`,
+  });
+}
+
+function packRgbTriplets(colors: string[]): Uint8Array {
+  const rgb = new Uint8Array(colors.length * 3);
+  for (let i = 0; i < colors.length; i++) {
+    const hex = colors[i].replace(/^#/, "");
+    const v = parseInt(hex.length === 3 ? hex.replace(/./g, (c) => c + c) : hex, 16);
+    if (!Number.isFinite(v)) throw new Error("Invalid color: " + colors[i]);
+    rgb[i * 3] = (v >> 16) & 0xff;
+    rgb[i * 3 + 1] = (v >> 8) & 0xff;
+    rgb[i * 3 + 2] = v & 0xff;
+  }
+  return rgb;
+}
+
+/** True when the in-tool editor has unsaved color/pixel edits the user is willing to throw away. */
+function confirmDiscardDraft(get: StoreApi<AppState>["getState"]): boolean {
+  const s = get();
+  if (!s.editorDirty) return true;
+  if (typeof window === "undefined" || typeof window.confirm !== "function") return true;
+  return window.confirm(s.editorDiscardMessage);
+}
+
+function unpackedFolderLabel(files: File[]): string {
+  for (const f of files) {
+    const rel = f.webkitRelativePath;
+    if (!rel) continue;
+    const first = rel.split(/[/\\]/).filter(Boolean)[0];
+    if (first) return first;
+  }
+  return "unpacked";
+}
+
 export const useStore = create<AppState>((set, get) => ({
   client: createClient(),
   booted: false,
@@ -259,6 +370,37 @@ export const useStore = create<AppState>((set, get) => ({
   undoStack: [],
   redoStack: [],
 
+  editorDirty: false,
+  editorCanUndo: false,
+  editorCanRedo: false,
+  editorCapturesUndo: false,
+  editorDiscardMessage: "You have unsaved edits. Discard them?",
+  editorUndo: null,
+  editorRedo: null,
+
+  bindEditor: (session) => {
+    if (!session) {
+      set({
+        editorDirty: false,
+        editorCanUndo: false,
+        editorCanRedo: false,
+        editorCapturesUndo: false,
+        editorUndo: null,
+        editorRedo: null,
+      });
+      return;
+    }
+    set({
+      editorDirty: session.dirty,
+      editorCanUndo: session.canUndo,
+      editorCanRedo: session.canRedo,
+      editorCapturesUndo: session.captureUndo ?? session.dirty,
+      editorDiscardMessage: session.discardMessage,
+      editorUndo: session.undo,
+      editorRedo: session.redo,
+    });
+  },
+
   setNavOpen: (open) => set({ navOpen: open }),
 
   // Expand a folder and all its ancestors in the tree, and signal TreePane to scroll it into view.
@@ -288,43 +430,66 @@ export const useStore = create<AppState>((set, get) => ({
     if (booted) return;
     try {
       await client.init((msg) => set({ status: msg }));
-      set({ booted: true, status: "Ready — open a ROM" });
+      set({ booted: true, status: "Ready — open a ROM or unpacked folder" });
     } catch (e) {
       set({ status: "CheerpJ failed to start: " + (e as Error).message });
     }
   },
 
   openRom: async (file) => {
+    const bytes = new Uint8Array(await file.arrayBuffer());
+    await get().openRomBytes(file.name, bytes);
+  },
+
+  openRomBytes: async (name, bytes) => {
+    if (!confirmDiscardDraft(get)) return;
     const { client } = get();
-    set({ loading: true, status: `Parsing ${file.name}…` });
+    set({ loading: true, status: `Parsing ${name}…` });
     try {
-      const bytes = new Uint8Array(await file.arrayBuffer());
       const { handle } = await client.openRom(bytes);
-      const [romInfo, tree] = await Promise.all([client.getRomInfo(handle), client.listTree(handle)]);
-      set({
-        romHandle: handle,
-        romInfo,
-        tree,
-        romName: file.name,
-        expanded: new Set<string>(["/"]),
-        narcs: {},
-        narcByRef: {},
-        formats: {},
-        idToPath: buildPathMap(tree),
-        selection: null,
-        romSiblings: [],
-        pairingOverrides: {},
-        narcScroll: {},
-        dirty: false,
-        editVersion: 0,
-        undoStack: [],
-        redoStack: [],
-        status: `${romInfo.title.trim() || file.name} · ${romInfo.numFiles} files`,
-      });
+      await commitOpenRom(get, set, handle, name);
     } catch (e) {
       console.error("[openRom]", e);
       const msg = e instanceof Error ? e.message : (e as { message?: string })?.message ?? String(e);
       set({ status: "Failed to open ROM: " + msg });
+    } finally {
+      set({ loading: false });
+    }
+  },
+
+  openUnpackedFolder: async (fileList) => {
+    const files = Array.from(fileList).filter((f) => !isSkippableUnpackedPath(f.webkitRelativePath || f.name));
+    if (files.length === 0) {
+      set({ status: "Failed to open unpacked folder: the folder was empty" });
+      return;
+    }
+    const packed: { path: string; data: Uint8Array }[] = [];
+    for (const f of files) {
+      packed.push({
+        path: f.webkitRelativePath || f.name,
+        data: new Uint8Array(await f.arrayBuffer()),
+      });
+    }
+    await get().openUnpackedEntries(unpackedFolderLabel(files), packed);
+  },
+
+  openUnpackedEntries: async (label, packed) => {
+    if (!confirmDiscardDraft(get)) return;
+    const { client } = get();
+    const files = packed.filter((f) => !isSkippableUnpackedPath(f.path));
+    if (files.length === 0) {
+      set({ status: "Failed to open unpacked folder: the folder was empty" });
+      return;
+    }
+    set({ loading: true, status: `Loading unpacked ROM ${label}…` });
+    try {
+      const zip = zipStore(files);
+      const { handle } = await client.openUnpackedRom(zip);
+      await commitOpenRom(get, set, handle, label);
+    } catch (e) {
+      console.error("[openUnpackedFolder]", e);
+      const msg = e instanceof Error ? e.message : (e as { message?: string })?.message ?? String(e);
+      set({ status: "Failed to open unpacked folder: " + msg });
     } finally {
       set({ loading: false });
     }
@@ -354,9 +519,12 @@ export const useStore = create<AppState>((set, get) => ({
   },
 
   select: async (ref, name) => {
-    const { client, romHandle, formats } = get();
+    const { client, romHandle, formats, selection } = get();
     if (romHandle == null) return;
     const key = refKey(ref);
+    if (!selection || refKey(selection.ref) !== key) {
+      if (!confirmDiscardDraft(get)) return;
+    }
     let fmt = formats[key];
     if (!fmt) {
       fmt = await client.detectFormat(romHandle, ref);
@@ -419,6 +587,43 @@ export const useStore = create<AppState>((set, get) => ({
     set((s) => ({ undoStack: [...s.undoStack, snap], redoStack: [] }));
     await refreshAfterEdit(get, set, romHandle, [nclr]);
     return res;
+  },
+
+  setPaletteColors: async (nclr, colors) => {
+    const { client, romHandle } = get();
+    if (romHandle == null) throw new Error("no ROM open");
+    const snap = await snapshot(client, romHandle, [nclr], "Edit palette");
+    const res = await client.setPaletteColors(romHandle, nclr, packRgbTriplets(colors));
+    if (!res.ok) throw new Error("setPaletteColors failed");
+    set((s) => ({ undoStack: [...s.undoStack, snap], redoStack: [] }));
+    await refreshAfterEdit(get, set, romHandle, [nclr]);
+    return { colors: res.colors, changed: res.changed };
+  },
+
+  setNcgrPixels: async (ncgr, tilesWidth, scanFrontToBack, pixels) => {
+    const { client, romHandle } = get();
+    if (romHandle == null) throw new Error("no ROM open");
+    const snap = await snapshot(client, romHandle, [ncgr], "Edit sprite");
+    const res = await client.setNcgrPixels(romHandle, ncgr, tilesWidth, scanFrontToBack, pixels);
+    if (!res.ok) throw new Error("setNcgrPixels failed");
+    set((s) => ({ undoStack: [...s.undoStack, snap], redoStack: [] }));
+    await refreshAfterEdit(get, set, romHandle, [ncgr]);
+    return { width: res.width, height: res.height };
+  },
+
+  saveSpriteEdit: async (ncgr, nclr, tilesWidth, scanFrontToBack, pixels, colors) => {
+    const { client, romHandle } = get();
+    if (romHandle == null) throw new Error("no ROM open");
+    const touched = colors && nclr ? [ncgr, nclr] : [ncgr];
+    const snap = await snapshot(client, romHandle, touched, colors ? "Edit sprite + palette" : "Edit sprite");
+    const pix = await client.setNcgrPixels(romHandle, ncgr, tilesWidth, scanFrontToBack, pixels);
+    if (!pix.ok) throw new Error("setNcgrPixels failed");
+    if (colors && nclr) {
+      const pal = await client.setPaletteColors(romHandle, nclr, packRgbTriplets(colors));
+      if (!pal.ok) throw new Error("setPaletteColors failed");
+    }
+    set((s) => ({ undoStack: [...s.undoStack, snap], redoStack: [] }));
+    await refreshAfterEdit(get, set, romHandle, touched);
   },
 
   importObj: async (nsbmd, objBytes) => {
@@ -506,6 +711,11 @@ export const useStore = create<AppState>((set, get) => ({
   },
 
   saveRom: async () => {
+    if (get().editorDirty) {
+      if (typeof window !== "undefined")
+        window.alert("Save or cancel your palette/sprite edits before saving the ROM.");
+      return;
+    }
     const { client, romHandle, romName } = get();
     if (romHandle == null) throw new Error("no ROM open");
     set({ saving: true, status: "Saving ROM…" });
@@ -525,7 +735,12 @@ export const useStore = create<AppState>((set, get) => ({
   // Restore the most recent edit's prior bytes, moving it to the redo stack (snapshotting the current
   // bytes first, so redo can re-apply). Writing through importRaw repacks NARCs/nested chains as usual.
   undo: async () => {
-    const { client, romHandle, undoStack } = get();
+    const s = get();
+    if (s.editorDirty || s.editorCapturesUndo) {
+      s.editorUndo?.();
+      return;
+    }
+    const { client, romHandle, undoStack } = s;
     if (romHandle == null || undoStack.length === 0) return;
     const snap = undoStack[undoStack.length - 1];
     const refs = snap.entries.map((e) => e.ref);
@@ -537,7 +752,12 @@ export const useStore = create<AppState>((set, get) => ({
   },
 
   redo: async () => {
-    const { client, romHandle, redoStack } = get();
+    const s = get();
+    if (s.editorDirty || s.editorCapturesUndo) {
+      s.editorRedo?.();
+      return;
+    }
+    const { client, romHandle, redoStack } = s;
     if (romHandle == null || redoStack.length === 0) return;
     const snap = redoStack[redoStack.length - 1];
     const refs = snap.entries.map((e) => e.ref);

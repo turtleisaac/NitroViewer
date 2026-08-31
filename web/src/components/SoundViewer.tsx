@@ -1,6 +1,6 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
 import { useStore } from "../state/store";
-import { drawNoteTrack, noteTrackHeight } from "../sound/noteTrack";
+import { drawNoteTrack, noteTrackHeight, tickFromCanvasX, NOTE_GUTTER, NOTE_LANE_HEIGHT } from "../sound/noteTrack";
 import type {
   SdatInfo,
   SdatNamed,
@@ -13,49 +13,139 @@ import { base64ToBytes, download } from "../util";
 
 type Tab = "sequences" | "waves" | "streams" | "banks";
 
-function useAudio() {
-  const urlRef = useRef<string | null>(null);
-  const audioRef = useRef<HTMLAudioElement | null>(null);
-  const [playing, setPlaying] = useState(false);
-  const [progress, setProgress] = useState(0);
+type LoopPts = { start: number; end: number };
 
-  const stop = () => {
-    const a = audioRef.current;
-    if (a) {
-      a.pause();
-      a.src = "";
+function wavToBuffer(ctx: AudioContext, wav: Uint8Array): AudioBuffer {
+  const dv = new DataView(wav.buffer, wav.byteOffset, wav.byteLength);
+  const channels = dv.getUint16(22, true);
+  const rate = dv.getUint32(24, true);
+  let p = 12;
+  let dataOff = 44;
+  let dataLen = wav.byteLength - 44;
+  while (p + 8 <= wav.byteLength) {
+    const id = String.fromCharCode(wav[p], wav[p + 1], wav[p + 2], wav[p + 3]);
+    const size = dv.getUint32(p + 4, true);
+    if (id === "data") {
+      dataOff = p + 8;
+      dataLen = size;
+      break;
     }
-    audioRef.current = null;
-    if (urlRef.current) {
-      URL.revokeObjectURL(urlRef.current);
-      urlRef.current = null;
+    p += 8 + size + (size & 1);
+  }
+  const frames = Math.floor(dataLen / (2 * Math.max(1, channels)));
+  const buf = ctx.createBuffer(channels, frames, rate);
+  const dataDv = new DataView(wav.buffer, wav.byteOffset + dataOff, Math.min(dataLen, wav.byteLength - dataOff));
+  for (let c = 0; c < channels; c++) {
+    const ch = buf.getChannelData(c);
+    for (let i = 0; i < frames; i++) ch[i] = dataDv.getInt16((i * channels + c) * 2, true) / 32768;
+  }
+  return buf;
+}
+
+/** Position in an AudioBufferSource that started at 0 and loops [start, end). */
+function sourceTime(elapsed: number, loop: LoopPts | null): number {
+  if (!loop || elapsed < loop.end) return elapsed;
+  const span = loop.end - loop.start;
+  if (span <= 0) return elapsed;
+  return loop.start + ((elapsed - loop.end) % span);
+}
+
+function useAudio() {
+  const ctxRef = useRef<AudioContext | null>(null);
+  const srcRef = useRef<AudioBufferSourceNode | null>(null);
+  const bufRef = useRef<AudioBuffer | null>(null);
+  const startedAtRef = useRef(0);
+  const loopRef = useRef<LoopPts | null>(null);
+  const [playing, setPlaying] = useState(false);
+  const [currentTime, setCurrentTime] = useState(0);
+
+  const ctx = () => {
+    if (!ctxRef.current) {
+      const AC = window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
+      ctxRef.current = new AC();
     }
-    setPlaying(false);
-    setProgress(0);
+    return ctxRef.current;
   };
 
-  const play = (wav: Uint8Array) => {
-    stop();
-    const blob = new Blob([wav as unknown as BlobPart], { type: "audio/wav" });
-    const url = URL.createObjectURL(blob);
-    urlRef.current = url;
-    const a = new Audio(url);
-    audioRef.current = a;
-    a.addEventListener("ended", () => {
+  const stopSource = () => {
+    const src = srcRef.current;
+    srcRef.current = null;
+    if (src) {
+      try {
+        src.onended = null;
+        src.stop();
+        src.disconnect();
+      } catch {
+        /* already stopped */
+      }
+    }
+  };
+
+  const stop = () => {
+    stopSource();
+    loopRef.current = null;
+    bufRef.current = null;
+    setPlaying(false);
+    setCurrentTime(0);
+  };
+
+  const startAt = (offset: number) => {
+    const c = ctx();
+    const buf = bufRef.current;
+    if (!buf) return;
+    void c.resume();
+    stopSource();
+    const dur = buf.duration;
+    const loop = loopRef.current;
+    let o = Math.max(0, Math.min(offset, Math.max(0, dur - 1 / buf.sampleRate)));
+    if (loop && o >= loop.end) o = loop.start + ((o - loop.start) % (loop.end - loop.start));
+    const src = c.createBufferSource();
+    src.buffer = buf;
+    if (loop) {
+      src.loop = true;
+      src.loopStart = loop.start;
+      src.loopEnd = loop.end;
+    }
+    src.connect(c.destination);
+    src.onended = () => {
+      if (srcRef.current !== src) return;
+      srcRef.current = null;
       setPlaying(false);
-      setProgress(1);
-    });
-    void a.play().then(
-      () => setPlaying(true),
-      () => setPlaying(false)
-    );
+    };
+    startedAtRef.current = c.currentTime - o;
+    srcRef.current = src;
+    src.start(0, o);
+    setPlaying(true);
+    setCurrentTime(o);
+  };
+
+  const play = (wav: Uint8Array, loop?: LoopPts | null, offset = 0) => {
+    const c = ctx();
+    void c.resume();
+    const buf = wavToBuffer(c, wav);
+    bufRef.current = buf;
+    const period = loop && loop.end - loop.start > 1 / buf.sampleRate ? loop : null;
+    if (period) {
+      const end = Math.min(period.end, buf.duration);
+      const start = Math.max(0, Math.min(period.start, end - 1 / buf.sampleRate));
+      loopRef.current = end > start + 1 / buf.sampleRate ? { start, end } : null;
+    } else loopRef.current = null;
+    startAt(offset);
+  };
+
+  const seek = (time: number, wav?: Uint8Array, loop?: LoopPts | null) => {
+    const t = Math.max(0, time);
+    setCurrentTime(t);
+    if (bufRef.current) startAt(t);
+    else if (wav) play(wav, loop, t);
   };
 
   useEffect(() => {
     let raf = 0;
     const tick = () => {
-      const a = audioRef.current;
-      if (a && a.duration > 0) setProgress(a.currentTime / a.duration);
+      const c = ctxRef.current;
+      const src = srcRef.current;
+      if (c && src) setCurrentTime(sourceTime(c.currentTime - startedAtRef.current, loopRef.current));
       raf = requestAnimationFrame(tick);
     };
     raf = requestAnimationFrame(tick);
@@ -66,13 +156,59 @@ function useAudio() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  return { play, stop, playing, progress };
+  return { play, seek, stop, playing, currentTime };
 }
 
-function NoteRoll({ notes, progress }: { notes: SequenceNotes; progress: number }) {
+function playheadTick(
+  timeSec: number,
+  notes: SequenceNotes,
+  loop: LoopPts | null,
+  wavSeconds: number
+): number {
+  if (timeSec <= 0) return 0;
+  if (loop && notes.loopEnd > notes.loopStart && notes.loopStart >= 0 && loop.end > loop.start) {
+    // Audio is intro+body, then a second body used as the seamless cycle (loop.start = first 0x94).
+    if (loop.start > 0 && timeSec < loop.start) return (timeSec / loop.start) * notes.loopEnd;
+    const u = (timeSec - loop.start) / (loop.end - loop.start);
+    return notes.loopStart + u * (notes.loopEnd - notes.loopStart);
+  }
+  const dur = wavSeconds > 0 ? wavSeconds : timeSec;
+  return dur > 0 ? (timeSec / dur) * notes.ticks : 0;
+}
+
+function tickToTime(tick: number, notes: SequenceNotes, loop: LoopPts | null, wavSeconds: number): number {
+  const T = Math.max(0, tick);
+  if (loop && notes.loopEnd > notes.loopStart && notes.loopStart >= 0 && loop.end > loop.start) {
+    if (T <= notes.loopStart) return notes.loopEnd > 0 ? (T / notes.loopEnd) * loop.start : 0;
+    const spanT = notes.loopEnd - notes.loopStart;
+    const u = spanT > 0 ? (T - notes.loopStart) / spanT : 0;
+    return Math.min(loop.start + u * (loop.end - loop.start), loop.end - 1e-4);
+  }
+  return notes.ticks > 0 ? (T / notes.ticks) * wavSeconds : 0;
+}
+
+function NoteRoll({
+  notes,
+  playTick,
+  muted,
+  solo,
+  onSeekTick,
+  onMute,
+  onSolo,
+}: {
+  notes: SequenceNotes;
+  playTick: number;
+  muted: boolean[];
+  solo: boolean[];
+  onSeekTick?: (tick: number) => void;
+  onMute?: (track: number) => void;
+  onSolo?: (track: number) => void;
+}) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const wrapRef = useRef<HTMLDivElement>(null);
   const [width, setWidth] = useState(720);
+  const [dragTick, setDragTick] = useState<number | null>(null);
+  const dragging = useRef(false);
 
   useEffect(() => {
     const el = wrapRef.current;
@@ -84,6 +220,7 @@ function NoteRoll({ notes, progress }: { notes: SequenceNotes; progress: number 
   }, []);
 
   const height = noteTrackHeight(notes.trackCount);
+  const head = dragTick ?? playTick;
   useEffect(() => {
     const c = canvasRef.current;
     if (!c) return;
@@ -93,13 +230,140 @@ function NoteRoll({ notes, progress }: { notes: SequenceNotes; progress: number 
     c.width = Math.floor(width * dpr);
     c.height = Math.floor(height * dpr);
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-    const playTick = progress > 0 ? progress * notes.ticks : null;
-    drawNoteTrack(ctx, notes.notes, notes.ticks, notes.trackCount, playTick, width);
-  }, [notes, progress, width, height]);
+    drawNoteTrack(
+      ctx,
+      notes.notes,
+      notes.ticks,
+      notes.trackCount,
+      head,
+      width,
+      notes.loopStart,
+      notes.loopEnd,
+      null, //silentOf(muted, solo)
+    );
+  }, [notes, head, width, height, muted, solo]);
 
+  const tickAtEvent = (e: ReactPointerEvent) => {
+    const c = canvasRef.current;
+    if (!c) return 0;
+    const r = c.getBoundingClientRect();
+    return tickFromCanvasX(e.clientX - r.left, r.width, notes.ticks);
+  };
+
+  const onDown = (e: ReactPointerEvent) => {
+    if (!onSeekTick) return;
+    e.preventDefault();
+    dragging.current = true;
+    (e.target as HTMLElement).setPointerCapture?.(e.pointerId);
+    const t = tickAtEvent(e);
+    setDragTick(t);
+    onSeekTick(t);
+  };
+  const onMove = (e: ReactPointerEvent) => {
+    if (!dragging.current || !onSeekTick) return;
+    const t = tickAtEvent(e);
+    setDragTick(t);
+    onSeekTick(t);
+  };
+  const onUp = () => {
+    dragging.current = false;
+    setDragTick(null);
+  };
+
+  const nTracks = Math.max(1, notes.trackCount);
   return (
     <div className="note-roll" ref={wrapRef}>
-      <canvas ref={canvasRef} style={{ width, height }} />
+      <div className="note-gutter" style={{ width: NOTE_GUTTER }}>
+        {Array.from({ length: nTracks }, (_, i) => (
+          <div key={i} className="note-lane-ctrl" style={{ height: NOTE_LANE_HEIGHT }}>
+            <button
+              type="button"
+              className={"trk-btn" + (muted[i] ? " trk-btn--mute" : "")}
+              title={muted[i] ? "Unmute track" : "Mute track"}
+              onClick={(e) => {
+                e.stopPropagation();
+                onMute?.(i);
+              }}
+            >
+              M
+            </button>
+            <button
+              type="button"
+              className={"trk-btn" + (solo[i] ? " trk-btn--solo" : "")}
+              title={solo[i] ? "Unsolo track" : "Solo / isolate track"}
+              onClick={(e) => {
+                e.stopPropagation();
+                onSolo?.(i);
+              }}
+            >
+              S
+            </button>
+            <span className="trk-num">{i}</span>
+          </div>
+        ))}
+      </div>
+      <canvas
+        ref={canvasRef}
+        style={{ width, height }}
+        onPointerDown={onDown}
+        onPointerMove={onMove}
+        onPointerUp={onUp}
+        onPointerCancel={onUp}
+      />
+    </div>
+  );
+}
+
+function WaveformScrub({
+  png,
+  currentTime,
+  duration,
+  onSeek,
+}: {
+  png: string;
+  currentTime: number;
+  duration: number;
+  onSeek?: (time: number) => void;
+}) {
+  const wrapRef = useRef<HTMLDivElement>(null);
+  const dragging = useRef(false);
+
+  const timeAtEvent = (e: ReactPointerEvent) => {
+    const el = wrapRef.current;
+    if (!el || duration <= 0) return 0;
+    const r = el.getBoundingClientRect();
+    const u = Math.max(0, Math.min(1, (e.clientX - r.left) / r.width));
+    return u * duration;
+  };
+
+  const onDown = (e: ReactPointerEvent) => {
+    if (!onSeek) return;
+    e.preventDefault();
+    dragging.current = true;
+    (e.currentTarget as HTMLElement).setPointerCapture?.(e.pointerId);
+    onSeek(timeAtEvent(e));
+  };
+  const onMove = (e: ReactPointerEvent) => {
+    if (!dragging.current || !onSeek) return;
+    onSeek(timeAtEvent(e));
+  };
+  const onUp = () => {
+    dragging.current = false;
+  };
+
+  const pct = duration > 0 ? Math.max(0, Math.min(100, (currentTime / duration) * 100)) : 0;
+
+  return (
+    <div
+      className="wave-stage"
+      ref={wrapRef}
+      onPointerDown={onDown}
+      onPointerMove={onMove}
+      onPointerUp={onUp}
+      onPointerCancel={onUp}
+    >
+      <img className="wave-png" src={png} alt="" draggable={false} />
+      <div className="playhead-line" style={{ left: `${pct}%` }} />
     </div>
   );
 }
@@ -138,17 +402,23 @@ function WavePanel({
   selected,
   preview,
   busy,
+  currentTime,
   onSelect,
   onPlay,
+  onExport,
   onImport,
+  onSeek,
 }: {
   waves: WaveInfo[];
   selected: number | null;
   preview: WavePreview | null;
   busy: boolean;
+  currentTime: number;
   onSelect: (i: number) => void;
   onPlay: () => void;
+  onExport: () => void;
   onImport: (file: File) => void;
+  onSeek: (time: number) => void;
 }) {
   const fileRef = useRef<HTMLInputElement>(null);
   return (
@@ -175,6 +445,9 @@ function WavePanel({
               <button className="play-btn" onClick={onPlay} disabled={busy}>
                 ▶ Play
               </button>
+              <button className="btn btn--sm" onClick={onExport} disabled={busy}>
+                Export WAV
+              </button>
               <button className="btn btn--sm" onClick={() => fileRef.current?.click()} disabled={busy}>
                 Import WAV…
               </button>
@@ -183,7 +456,12 @@ function WavePanel({
                 {preview.loops ? " · loops" : ""}
               </span>
             </div>
-            <img className="wave-png" src={preview.png} alt="" />
+            <WaveformScrub
+              png={preview.png}
+              currentTime={currentTime}
+              duration={preview.sampleRate > 0 ? preview.samples / preview.sampleRate : 0}
+              onSeek={onSeek}
+            />
             <input
               ref={fileRef}
               type="file"
@@ -226,6 +504,23 @@ export function SoundViewer() {
   const [streamIndex, setStreamIndex] = useState<number | null>(null);
   const [streamPrev, setStreamPrev] = useState<StreamPreview | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
+  const [muted, setMuted] = useState<boolean[]>([]);
+  const [solo, setSolo] = useState<boolean[]>([]);
+  const [seqWav, setSeqWav] = useState<{
+    index: number;
+    bytes: Uint8Array;
+    seconds: number;
+    loopStartSec: number;
+    loopEndSec: number;
+  } | null>(null);
+  const waveBytes = useMemo(
+    () => (wavePrev ? base64ToBytes(wavePrev.wavBase64) : null),
+    [wavePrev]
+  );
+  const streamBytes = useMemo(
+    () => (streamPrev ? base64ToBytes(streamPrev.wavBase64) : null),
+    [streamPrev]
+  );
 
   const { container, id } = selection.ref;
   const ref = selection.ref;
@@ -240,10 +535,25 @@ export function SoundViewer() {
     setWavePrev(null);
     setStreamIndex(null);
     setStreamPrev(null);
+    setSeqWav(null);
     setFilter("");
     audio.stop();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [container, id, fmt]);
+
+  useEffect(() => {
+    setSeqWav(null);
+  }, [editVersion]);
+
+  useEffect(() => {
+    setMuted([]);
+    setSolo([]);
+  }, [notes]);
+
+  useEffect(() => {
+    audio.stop();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tab]);
 
   useEffect(() => {
     let alive = true;
@@ -306,6 +616,7 @@ export function SoundViewer() {
 
   const loadSequence = async (index: number) => {
     setSeqIndex(index);
+    setSeqWav(null);
     setBusy("notes");
     audio.stop();
     try {
@@ -317,14 +628,47 @@ export function SoundViewer() {
     }
   };
 
+  const seqFileName = () =>
+    (notes?.name || selection.name || "sequence").replace(/[^\w.\-]+/g, "_");
+
+  const ensureSequenceWav = async () => {
+    if (fmt !== "SDAT" || seqIndex == null) throw new Error("sequence playback needs an SDAT");
+    if (seqWav && seqWav.index === seqIndex) return seqWav;
+    const r = await client.renderSequenceWav(romHandle, ref, seqIndex, 0);
+    const cached = {
+      index: seqIndex,
+      bytes: base64ToBytes(r.base64),
+      seconds: r.seconds,
+      loopStartSec: r.loopStartSec,
+      loopEndSec: r.loopEndSec,
+    };
+    setSeqWav(cached);
+    return cached;
+  };
+
+  const seqLoop = (w: { loopStartSec: number; loopEndSec: number }): LoopPts | null =>
+    w.loopEndSec > w.loopStartSec + 0.02 ? { start: Math.max(0, w.loopStartSec), end: w.loopEndSec } : null;
+
   const playSequence = async () => {
     if (fmt !== "SDAT" || seqIndex == null) return;
     setBusy("render");
     try {
-      const r = await client.renderSequenceWav(romHandle, ref, seqIndex, 20);
-      audio.play(base64ToBytes(r.base64));
+      const w = await ensureSequenceWav();
+      audio.play(w.bytes, seqLoop(w));
     } catch (e) {
       alert("Render failed: " + (e as Error).message);
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  const exportWav = async () => {
+    if (fmt !== "SDAT" || seqIndex == null) return;
+    setBusy("render");
+    try {
+      download(`${seqFileName()}.wav`, (await ensureSequenceWav()).bytes, "audio/wav");
+    } catch (e) {
+      alert("WAV export failed: " + (e as Error).message);
     } finally {
       setBusy(null);
     }
@@ -335,8 +679,7 @@ export function SoundViewer() {
     setBusy("midi");
     try {
       const r = await client.exportSequenceMidi(romHandle, ref, seqIndex ?? 0);
-      const name = (notes?.name || selection.name || "sequence").replace(/[^\w.\-]+/g, "_");
-      download(`${name}.mid`, base64ToBytes(r.base64), "audio/midi");
+      download(`${seqFileName()}.mid`, base64ToBytes(r.base64), "audio/midi");
     } catch (e) {
       alert("MIDI export failed: " + (e as Error).message);
     } finally {
@@ -456,15 +799,59 @@ export function SoundViewer() {
                       ⏹ Stop
                     </button>
                   )}
+                  {canPlaySeq && (
+                    <button className="btn btn--sm" disabled={busy != null} onClick={() => void exportWav()}>
+                      {busy === "render" ? "Rendering…" : "Export WAV"}
+                    </button>
+                  )}
                   <button className="btn btn--sm" disabled={busy != null} onClick={() => void exportMidi()}>
                     Export MIDI
                   </button>
                   <span className="dim">
                     {notes.name || "SSEQ"} · {notes.notes.length} notes · {notes.tempo} BPM · {notes.trackCount} tracks
-                    {canPlaySeq ? " · render may take a while in-browser" : " · open the parent SDAT to play"}
+                    {canPlaySeq ? " · first play synthesizes the whole song" : " · open the parent SDAT to play"}
                   </span>
                 </div>
-                <NoteRoll notes={notes} progress={audio.playing || audio.progress > 0 ? audio.progress : 0} />
+                <NoteRoll
+                  notes={notes}
+                  playTick={playheadTick(
+                    audio.currentTime,
+                    notes,
+                    seqWav ? seqLoop(seqWav) : null,
+                    seqWav?.seconds ?? 0
+                  )}
+                  muted={muted}
+                  solo={solo}
+                  onMute={(t) =>
+                    setMuted((m) => {
+                      const next = Array.from({ length: notes.trackCount }, (_, i) => m[i] ?? false);
+                      next[t] = !next[t];
+                      return next;
+                    })
+                  }
+                  onSolo={(t) =>
+                    setSolo((s) => {
+                      const next = Array.from({ length: notes.trackCount }, (_, i) => s[i] ?? false);
+                      next[t] = !next[t];
+                      return next;
+                    })
+                  }
+                  onSeekTick={
+                    canPlaySeq
+                      ? (tick) => {
+                          void (async () => {
+                            try {
+                              const w = await ensureSequenceWav();
+                              const loop = seqLoop(w);
+                              audio.seek(tickToTime(tick, notes, loop, w.seconds), w.bytes, loop);
+                            } catch (e) {
+                              alert("Render failed: " + (e as Error).message);
+                            }
+                          })();
+                        }
+                      : undefined
+                  }
+                />
               </>
             ) : (
               <div className="placeholder">{busy === "notes" ? "Reading sequence…" : "Select a sequence."}</div>
@@ -490,8 +877,24 @@ export function SoundViewer() {
             selected={waveIndex}
             preview={wavePrev}
             busy={busy != null}
+            currentTime={audio.currentTime}
             onSelect={(i) => void loadWave(i)}
             onPlay={() => wavePrev && audio.play(base64ToBytes(wavePrev.wavBase64))}
+            onSeek={(t) => {
+              if (!waveBytes) return;
+              audio.seek(t, waveBytes);
+            }}
+            onExport={() =>
+              wavePrev &&
+              download(
+                `${(info?.waveArchives.find((a) => a.index === (arcIndex ?? 0))?.name || "wave")}_${waveIndex}.wav`.replace(
+                  /[^\w.\-]+/g,
+                  "_"
+                ),
+                base64ToBytes(wavePrev.wavBase64),
+                "audio/wav"
+              )
+            }
             onImport={(f) => void onImportWav(f)}
           />
         </div>
@@ -509,11 +912,28 @@ export function SoundViewer() {
                   <button className="play-btn" onClick={() => audio.play(base64ToBytes(streamPrev.wavBase64))}>
                     ▶ Play
                   </button>
+                  <button
+                    className="btn btn--sm"
+                    onClick={() =>
+                      download(
+                        `${(info?.streams.find((s) => s.index === streamIndex)?.name || "stream").replace(/[^\w.\-]+/g, "_")}.wav`,
+                        base64ToBytes(streamPrev.wavBase64),
+                        "audio/wav"
+                      )
+                    }
+                  >
+                    Export WAV
+                  </button>
                   <span className="dim">
                     {streamPrev.channels} ch · {streamPrev.sampleRate} Hz · {streamPrev.samples.toLocaleString()} samples
                   </span>
                 </div>
-                <img className="wave-png" src={streamPrev.png} alt="" />
+                <WaveformScrub
+                  png={streamPrev.png}
+                  currentTime={audio.currentTime}
+                  duration={streamPrev.sampleRate > 0 ? streamPrev.samples / streamPrev.sampleRate : 0}
+                  onSeek={(t) => streamBytes && audio.seek(t, streamBytes)}
+                />
               </>
             ) : (
               <div className="placeholder">{busy === "stream" ? "Decoding…" : "Select a stream."}</div>

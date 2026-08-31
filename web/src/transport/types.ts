@@ -43,13 +43,21 @@ export interface DecodedImage {
   width: number;
   height: number;
   png: string; // data:image/png;base64,...
-  subPalettes?: number; // number of selectable 16-colour sub-palettes (NCGR); 1 if not applicable
+  subPalettes?: number; // number of selectable 16-color sub-palettes (NCGR); 1 if not applicable
   scanned?: boolean; // NCER/NANR over a scanned (bitmap) NCGR: shown as the raw NCGR, not composed
 }
 
 export interface PaletteData {
   count: number;
   colors: string[]; // "#rrggbb"
+}
+
+export interface IndexedRaster {
+  width: number;
+  height: number;
+  bitDepth: number;
+  scanned: boolean;
+  pixels: string; // base64 of width*height bytes, row-major palette indices
 }
 
 export interface PngImportResult {
@@ -117,6 +125,8 @@ export interface SequenceNotes {
   ticks: number;
   tempo: number;
   trackCount: number;
+  loopStart: number; // tick, or -1 if the sequence does not loop
+  loopEnd: number;
   bankId: number;
   name: string | null;
   notes: SeqNote[];
@@ -148,6 +158,11 @@ export interface NitroViewerClient {
   init(onProgress?: (msg: string) => void): Promise<void>;
 
   openRom(bytes: Uint8Array): Promise<{ handle: number; len: number }>;
+  /**
+   * Open a ROM from an Nds4j unpacked-folder tree packed as a ZIP
+   * (`NintendoDsRom.fromUnpacked`). Same return as {@link openRom}.
+   */
+  openUnpackedRom(zipBytes: Uint8Array): Promise<{ handle: number; len: number }>;
   getRomInfo(handle: number): Promise<RomInfo>;
   listTree(handle: number): Promise<TreeFolder>;
   detectFormat(handle: number, ref: ResourceRef): Promise<FormatInfo>;
@@ -173,6 +188,30 @@ export interface NitroViewerClient {
     scanFrontToBack: boolean
   ): Promise<DecodedImage>;
   decodePalette(handle: number, nclr: ResourceRef): Promise<PaletteData>;
+  /**
+   * NCGR indexed raster (palette indices, not a PNG). tilesWidth / scanFrontToBack match decodeNcgr
+   * so the editor sees the same geometry as the viewer.
+   */
+  decodeNcgrIndexed(
+    handle: number,
+    ncgr: ResourceRef,
+    tilesWidth: number,
+    scanFrontToBack: boolean
+  ): Promise<IndexedRaster>;
+  /** Replace an NCLR's colors from packed RGB triplets (3 bytes per color, count preserved). */
+  setPaletteColors(
+    handle: number,
+    nclr: ResourceRef,
+    rgbBytes: Uint8Array
+  ): Promise<{ ok: boolean; colors: number; changed: number }>;
+  /** Overwrite an NCGR's pixel indices in place (geometry preserved). */
+  setNcgrPixels(
+    handle: number,
+    ncgr: ResourceRef,
+    tilesWidth: number,
+    scanFrontToBack: boolean,
+    pixels: Uint8Array
+  ): Promise<{ ok: boolean; width: number; height: number }>;
   decodeNscr(
     handle: number,
     nscr: ResourceRef,
@@ -252,7 +291,7 @@ export interface NitroViewerClient {
     dryRun: boolean,
     pngBytes: Uint8Array
   ): Promise<{ ok: boolean; unmatched: number; cellIndex: number; paletteRebuilt: boolean; dryRun: boolean }>;
-  /** Replace an NCLR's colours from an image (swatch strip / indexed PNG / any image). Count preserved. */
+  /** Replace an NCLR's colors from an image (swatch strip / indexed PNG / any image). Count preserved. */
   importPalette(
     handle: number,
     nclr: ResourceRef,
@@ -333,8 +372,9 @@ export interface NitroViewerClient {
     handle: number,
     ref: ResourceRef,
     seqIndex: number,
-    maxSeconds: number
-  ): Promise<{ sampleRate: number; seconds: number; base64: string }>;
+    maxSeconds: number, // 0 = full playthrough (until loop/end)
+    trackMuteMask?: number // bit i set = mute track i
+  ): Promise<{ sampleRate: number; seconds: number; loopStartSec: number; loopEndSec: number; base64: string }>;
   getWaveArchiveInfo(
     handle: number,
     ref: ResourceRef,

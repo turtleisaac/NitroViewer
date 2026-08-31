@@ -4,6 +4,7 @@ import { pickSibling } from "../state/pairing";
 import { resolveNarcInfo, resolveRenderHints, resolveSpriteUnit } from "../state/grouping";
 import { refKey, type DecodedImage, type ResourceRef } from "../transport";
 import { base64ToBytes, download } from "../util";
+import { SpriteEditor } from "./SpriteEditor";
 
 function RefSelect({
   label,
@@ -141,6 +142,7 @@ export function SpriteViewer() {
   const [pending, setPending] = useState<
     { bytes: Uint8Array; unmatched: number; w: number; h: number; kind: "ncgr" | "screen" | "cell" | "nanr" } | null
   >(null);
+  const [editing, setEditing] = useState(false);
 
   // All resources of the selected file's own format, ordered by container index.
   const selfPeers = useMemo(
@@ -181,6 +183,7 @@ export function SpriteViewer() {
     setTransparent(hints?.transparent ?? true);
     setScanFrontToBack(hints?.scanDirection !== "back-to-front"); // D/P battle sprites scan back-to-front
     setPlaying(false);
+    setEditing(false);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selKey]);
 
@@ -297,7 +300,7 @@ export function SpriteViewer() {
   // match immediately; otherwise surface the match-vs-rebuild choice with the unmatched-pixel count.
   const onPngChosen = async (file: File) => {
     if (!pair.nclr) {
-      alert("Pick a palette (NCLR) first — the import needs one to match colours against.");
+      alert("Pick a palette (NCLR) first — the import needs one to match colors against.");
       return;
     }
     setImpBusy(true);
@@ -317,7 +320,7 @@ export function SpriteViewer() {
   };
 
   // Import a background image over this NSCR — decomposes it into the paired NCGR tileset + this tilemap
-  // (and the NCLR when rebuilding). Dry-run first: if every colour fits, apply the match; else prompt.
+  // (and the NCLR when rebuilding). Dry-run first: if every color fits, apply the match; else prompt.
   const onScreenPngChosen = async (file: File) => {
     if (!pair.ncgr || !pair.nclr) {
       alert("A screen import needs both a tileset (NCGR) and a palette (NCLR) — pick them first.");
@@ -417,7 +420,7 @@ export function SpriteViewer() {
       <div className="controls">
         {fmt !== "NCGR" && <RefSelect label="Tileset (NCGR)" items={ncgrs} value={pair.ncgr} onChange={(r) => { setPair((p) => ({ ...p, ncgr: r })); setPairingOverride(selKey, { ncgr: r }); }} />}
         {fmt === "NANR" && <RefSelect label="Cells (NCER)" items={ncers} value={pair.ncer} onChange={(r) => { setPair((p) => ({ ...p, ncer: r })); setPairingOverride(selKey, { ncer: r }); }} />}
-        <RefSelect label="Palette (NCLR)" items={nclrs} value={pair.nclr} onChange={(r) => { setPair((p) => ({ ...p, nclr: r })); setPairingOverride(selKey, { nclr: r }); }} />
+        <RefSelect label="Palette (NCLR)" items={nclrs} value={pair.nclr} onChange={(r) => { if (editing) return; setPair((p) => ({ ...p, nclr: r })); setPairingOverride(selKey, { nclr: r }); }} />
 
         {fmt === "NCGR" && (
           <>
@@ -430,12 +433,13 @@ export function SpriteViewer() {
                 min={0}
                 step={8}
                 placeholder="auto"
+                disabled={editing}
                 title="Sprite width in pixels (multiples of 8). Leave 0 for auto."
                 value={tilesWidth ? tilesWidth * 8 : 0}
                 onChange={(e) => setTilesWidth(Math.max(0, Math.round((+e.target.value | 0) / 8)))}
               />
             </label>
-            <Stepper label="Palette" value={paletteIndex} max={subPalettes - 1} onChange={setPaletteIndex} />
+            <Stepper label="Palette" value={paletteIndex} max={subPalettes - 1} onChange={editing ? () => undefined : setPaletteIndex} />
           </>
         )}
         {fmt === "NCER" && <Stepper label="Cell" value={cellIndex} max={cellCount - 1} onChange={setCellIndex} />}
@@ -476,12 +480,27 @@ export function SpriteViewer() {
           </label>
         )}
 
+        {fmt === "NCGR" && (
+          <label className="ctrl">
+            <span>Sprite</span>
+            <button
+              className="play-btn"
+              disabled={editing || !pair.nclr}
+              title={pair.nclr ? "Open the built-in pixel editor" : "Pick a palette first"}
+              onClick={() => setEditing(true)}
+            >
+              Edit sprite…
+            </button>
+          </label>
+        )}
+
         {(fmt === "NCGR" || fmt === "NSCR" || fmt === "NCER" || fmt === "NANR") && (
           <label className="ctrl">
             <span>Edit</span>
             <button
               className="play-btn"
               disabled={
+                editing ||
                 impBusy ||
                 (fmt === "NCGR" ? !pair.nclr : fmt === "NANR" ? !pair.ncer || !pair.ncgr || !pair.nclr : !pair.ncgr || !pair.nclr)
               }
@@ -517,6 +536,19 @@ export function SpriteViewer() {
         )}
       </div>
 
+      {fmt === "NCGR" && editing && pair.nclr ? (
+        <SpriteEditor
+          ncgr={selection.ref}
+          nclr={pair.nclr}
+          tilesWidth={tilesWidth}
+          paletteIndex={paletteIndex}
+          scanFrontToBack={scanFrontToBack}
+          transparent={transparent}
+          initialZoom={zoom}
+          onClose={() => setEditing(false)}
+        />
+      ) : null}
+
       {pending && (
         <div className="import-choice">
           <span>
@@ -537,38 +569,42 @@ export function SpriteViewer() {
         </div>
       )}
 
-      <div className="canvas-wrap">
-        {error ? (
-          <div className="error">{error}</div>
-        ) : image ? (
-          <img
-            className="sprite-img"
-            src={image.png}
-            width={image.width * zoom}
-            height={image.height * zoom}
-            alt=""
-          />
-        ) : (
-          <div className="placeholder">{busy ? "Decoding…" : "…"}</div>
-        )}
-      </div>
-      {image?.scanned && (fmt === "NCER" || fmt === "NANR") && (
-        <div className="import-choice">
-          <span>
-            This tileset is a scanned (bitmap) NCGR — its pixels are the full sprite, so it's shown
-            directly (cells/frames can't be composed over a bitmap).
-          </span>
-        </div>
-      )}
-      {image && !error && (
-        <div className="sprite-meta">
-          <span>
-            {image.width}×{image.height}px{busy ? " · decoding…" : ""}
-          </span>
-          <button className="link-btn" onClick={savePng}>
-            Save PNG ↓
-          </button>
-        </div>
+      {!(fmt === "NCGR" && editing) && (
+        <>
+          <div className="canvas-wrap">
+            {error ? (
+              <div className="error">{error}</div>
+            ) : image ? (
+              <img
+                className="sprite-img"
+                src={image.png}
+                width={image.width * zoom}
+                height={image.height * zoom}
+                alt=""
+              />
+            ) : (
+              <div className="placeholder">{busy ? "Decoding…" : "…"}</div>
+            )}
+          </div>
+          {image?.scanned && (fmt === "NCER" || fmt === "NANR") && (
+            <div className="import-choice">
+              <span>
+                This tileset is a scanned (bitmap) NCGR — its pixels are the full sprite, so it's shown
+                directly (cells/frames can't be composed over a bitmap).
+              </span>
+            </div>
+          )}
+          {image && !error && (
+            <div className="sprite-meta">
+              <span>
+                {image.width}×{image.height}px{busy ? " · decoding…" : ""}
+              </span>
+              <button className="link-btn" onClick={savePng}>
+                Save PNG ↓
+              </button>
+            </div>
+          )}
+        </>
       )}
     </div>
   );

@@ -27,6 +27,18 @@ public interface NitroViewerService
     /** @return {"ok":true,"handle":int,"len":int} | {"ok":false,"error":str,"len":int} */
     String openRom(byte[] romBytes);
 
+    /**
+     * Open a ROM from an unpacked-folder tree packed as a ZIP ({@code NintendoDsRom.fromUnpacked} —
+     * not a {@code .nds} image). Accepts the Nds4j/ndstool layout ({@code header.bin}, {@code data/},
+     * {@code overlay/}), a <a href="https://github.com/AetiasHax/ds-rom">ds-rom</a> extract
+     * ({@code config.yaml}, {@code header.yaml}, {@code files/}, {@code arm9/arm9.bin}), a PokEditor
+     * project ({@code rom/}), and a ZIP with one extra top-level folder. {@code len} echoes the
+     * received ZIP byte length, matching {@link #openRom}.
+     *
+     * @return {"ok":true,"handle":int,"len":int} | {"ok":false,"error":str,"len":int}
+     */
+    String openUnpackedRom(byte[] zipBytes);
+
     /** @return {"title","gameCode","numFiles"} */
     String getRomInfo(int romHandle);
 
@@ -166,15 +178,15 @@ public interface NitroViewerService
      * must match the sprite's pixel dimensions. Quantisation is headless (Nds4j
      * {@code IndexedImage.applyImageMatched}/{@code applyImageQuantized}).
      * <ul>
-     *   <li>{@code rebuildPalette=false} — match each pixel to the nearest colour in the sprite's
+     *   <li>{@code rebuildPalette=false} — match each pixel to the nearest color in the sprite's
      *       current (sub-)palette; the NCLR is untouched. {@code unmatched} reports how many pixels
-     *       weren't an exact palette colour.</li>
+     *       weren't an exact palette color.</li>
      *   <li>{@code rebuildPalette=true} — median-cut a fresh palette from the image and write both the
      *       NCGR and the affected NCLR (sub-)palette block.</li>
      *   <li>{@code dryRun=true} — compute {@code unmatched} without writing anything (for the
      *       match-vs-rebuild prompt).</li>
      * </ul>
-     * For 4bpp sprites {@code paletteIndex} selects which 16-colour sub-palette to match/rebuild.
+     * For 4bpp sprites {@code paletteIndex} selects which 16-color sub-palette to match/rebuild.
      *
      * @return {"ok":true,"width","height","unmatched":int,"paletteRebuilt":bool,"dryRun":bool}
      *         | {"ok":false,"error":str}
@@ -184,9 +196,9 @@ public interface NitroViewerService
                      byte[] pngBytes);
 
     /**
-     * Replace an NCLR's colours from an image (a swatch strip, an indexed PNG's palette, or any image's
-     * colours in raster order). The NCLR's colour COUNT is preserved — the image's first-seen unique
-     * colours fill the palette, padded with black or truncated to fit — so the paired NCGR's indices stay
+     * Replace an NCLR's colors from an image (a swatch strip, an indexed PNG's palette, or any image's
+     * colors in raster order). The NCLR's color COUNT is preserved — the image's first-seen unique
+     * colors fill the palette, padded with black or truncated to fit — so the paired NCGR's indices stay
      * valid. Use {@link IndexColorModel} entries directly when the PNG is indexed.
      *
      * @return {"ok":true,"colors":int,"unique":int} | {"ok":false,"error":str}
@@ -194,12 +206,42 @@ public interface NitroViewerService
     String importPalette(int romHandle, int nclrContainer, int nclrId, byte[] imageBytes);
 
     /**
+     * Replace an NCLR's colors in order from packed RGB triplets ({@code [r,g,b, r,g,b, …]}, one byte
+     * per channel, length {@code 3 * colorCount}). Count is preserved; slots whose 15-bit BGR555 value
+     * is unchanged are left untouched so unedited colors round-trip (including unused bit 15).
+     * CheerpJ shape: {@code int,int,int,byte[]}.
+     *
+     * @return {"ok":true,"colors":int,"changed":int} | {"ok":false,"error":str}
+     */
+    String setPaletteColors(int romHandle, int nclrContainer, int nclrId, byte[] rgbBytes);
+
+    /**
+     * Decode an NCGR to its indexed raster (palette indices, not a PNG). {@code tilesWidth} and
+     * {@code scanFrontToBack} match {@link #decodeNcgr} so the editor sees the same geometry as the
+     * viewer. {@code pixels} is base64 of {@code width * height} bytes, row-major, one index per pixel.
+     *
+     * @return {"width","height","bitDepth","scanned":bool,"pixels":base64} | {"error"}
+     */
+    String decodeNcgrIndexed(int romHandle, int ncgrContainer, int ncgrId,
+                             int tilesWidth, boolean scanFrontToBack);
+
+    /**
+     * Overwrite an NCGR's pixel indices in place (geometry / bit-depth / tiling preserved).
+     * {@code pixels} is {@code width * height} bytes, row-major; values are masked to the image's
+     * bit depth. {@code tilesWidth} / {@code scanFrontToBack} must match the decode that produced them.
+     *
+     * @return {"ok":true,"width","height"} | {"ok":false,"error":str}
+     */
+    String setNcgrPixels(int romHandle, int ncgrContainer, int ncgrId,
+                         int tilesWidth, boolean scanFrontToBack, byte[] pixels);
+
+    /**
      * Import a background image over an NSCR "screen", decomposing it back into its NCGR tileset and NSCR
      * tilemap (and, when {@code rebuildPalette}, a new NCLR) — the tilemap analog of {@link #importPng}.
      * The image must match the screen's pixel dimensions. Tiles are deduplicated (shared across H/V mirrors
-     * when {@code dedupFlips}); colours are matched to the existing NCLR unless {@code rebuildPalette}, which
-     * builds a fresh palette from the image ({@code numSubPalettes} 16-colour sub-palettes for 4bpp, or
-     * {@code <=0} to derive it from the NCLR; a single 256-colour palette for 8bpp). {@code dryRun} computes
+     * when {@code dedupFlips}); colors are matched to the existing NCLR unless {@code rebuildPalette}, which
+     * builds a fresh palette from the image ({@code numSubPalettes} 16-color sub-palettes for 4bpp, or
+     * {@code <=0} to derive it from the NCLR; a single 256-color palette for 8bpp). {@code dryRun} computes
      * the fit (unmatched-pixel count) without writing.
      *
      * @return {"ok":true,"uniqueTiles":int,"unmatched":int,"paletteRebuilt":bool,"dryRun":bool}
@@ -212,7 +254,7 @@ public interface NitroViewerService
     /**
      * Import an image over an NCER cell (its composed sprite), decomposing it back into the NCGR tiles the
      * cell's OAMs reference — the NCER analog of {@link #importPng}. The image must be the cell's composed
-     * size; colours are matched to each OAM's sub-palette. Writes only the NCGR (cell layout is unchanged).
+     * size; colors are matched to each OAM's sub-palette. Writes only the NCGR (cell layout is unchanged).
      * @return {"ok":true,"unmatched":int} | {"ok":false,"error":str}
      */
     String importCellPng(int romHandle, int ncerContainer, int ncerId, int ncgrContainer, int ncgrId,
@@ -298,11 +340,15 @@ public interface NitroViewerService
     String getSequenceNotes(int romHandle, int container, int id, int seqIndex);
 
     /**
-     * Render a sequence to a stereo WAV via {@code SequencePlayer}. {@code maxSeconds} is a hard cap
-     * (clamped 1–40). Slow under CheerpJ — the UI should show a progress state.
-     * @return {"sampleRate":int,"seconds":number,"base64":str} | {"error"}
+     * Render a sequence to a stereo WAV via {@code SequencePlayer}. One full playthrough: looping
+     * tracks stop at their first {@code 0x94} jump (the song's loop point) rather than repeating.
+     * {@code loopStartSec}/{@code loopEndSec} mark that jump so the UI can wrap playback.
+     * {@code maxSeconds <= 0} means "until the song ends", with a 10-minute safety cap.
+     * Slow under CheerpJ — the UI should show a progress state.
+     * {@code trackMuteMask} bit i set = mute SSEQ track i (track still runs for timing).
+     * @return {"sampleRate":int,"seconds":number,"loopStartSec":number,"loopEndSec":number,"base64":str} | {"error"}
      */
-    String renderSequenceWav(int romHandle, int container, int id, int seqIndex, int maxSeconds);
+    String renderSequenceWav(int romHandle, int container, int id, int seqIndex, int maxSeconds, int trackMuteMask);
 
     /**
      * Decode one wave of a wave archive (or a standalone SWAV / the only wave of a SWAR).

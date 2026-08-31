@@ -102,7 +102,7 @@ class CheerpjFacadeTest
     }
 
     @Test
-    @DisplayName("paletteIndex selects a different 16-colour sub-palette for 4bpp graphics")
+    @DisplayName("paletteIndex selects a different 16-color sub-palette for 4bpp graphics")
     void subPaletteChangesPixels()
     {
         int[] sp = findMultiPaletteNcgr();
@@ -160,7 +160,7 @@ class CheerpjFacadeTest
     }
 
     @Test
-    @DisplayName("importPng (match) recolours an NCGR, propagates to bytes, survives saveRom + reopen")
+    @DisplayName("importPng (match) recolors an NCGR, propagates to bytes, survives saveRom + reopen")
     void importPngMatchRoundTrip() throws Exception
     {
         int[] g = findGraphicsNarcWithRomFile();
@@ -175,16 +175,16 @@ class CheerpjFacadeTest
         int w = intField(dec, "width"), h = intField(dec, "height");
         byte[] ncgrBefore = java.util.Base64.getDecoder().decode(strField(s1.exportRaw(r1, narc1, ncgr), "base64"));
 
-        // Paint a checkerboard of two DISTINCT existing palette colours → exact matches (unmatched 0),
+        // Paint a checkerboard of two DISTINCT existing palette colors → exact matches (unmatched 0),
         // and guaranteed to differ from whatever the sprite held (unless it was already that pattern).
         String palJson = s1.decodePalette(r1, narc1, nclr);
         String[] two = twoDistinctHex(palJson);
-        Assumptions.assumeTrue(two != null, "palette has fewer than 2 distinct colours");
+        Assumptions.assumeTrue(two != null, "palette has fewer than 2 distinct colors");
         byte[] png = checkerPng(w, h, hexColor(two[0]), hexColor(two[1]));
 
         String dry = s1.importPng(r1, narc1, ncgr, narc1, nclr, 0, 0, false, true, png);
         assertThat(dry).contains("\"ok\":true");
-        assertThat(intField(dry, "unmatched")).as("exact palette colours fit").isEqualTo(0);
+        assertThat(intField(dry, "unmatched")).as("exact palette colors fit").isEqualTo(0);
 
         assertThat(s1.importPng(r1, narc1, ncgr, narc1, nclr, 0, 0, false, false, png)).contains("\"ok\":true");
         byte[] ncgrAfter = java.util.Base64.getDecoder().decode(strField(s1.exportRaw(r1, narc1, ncgr), "base64"));
@@ -216,7 +216,7 @@ class CheerpjFacadeTest
 
         int w = intField(s1.decodeNcgr(r1, narc1, ncgr, narc1, nclr, 0, false, 0, true), "width");
         int h = intField(s1.decodeNcgr(r1, narc1, ncgr, narc1, nclr, 0, false, 0, true), "height");
-        byte[] png = gradientPng(w, h); // many colours → forces a real median-cut
+        byte[] png = gradientPng(w, h); // many colors → forces a real median-cut
 
         assertThat(s1.importPng(r1, narc1, ncgr, narc1, nclr, 0, 0, true, false, png)).contains("\"paletteRebuilt\":true");
 
@@ -241,6 +241,101 @@ class CheerpjFacadeTest
         String res = s1.importPng(r1, narc1, g[2], narc1, g[3], 0, 0, false, false, tiny);
         // either it matched an 8x8 sprite (fine) or it reported a structured size error — never threw
         assertThat(res).contains("\"ok\":");
+    }
+
+    @Test
+    @DisplayName("setPaletteColors edits one slot, preserves count, survives saveRom + reopen")
+    void setPaletteColorsRoundTrip()
+    {
+        int[] g = findGraphicsNarcWithRomFile();
+        Assumptions.assumeTrue(g != null, "no NCGR+NCLR NARC found");
+        int romFileId = g[0], nclr = g[3];
+
+        CheerpjFacade s1 = new CheerpjFacade();
+        int r1 = intField(s1.openRom(romBytes), "handle");
+        int narc1 = intField(s1.openNarc(r1, romFileId), "narcHandle");
+
+        String palBefore = s1.decodePalette(r1, narc1, nclr);
+        int count = intField(palBefore, "count");
+        Assumptions.assumeTrue(count >= 1, "empty palette");
+
+        // Pack the existing colors, then paint slot 0 magenta (snaps to BGR555 #f800f8).
+        String[] hexes = allHex(palBefore);
+        byte[] rgb = packRgb(hexes);
+        rgb[0] = (byte) 0xFF;
+        rgb[1] = 0;
+        rgb[2] = (byte) 0xFF;
+
+        String res = s1.setPaletteColors(r1, narc1, nclr, rgb);
+        assertThat(res).contains("\"ok\":true");
+        assertThat(intField(res, "colors")).isEqualTo(count);
+        assertThat(intField(res, "changed")).isGreaterThanOrEqualTo(1);
+
+        String palAfter = s1.decodePalette(r1, narc1, nclr);
+        assertThat(intField(palAfter, "count")).isEqualTo(count);
+        assertThat(firstHex(palAfter, 0).toLowerCase()).isEqualTo("#f800f8");
+
+        byte[] saved = s1.saveRom(r1);
+        CheerpjFacade s2 = new CheerpjFacade();
+        int r2 = intField(s2.openRom(saved), "handle");
+        int narc2 = intField(s2.openNarc(r2, romFileId), "narcHandle");
+        assertThat(firstHex(s2.decodePalette(r2, narc2, nclr), 0).toLowerCase()).isEqualTo("#f800f8");
+        assertThat(intField(s2.decodePalette(r2, narc2, nclr), "count")).isEqualTo(count);
+    }
+
+    @Test
+    @DisplayName("setPaletteColors rejects a length mismatch with a structured error")
+    void setPaletteColorsLengthMismatch()
+    {
+        int[] g = findGraphicsNarcWithRomFile();
+        Assumptions.assumeTrue(g != null, "no NCGR+NCLR NARC found");
+        CheerpjFacade s1 = new CheerpjFacade();
+        int r1 = intField(s1.openRom(romBytes), "handle");
+        int narc1 = intField(s1.openNarc(r1, g[0]), "narcHandle");
+        String res = s1.setPaletteColors(r1, narc1, g[3], new byte[]{1, 2, 3});
+        assertThat(res).contains("\"ok\":false").contains("\"error\":");
+    }
+
+    @Test
+    @DisplayName("decodeNcgrIndexed + setNcgrPixels round-trips a pixel edit through saveRom")
+    void setNcgrPixelsRoundTrip()
+    {
+        int[] g = findGraphicsNarcWithRomFile();
+        Assumptions.assumeTrue(g != null, "no NCGR+NCLR NARC found");
+        int romFileId = g[0], ncgr = g[2];
+
+        CheerpjFacade s1 = new CheerpjFacade();
+        int r1 = intField(s1.openRom(romBytes), "handle");
+        int narc1 = intField(s1.openNarc(r1, romFileId), "narcHandle");
+
+        String dec = s1.decodeNcgrIndexed(r1, narc1, ncgr, 0, true);
+        int w = intField(dec, "width"), h = intField(dec, "height");
+        int depth = intField(dec, "bitDepth");
+        Assumptions.assumeTrue(w > 0 && h > 0, "empty sprite");
+        byte[] before = java.util.Base64.getDecoder().decode(strField(dec, "pixels"));
+        assertThat(before.length).isEqualTo(w * h);
+
+        // Skip the scanned-image encryption word (first 4 4bpp / 2 8bpp pixels always read as 0).
+        int max = (1 << depth) - 1;
+        int flip = Math.min(before.length - 1, Math.max(8, before.length / 2));
+        byte[] painted = java.util.Arrays.copyOf(before, before.length);
+        painted[flip] = (byte) (((painted[flip] & 0xFF) ^ 1) & max);
+
+        String write = s1.setNcgrPixels(r1, narc1, ncgr, 0, true, painted);
+        assertThat(write).contains("\"ok\":true");
+        assertThat(intField(write, "width")).isEqualTo(w);
+
+        byte[] after = java.util.Base64.getDecoder().decode(
+                strField(s1.decodeNcgrIndexed(r1, narc1, ncgr, 0, true), "pixels"));
+        assertThat(after[flip] & 0xFF).as("edited pixel persisted").isEqualTo(painted[flip] & 0xFF);
+
+        byte[] saved = s1.saveRom(r1);
+        CheerpjFacade s2 = new CheerpjFacade();
+        int r2 = intField(s2.openRom(saved), "handle");
+        int narc2 = intField(s2.openNarc(r2, romFileId), "narcHandle");
+        byte[] reread = java.util.Base64.getDecoder().decode(
+                strField(s2.decodeNcgrIndexed(r2, narc2, ncgr, 0, true), "pixels"));
+        assertThat(reread[flip] & 0xFF).as("edit persisted through save + reopen").isEqualTo(painted[flip] & 0xFF);
     }
 
     @Test
@@ -521,7 +616,29 @@ class CheerpjFacadeTest
         return null;
     }
 
-    /** The {@code i}-th "#rrggbb" colour in a decodePalette JSON. */
+    /** Every "#rrggbb" color in a decodePalette JSON, in order. */
+    private static String[] allHex(String palJson)
+    {
+        Matcher m = Pattern.compile("#[0-9a-fA-F]{6}").matcher(palJson);
+        java.util.List<String> out = new java.util.ArrayList<>();
+        while (m.find()) out.add(m.group());
+        return out.toArray(new String[0]);
+    }
+
+    private static byte[] packRgb(String[] hexes)
+    {
+        byte[] rgb = new byte[hexes.length * 3];
+        for (int i = 0; i < hexes.length; i++)
+        {
+            int v = Integer.parseInt(hexes[i].substring(1), 16);
+            rgb[i * 3] = (byte) ((v >> 16) & 0xFF);
+            rgb[i * 3 + 1] = (byte) ((v >> 8) & 0xFF);
+            rgb[i * 3 + 2] = (byte) (v & 0xFF);
+        }
+        return rgb;
+    }
+
+    /** The {@code i}-th "#rrggbb" color in a decodePalette JSON. */
     private static String firstHex(String palJson, int i)
     {
         Matcher m = Pattern.compile("#[0-9a-fA-F]{6}").matcher(palJson);
@@ -535,7 +652,7 @@ class CheerpjFacadeTest
         return new java.awt.Color(Integer.parseInt(hex.substring(1), 16));
     }
 
-    /** The first two distinct "#rrggbb" colours in a decodePalette JSON, or null if fewer than two. */
+    /** The first two distinct "#rrggbb" colors in a decodePalette JSON, or null if fewer than two. */
     private static String[] twoDistinctHex(String palJson)
     {
         Matcher m = Pattern.compile("#[0-9a-fA-F]{6}").matcher(palJson);
@@ -601,7 +718,7 @@ class CheerpjFacadeTest
         return null;
     }
 
-    /** First NARC NCGR whose paired NCLR yields more than one 16-colour sub-palette. */
+    /** First NARC NCGR whose paired NCLR yields more than one 16-color sub-palette. */
     private int[] findMultiPaletteNcgr()
     {
         int numFiles = intField(svc.getRomInfo(rom), "numFiles");
@@ -781,7 +898,7 @@ class CheerpjFacadeTest
         assertThat(svc.importRaw(rom2, -1, ncgrId, template.save())).contains("\"ok\":true");
         assertThat(svc.importRaw(rom2, -1, nclrId, nclrBytes)).contains("\"ok\":true");
 
-        // Paint with the palette's POST-SAVE colours (DS palettes quantise to BGR555), so the match is exact.
+        // Paint with the palette's POST-SAVE colors (DS palettes quantise to BGR555), so the match is exact.
         Color[] realColors = new Palette(nclrBytes, 0).getColors();
         BufferedImage bg = new BufferedImage(16, 16, BufferedImage.TYPE_INT_RGB);
         for (int y = 0; y < 16; y++)
@@ -831,7 +948,7 @@ class CheerpjFacadeTest
         svc.importRaw(rom2, -1, ncgrId, template.save());
         svc.importRaw(rom2, -1, nclrId, pal.save());
 
-        // A colourful background the all-black palette can't match — rebuild must synthesise a new NCLR.
+        // A colorful background the all-black palette can't match — rebuild must synthesise a new NCLR.
         BufferedImage bg = new BufferedImage(16, 16, BufferedImage.TYPE_INT_RGB);
         for (int y = 0; y < 16; y++)
             for (int x = 0; x < 16; x++)

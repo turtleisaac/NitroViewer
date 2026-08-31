@@ -39,6 +39,9 @@ import javax.imageio.ImageIO;
 import java.awt.Color;
 import java.awt.image.BufferedImage;
 import java.io.ByteArrayOutputStream;
+import java.io.File;
+import java.io.FileOutputStream;
+import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.util.Arrays;
 import java.util.Base64;
@@ -79,6 +82,34 @@ public final class CheerpjFacade implements NitroViewerService
         catch (Throwable t)
         {
             return "{\"ok\":false,\"error\":" + jstr(describe(t)) + ",\"len\":" + len + "}";
+        }
+    }
+
+    @Override
+    public String openUnpackedRom(byte[] zipBytes)
+    {
+        int len = zipBytes == null ? -1 : zipBytes.length;
+        File scratch = null;
+        try
+        {
+            if (zipBytes == null || zipBytes.length == 0)
+                throw new IllegalArgumentException("no unpacked-folder data");
+            int handle = romSeq.getAndIncrement();
+            scratch = unpackedScratchDir(handle);
+            extractZip(zipBytes, scratch);
+            File root = findUnpackedRoot(scratch);
+            if (new File(root, NintendoDsRom.UNPACKED_FILENAMES.HEADER.getName()).isFile())
+                ensureUnpackedSectionDirs(root);
+            roms.put(handle, NintendoDsRom.fromUnpacked(root));
+            return "{\"ok\":true,\"handle\":" + handle + ",\"len\":" + len + "}";
+        }
+        catch (Throwable t)
+        {
+            return "{\"ok\":false,\"error\":" + jstr(describe(t)) + ",\"len\":" + len + "}";
+        }
+        finally
+        {
+            if (scratch != null) deleteRecursively(scratch);
         }
     }
 
@@ -215,7 +246,7 @@ public final class CheerpjFacade implements NitroViewerService
             IndexedImage ncgr = ncgr(rom, ncgrContainer, ncgrId, tilesWidth, scanFrontToBack);
             Palette pal = new Palette(resolve(rom, nclrContainer, nclrId), 0);
 
-            // 4bpp images index into 16-colour sub-palettes; select which one. 8bpp uses all 256.
+            // 4bpp images index into 16-color sub-palettes; select which one. 8bpp uses all 256.
             Color[] colors = pal.getColors();
             int subPalettes = ncgr.getBitDepth() == 4 ? Math.max(1, colors.length / 16) : 1;
             if (ncgr.getBitDepth() == 4 && colors.length > 16)
@@ -498,6 +529,127 @@ public final class CheerpjFacade implements NitroViewerService
         }
     }
 
+    /** Scratch dir under {@code java.io.tmpdir} for one {@link #openUnpackedRom} extract. */
+    private static File unpackedScratchDir(int handle)
+    {
+        File dir = new File(System.getProperty("java.io.tmpdir", "/tmp"), "nv-unpacked-" + handle);
+        if (dir.exists()) deleteRecursively(dir);
+        if (!dir.mkdirs()) throw new IllegalStateException("could not create " + dir.getAbsolutePath());
+        return dir;
+    }
+
+    /**
+     * Unpack {@code zipBytes} into {@code dest}. Rejects absolute paths, {@code ..} segments, and AppleDouble
+     * / OS junk so a foreign zip can't escape the scratch dir or poison {@code fromUnpacked}'s overlay sort.
+     */
+    private static void extractZip(byte[] zipBytes, File dest) throws IOException
+    {
+        java.util.zip.ZipInputStream zis = new java.util.zip.ZipInputStream(new java.io.ByteArrayInputStream(zipBytes));
+        try
+        {
+            java.util.zip.ZipEntry e;
+            byte[] chunk = new byte[8192];
+            int files = 0;
+            while ((e = zis.getNextEntry()) != null)
+            {
+                if (e.isDirectory()) continue;
+                String rel = safeZipPath(e.getName());
+                if (rel == null) continue;
+                ByteArrayOutputStream buf = new ByteArrayOutputStream();
+                int r;
+                while ((r = zis.read(chunk)) > 0) buf.write(chunk, 0, r);
+                File out = new File(dest, rel.replace('/', File.separatorChar));
+                String destCanon = dest.getCanonicalPath();
+                if (!destCanon.endsWith(File.separator)) destCanon = destCanon + File.separator;
+                String outCanon = out.getCanonicalPath();
+                if (!outCanon.startsWith(destCanon))
+                    throw new IOException("illegal path in zip: " + e.getName());
+                File parent = out.getParentFile();
+                if (parent != null && !parent.exists() && !parent.mkdirs())
+                    throw new IOException("could not create " + parent.getAbsolutePath());
+                FileOutputStream fos = new FileOutputStream(out);
+                try { fos.write(buf.toByteArray()); }
+                finally { fos.close(); }
+                files++;
+            }
+            if (files == 0) throw new IllegalArgumentException("the zip contained no files");
+        }
+        finally
+        {
+            zis.close();
+        }
+    }
+
+    /**
+     * Relative path inside the zip, or {@code null} to skip. Rejects empty names, absolute paths,
+     * {@code ..}, and macOS/Windows clutter ({@code __MACOSX}, {@code .DS_Store}, {@code ._* }).
+     */
+    private static String safeZipPath(String name)
+    {
+        if (name == null) return null;
+        String n = name.replace('\\', '/');
+        while (n.startsWith("./")) n = n.substring(2);
+        if (n.startsWith("/") || n.isEmpty() || n.endsWith("/")) return null;
+        String[] parts = n.split("/");
+        for (int i = 0; i < parts.length; i++)
+        {
+            String p = parts[i];
+            if (p.isEmpty() || p.equals(".") || p.equals("..")) return null;
+            if (p.equals("__MACOSX") || p.equals(".DS_Store") || p.equals("Thumbs.db") || p.startsWith("._"))
+                return null;
+        }
+        return n;
+    }
+
+    /**
+     * Locate the directory {@link NintendoDsRom#fromUnpacked} should read: Nds4j/ndstool
+     * ({@code header.bin}), a ds-rom extract ({@code config.yaml}/{@code header.yaml}), one extra
+     * wrapping folder, or a PokEditor project ({@code rom/}).
+     */
+    private static File findUnpackedRoot(File dir)
+    {
+        if (NintendoDsRom.looksLikeUnpackedRom(dir)) return dir;
+        File projectRom = new File(dir, "rom");
+        if (NintendoDsRom.looksLikeUnpackedRom(projectRom)) return projectRom;
+        File[] kids = dir.listFiles();
+        if (kids != null)
+        {
+            for (int i = 0; i < kids.length; i++)
+            {
+                if (!kids[i].isDirectory() || kids[i].isHidden()) continue;
+                if (NintendoDsRom.looksLikeUnpackedRom(kids[i])) return kids[i];
+                File nested = new File(kids[i], "rom");
+                if (NintendoDsRom.looksLikeUnpackedRom(nested)) return nested;
+            }
+        }
+        throw new IllegalArgumentException(
+                "Not an unpacked NDS ROM. Expected an Nds4j/ndstool folder (header.bin, data/, overlay/),"
+                        + " a ds-rom extract (config.yaml, header.yaml, files/, arm9/arm9.bin),"
+                        + " or a PokEditor project containing a rom/ folder.");
+    }
+
+    /** {@code fromUnpacked} NPEs if overlay/ or data/ is missing even when those trees are empty. */
+    private static void ensureUnpackedSectionDirs(File root)
+    {
+        File overlay = new File(root, NintendoDsRom.UNPACKED_FILENAMES.OVERLAY.getName());
+        File data = new File(root, NintendoDsRom.UNPACKED_FILENAMES.DATA.getName());
+        if (!overlay.exists() && !overlay.mkdirs())
+            throw new IllegalStateException("could not create " + overlay.getAbsolutePath());
+        if (!data.exists() && !data.mkdirs())
+            throw new IllegalStateException("could not create " + data.getAbsolutePath());
+    }
+
+    private static void deleteRecursively(File file)
+    {
+        if (file == null || !file.exists()) return;
+        File[] kids = file.listFiles();
+        if (kids != null)
+        {
+            for (int i = 0; i < kids.length; i++) deleteRecursively(kids[i]);
+        }
+        file.delete();
+    }
+
     /** Leading run of digits in a filename as an int, else {@code fallback} (keeps foreign zips in order). */
     private static int leadingInt(String name, int fallback)
     {
@@ -611,7 +763,7 @@ public final class CheerpjFacade implements NitroViewerService
                 if (!dryRun)
                 {
                     writeResource(romHandle, ncgrContainer, ncgrId, ncgr.save());
-                    // Splice the rebuilt colours into the NCLR: for 4bpp only the selected 16-colour
+                    // Splice the rebuilt colors into the NCLR: for 4bpp only the selected 16-color
                     // sub-palette block, for 8bpp the whole 256. Other sub-palettes are left intact.
                     int blockLen = bitDepth == 8 ? 256 : 16;
                     int subCount = Math.max(1, fullColors.length / blockLen);
@@ -629,7 +781,7 @@ public final class CheerpjFacade implements NitroViewerService
             }
             else
             {
-                // Match against the palette the sprite actually uses: the selected 16-colour sub-palette
+                // Match against the palette the sprite actually uses: the selected 16-color sub-palette
                 // for 4bpp, the full palette for 8bpp.
                 Palette use = full;
                 if (bitDepth == 4 && fullColors.length > 16)
@@ -668,8 +820,8 @@ public final class CheerpjFacade implements NitroViewerService
             if (src == null)
                 throw new IllegalArgumentException("Could not decode the imported file as an image.");
 
-            // Collect the image's colours in first-seen raster order (dedup on RGB). An indexed PNG's
-            // IndexColorModel is honoured naturally: distinct entries appear as distinct pixel colours.
+            // Collect the image's colors in first-seen raster order (dedup on RGB). An indexed PNG's
+            // IndexColorModel is honoured naturally: distinct entries appear as distinct pixel colors.
             java.util.LinkedHashSet<Integer> uniq = new java.util.LinkedHashSet<>();
             outer:
             for (int y = 0; y < src.getHeight(); y++)
@@ -688,6 +840,104 @@ public final class CheerpjFacade implements NitroViewerService
 
             writeResource(romHandle, nclrContainer, nclrId, new Palette(cols).save());
             return "{\"ok\":true,\"colors\":" + count + ",\"unique\":" + uniq.size() + "}";
+        }
+        catch (Throwable t)
+        {
+            return "{\"ok\":false,\"error\":" + jstr(describe(t)) + "}";
+        }
+    }
+
+    @Override
+    public String setPaletteColors(int romHandle, int nclrContainer, int nclrId, byte[] rgbBytes)
+    {
+        try
+        {
+            if (rgbBytes == null) throw new IllegalArgumentException("no colors");
+            NintendoDsRom rom = rom(romHandle);
+            Palette pal = new Palette(resolve(rom, nclrContainer, nclrId), 0);
+            Color[] existing = pal.getColors();
+            int count = existing.length;
+            if (rgbBytes.length != count * 3)
+                throw new IllegalArgumentException(
+                        "Expected " + (count * 3) + " RGB bytes (" + count + " colors), got " + rgbBytes.length + ".");
+
+            int changed = 0;
+            for (int i = 0; i < count; i++)
+            {
+                // Snap to BGR555's 5 bits/channel so a no-op edit (same visual color) doesn't
+                // clear unused bit 15 on an otherwise untouched slot.
+                int r = ((rgbBytes[i * 3] & 0xFF) / 8) * 8;
+                int g = ((rgbBytes[i * 3 + 1] & 0xFF) / 8) * 8;
+                int b = ((rgbBytes[i * 3 + 2] & 0xFF) / 8) * 8;
+                Color was = existing[i];
+                if (was.getRed() == r && was.getGreen() == g && was.getBlue() == b)
+                    continue;
+                pal.setColor(i, new Color(r, g, b));
+                changed++;
+            }
+            if (changed > 0)
+                writeResource(romHandle, nclrContainer, nclrId, pal.save());
+            return "{\"ok\":true,\"colors\":" + count + ",\"changed\":" + changed + "}";
+        }
+        catch (Throwable t)
+        {
+            return "{\"ok\":false,\"error\":" + jstr(describe(t)) + "}";
+        }
+    }
+
+    @Override
+    public String decodeNcgrIndexed(int romHandle, int ncgrContainer, int ncgrId,
+                                    int tilesWidth, boolean scanFrontToBack)
+    {
+        try
+        {
+            IndexedImage ncgr = ncgr(rom(romHandle), ncgrContainer, ncgrId, tilesWidth, scanFrontToBack);
+            int w = ncgr.getWidth();
+            int h = ncgr.getHeight();
+            byte[] pix = new byte[w * h];
+            for (int y = 0; y < h; y++)
+                for (int x = 0; x < w; x++)
+                    pix[y * w + x] = (byte) ncgr.getPixelValue(x, y);
+            return "{\"width\":" + w + ",\"height\":" + h
+                    + ",\"bitDepth\":" + ncgr.getBitDepth()
+                    + ",\"scanned\":" + ncgr.isScanned()
+                    + ",\"pixels\":" + jstr(base64(pix)) + "}";
+        }
+        catch (Throwable t) { return err(t); }
+    }
+
+    @Override
+    public String setNcgrPixels(int romHandle, int ncgrContainer, int ncgrId,
+                                int tilesWidth, boolean scanFrontToBack, byte[] pixels)
+    {
+        try
+        {
+            if (pixels == null) throw new IllegalArgumentException("no pixels");
+            IndexedImage ncgr = ncgr(rom(romHandle), ncgrContainer, ncgrId, tilesWidth, scanFrontToBack);
+            int w = ncgr.getWidth();
+            int h = ncgr.getHeight();
+            if (pixels.length != w * h)
+                throw new IllegalArgumentException(
+                        "Expected " + (w * h) + " pixel bytes (" + w + "x" + h + "), got " + pixels.length + ".");
+            int max = (1 << ncgr.getBitDepth()) - 1;
+            for (int y = 0; y < h; y++)
+                for (int x = 0; x < w; x++)
+                {
+                    int idx = pixels[y * w + x] & 0xFF;
+                    if (idx > max) idx = max;
+                    ncgr.setPixelValue(x, y, idx);
+                }
+            // Scanned (bitmap) NCGRs store the XOR key in the first decrypted u16, which
+            // therefore always reads back as 0. If we write a non-zero there, the next load
+            // treats that word as a new key and the whole sprite garbles. Keep those pixels 0.
+            if (ncgr.isScanned() && w > 0 && h > 0)
+            {
+                int zero = ncgr.getBitDepth() == 4 ? 4 : 2;
+                for (int x = 0; x < zero && x < w; x++)
+                    ncgr.setPixelValue(x, 0, 0);
+            }
+            writeResource(romHandle, ncgrContainer, ncgrId, ncgr.save());
+            return "{\"ok\":true,\"width\":" + w + ",\"height\":" + h + "}";
         }
         catch (Throwable t)
         {
@@ -1256,6 +1506,8 @@ public final class CheerpjFacade implements NitroViewerService
             StringBuilder sb = new StringBuilder("{\"ticks\":").append(r.ticks)
                     .append(",\"tempo\":").append(r.tempo)
                     .append(",\"trackCount\":").append(r.trackCount)
+                    .append(",\"loopStart\":").append(r.loopStartTick)
+                    .append(",\"loopEnd\":").append(r.loopEndTick)
                     .append(",\"bankId\":").append(bankId)
                     .append(",\"name\":").append(jstr(name))
                     .append(",\"notes\":[");
@@ -1276,23 +1528,31 @@ public final class CheerpjFacade implements NitroViewerService
     }
 
     @Override
-    public String renderSequenceWav(int romHandle, int container, int id, int seqIndex, int maxSeconds)
+    public String renderSequenceWav(int romHandle, int container, int id, int seqIndex, int maxSeconds, int trackMuteMask)
     {
         try
         {
             byte[] data = resolve(rom(romHandle), container, id);
             if (!magic(data).equals("SDAT"))
                 throw new IllegalArgumentException("sequence playback needs an SDAT (bank + samples)");
-            if (maxSeconds < 1) maxSeconds = 1;
-            if (maxSeconds > 40) maxSeconds = 40;
             SequencePlayer player = SequencePlayer.forSequence(SoundArchive.fromBytes(data), seqIndex);
             if (player == null) throw new IllegalArgumentException("sequence " + seqIndex + " has no bank");
+            for (int t = 0; t < 16; t++)
+                player.trackEnabled[t] = ((trackMuteMask >> t) & 1) == 0;
+            player.stopAtLoop = true; // full playthrough up to the loop point, not a time slice
+            int cap = maxSeconds <= 0 ? 600 : maxSeconds;
+            if (cap < 1) cap = 1;
+            if (cap > 600) cap = 600; // safety: a looping sequence that never jumps still has to stop
             int rate = 22050;
-            byte[] wav = player.toWav(rate, maxSeconds);
+            byte[] wav = player.toWav(rate, cap);
             // seconds ≈ frames / rate; stereo 16-bit WAV data size is wav.length - 44
             double seconds = wav.length <= 44 ? 0 : (wav.length - 44) / 4.0 / rate;
+            double loopStart = player.loopStartFrame < 0 ? -1 : player.loopStartFrame / (double) rate;
+            double loopEnd = player.loopEndFrame < 0 ? -1 : player.loopEndFrame / (double) rate;
             return "{\"sampleRate\":" + rate
                     + ",\"seconds\":" + String.format(java.util.Locale.US, "%.3f", seconds)
+                    + ",\"loopStartSec\":" + String.format(java.util.Locale.US, "%.4f", loopStart)
+                    + ",\"loopEndSec\":" + String.format(java.util.Locale.US, "%.4f", loopEnd)
                     + ",\"base64\":" + jstr(base64(wav)) + "}";
         }
         catch (Throwable t) { return err(t); }

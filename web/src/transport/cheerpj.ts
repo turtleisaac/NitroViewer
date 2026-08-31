@@ -6,6 +6,7 @@
 import type {
   DecodedImage,
   FormatInfo,
+  IndexedRaster,
   MaterialColorAnim,
   ModelRig,
   NarcEntry,
@@ -40,7 +41,7 @@ const APP_DIR = typeof location !== "undefined" ? location.pathname.replace(/[^/
 // Cache-bust the jar URLs so a rebuilt/redeployed jar isn't shadowed by CheerpJ's URL-keyed jar cache
 // (which otherwise loads a stale class — an old facade method is silently missing → NoSuchMethodError).
 // Dev changes every load (jars change constantly); prod uses a fixed version, bumped when a jar changes.
-const JAR_VERSION = import.meta.env.DEV ? String(Date.now()) : "3";
+const JAR_VERSION = import.meta.env.DEV ? String(Date.now()) : "5";
 const jar = (name: string) => `/app${APP_DIR}jars/${name}?v=${JAR_VERSION}`;
 const CLASSPATH = `${jar("nitroviewer-core.jar")}:${jar("Nds4j.jar")}`;
 
@@ -106,6 +107,15 @@ export class CheerpjTransport implements NitroViewerClient {
     });
   }
 
+  openUnpackedRom(zipBytes: Uint8Array): Promise<{ handle: number; len: number }> {
+    const signed = new Int8Array(zipBytes.buffer, zipBytes.byteOffset, zipBytes.byteLength);
+    return this.enqueue(async () => {
+      const res = JSON.parse(await this.f.openUnpackedRom(signed));
+      if (!res.ok) throw new Error(res.error || "openUnpackedRom failed");
+      return { handle: res.handle as number, len: res.len as number };
+    });
+  }
+
   getRomInfo(handle: number): Promise<RomInfo> {
     return this.enqueue(async () => unwrap<RomInfo>(await this.f.getRomInfo(handle)));
   }
@@ -163,6 +173,43 @@ export class CheerpjTransport implements NitroViewerClient {
 
   decodePalette(handle: number, nclr: ResourceRef): Promise<PaletteData> {
     return this.enqueue(async () => unwrap<PaletteData>(await this.f.decodePalette(handle, nclr.container, nclr.id)));
+  }
+
+  decodeNcgrIndexed(
+    handle: number,
+    ncgr: ResourceRef,
+    tilesWidth: number,
+    scanFrontToBack: boolean
+  ): Promise<IndexedRaster> {
+    return this.enqueue(async () =>
+      unwrap<IndexedRaster>(
+        await this.f.decodeNcgrIndexed(handle, ncgr.container, ncgr.id, tilesWidth, scanFrontToBack)
+      )
+    );
+  }
+
+  setPaletteColors(
+    handle: number,
+    nclr: ResourceRef,
+    rgbBytes: Uint8Array
+  ): Promise<{ ok: boolean; colors: number; changed: number }> {
+    const signed = new Int8Array(rgbBytes.buffer, rgbBytes.byteOffset, rgbBytes.byteLength);
+    return this.enqueue(async () =>
+      unwrap(await this.f.setPaletteColors(handle, nclr.container, nclr.id, signed))
+    );
+  }
+
+  setNcgrPixels(
+    handle: number,
+    ncgr: ResourceRef,
+    tilesWidth: number,
+    scanFrontToBack: boolean,
+    pixels: Uint8Array
+  ): Promise<{ ok: boolean; width: number; height: number }> {
+    const signed = new Int8Array(pixels.buffer, pixels.byteOffset, pixels.byteLength);
+    return this.enqueue(async () =>
+      unwrap(await this.f.setNcgrPixels(handle, ncgr.container, ncgr.id, tilesWidth, scanFrontToBack, signed))
+    );
   }
 
   decodeNscr(
@@ -459,10 +506,11 @@ export class CheerpjTransport implements NitroViewerClient {
     handle: number,
     ref: ResourceRef,
     seqIndex: number,
-    maxSeconds: number
-  ): Promise<{ sampleRate: number; seconds: number; base64: string }> {
+    maxSeconds: number,
+    trackMuteMask = 0
+  ): Promise<{ sampleRate: number; seconds: number; loopStartSec: number; loopEndSec: number; base64: string }> {
     return this.enqueue(async () =>
-      unwrap(await this.f.renderSequenceWav(handle, ref.container, ref.id, seqIndex, maxSeconds))
+      unwrap(await this.f.renderSequenceWav(handle, ref.container, ref.id, seqIndex, maxSeconds, trackMuteMask))
     );
   }
 

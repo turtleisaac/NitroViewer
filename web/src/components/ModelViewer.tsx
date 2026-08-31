@@ -83,7 +83,7 @@ function applyTracks(t: Three) {
   }
 }
 
-// DS models are unlit — the texture + vertex colours are the final look. glTF exports them as PBR,
+// DS models are unlit — the texture + vertex colors are the final look. glTF exports them as PBR,
 // which three.js then shades (washing them out). Swap to unlit MeshBasicMaterial so they render crisp,
 // exactly as the hardware does, preserving the texture, alpha-test, and double-sidedness.
 function makeUnlit(obj: THREE.Object3D) {
@@ -123,7 +123,7 @@ function fitCamera(obj: THREE.Object3D, camera: THREE.PerspectiveCamera, control
 }
 
 // Build a ground grid sized to the model, sitting under its feet (box min-Y), centred on it in X/Z.
-// Two subtly-different line colours read clearly on the dark viewport without competing with the model.
+// Two subtly-different line colors read clearly on the dark viewport without competing with the model.
 function buildGrid(obj: THREE.Object3D): THREE.GridHelper {
   const box = new THREE.Box3().setFromObject(obj);
   const size = box.getSize(new THREE.Vector3());
@@ -427,7 +427,7 @@ export default function ModelViewer() {
     }
   }, [showGrid]);
 
-  // Load NSBMA (material colour) track data.
+  // Load NSBMA (material color) track data.
   useEffect(() => {
     const t = three.current;
     if (!t) return;
@@ -645,7 +645,7 @@ export default function ModelViewer() {
         )}
         {nsbmaItems.length > 0 && (
           <label className="ctrl">
-            <span>Material colour</span>
+            <span>Material color</span>
             <select value={nsbma ? refKey(nsbma) : ""} onChange={(e) => setNsbma(nsbmaItems.find((i) => refKey(i.ref) === e.target.value)?.ref ?? null)}>
               <option value="">None</option>
               {nsbmaItems.map((i) => <option key={refKey(i.ref)} value={refKey(i.ref)}>NSBMA {i.label}</option>)}

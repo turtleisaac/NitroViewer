@@ -11,7 +11,7 @@ export interface NoteEvent {
 }
 
 const LANE_H = 28;
-const GUTTER = 36;
+const GUTTER = 72;
 const COLORS = [
   "#5b7cfa", "#4fd1c5", "#e5b13a", "#f2675f", "#c084fc", "#34d399",
   "#60a5fa", "#fb7185", "#a3e635", "#f472b6", "#38bdf8", "#fbbf24",
@@ -24,6 +24,16 @@ export function noteTrackHeight(trackCount: number): number {
   return Math.max(1, trackCount) * LANE_H;
 }
 
+/** Map a canvas X coordinate to a tick on the roll (clamped). */
+export function tickFromCanvasX(x: number, width: number, ticks: number): number {
+  const inner = Math.max(1, width - GUTTER);
+  const u = (x - GUTTER) / inner;
+  const t = u * Math.max(1, ticks);
+  if (t < 0) return 0;
+  if (t > ticks) return ticks;
+  return t;
+}
+
 /** Draw one row-per-track note strip. `playheadTick` is null when not playing. */
 export function drawNoteTrack(
   ctx: CanvasRenderingContext2D,
@@ -31,7 +41,10 @@ export function drawNoteTrack(
   ticks: number,
   trackCount: number,
   playheadTick: number | null,
-  width: number
+  width: number,
+  loopStartTick = -1,
+  loopEndTick = -1,
+  silent: boolean[] | null = null
 ): void {
   const tracks = Math.max(1, trackCount);
   const height = tracks * LANE_H;
@@ -53,10 +66,9 @@ export function drawNoteTrack(
   ctx.textBaseline = "middle";
   for (let t = 0; t < tracks; t++) {
     const y = t * LANE_H;
-    ctx.fillStyle = t % 2 === 0 ? "#1b1e26" : "#161920";
+    const off = silent != null && silent[t];
+    ctx.fillStyle = off ? "#12141a" : t % 2 === 0 ? "#1b1e26" : "#161920";
     ctx.fillRect(GUTTER, y, inner, LANE_H);
-    ctx.fillStyle = "#6a7182";
-    ctx.fillText(String(t), 8, y + LANE_H / 2);
     ctx.fillStyle = "#262a34";
     ctx.fillRect(0, y + LANE_H - 1, width, 1);
   }
@@ -70,10 +82,21 @@ export function drawNoteTrack(
     const pad = 3;
     const usable = LANE_H - pad * 2;
     const ny = n.track * LANE_H + pad + (1 - (n.key - r.min) / span) * (usable - 6);
-    ctx.globalAlpha = 0.35 + 0.65 * (n.velocity / 127);
+    const off = silent != null && silent[n.track];
+    ctx.globalAlpha = off ? 0.12 : 0.35 + 0.65 * (n.velocity / 127);
     ctx.fillStyle = COLORS[n.program % COLORS.length];
     ctx.fillRect(x, ny, w, 6);
     ctx.globalAlpha = 1;
+  }
+
+  if (loopEndTick > loopStartTick && loopStartTick >= 0) {
+    const x0 = GUTTER + (loopStartTick / tMax) * inner;
+    const x1 = GUTTER + (loopEndTick / tMax) * inner;
+    ctx.fillStyle = "rgba(91, 124, 250, 0.08)";
+    ctx.fillRect(x0, 0, Math.max(1, x1 - x0), height);
+    ctx.fillStyle = "#5b7cfa";
+    ctx.fillRect(x0, 0, 1, height);
+    ctx.fillRect(x1, 0, 1, height);
   }
 
   if (playheadTick != null) {

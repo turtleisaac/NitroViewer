@@ -105,13 +105,25 @@ cd web && npm install
 npm run dev        # Vite dev server @ 5173  (CheerpJ needs Range + no COOP/COEP — Vite is fine)
 npm run build      # tsc --noEmit && vite build  → web/dist
 npm test           # vitest (pairing logic) — runs in CI
+make build         # jars + vendor CheerpJ + SPA + Electron desktop bundle → release/
+                   # (unsigned; CheerpJ is vendored so the app is fully offline)
 ```
+The Electron shell (`web/electron/`) is a Range-capable `127.0.0.1` static server plus a
+window — CheerpJ cannot load from `file://`. `scripts/vendor-cheerpj.sh` mirrors CheerpJ 4.3
+(Java 8) into `web/vendor/cheerpj/` (gitignored); the shell rewrites the CDN loader tag to
+`/cheerpj/loader.js` and 204s omitted optional runtime files. The SPA/transport is unchanged
+for the website. `npm run electron` after `npm run build` + vendor runs the unpackaged shell.
 - **Facade JUnit tests** need a retail ROM: `cd nitroviewer-core && mvn test -Drom.dir=/…/PokEditor-Stack
   -Djava.awt.headless=true`. ROMs (`HeartGold.nds`, `Platinum.nds`, …) live in the workspace root and are
   **never committed** (`.gitignore`). Tests `Assumptions`-skip when a ROM is absent, so CI (no ROM) skips
   them; CI still compiles the test sources.
 - **Deploy:** push to `main` → `.github/workflows/deploy.yml` checks out `turtleisaac/Nds4j@feature/3d-formats`
   beside the repo, builds both jars + the SPA (running `npm test`), publishes `web/dist` to Pages.
+- **Desktop release:** publishing a GitHub Release (or `workflow_dispatch`) runs
+  `.github/workflows/release-desktop.yml` — macOS (arm64+x64 dmg/zip), Windows (x64+arm64 nsis/zip),
+  and Linux (x64 AppImage/deb/tar.gz), CheerpJ vendored, plus `SHA256SUMS`. Version comes from the
+  tag (`v0.1.0` → `0.1.0`). macOS is signed/notarized when `CSC_LINK` + `APPLE_*` secrets are set.
+  Packaged apps prompt (Download / Later) if GitHub Releases has a newer tag; they do not auto-download.
 - **Preview a prod build at domain-root** (CheerpJ needs `/app`=origin root): `python3 scripts/serve-static.py
   web/dist 8080`.
 
@@ -164,11 +176,11 @@ frames' buffers to detect animation. Keep throwaway driver scripts in a scratch 
 - **A perpetual `requestAnimationFrame` loop STARVES CheerpJ** (cooperative main-thread execution) and *hangs*
   long Java calls like the glTF export — the facade call never returns. **Render on demand** (OrbitControls
   `change` + resize + load); run a RAF loop **only while actively playing and not exporting** (`ModelViewer`).
-- **DS models are unlit** — the texture/vertex colours are the final image. glTF exports PBR; `makeUnlit`
+- **DS models are unlit** — the texture/vertex colors are the final image. glTF exports PBR; `makeUnlit`
   swaps each material to `MeshBasicMaterial` (crisp, authentic) **and preserves `material.name`** so the
   NSBMA/NSBTP tracks can target materials by name.
 - **Non-glTF tracks (NSBMA/NSBVA/NSBTP)** are driven in three.js from per-frame facade data, mapped by DS
-  **material name** (colour, texture-pattern) and **node index** (visibility, via `getModelRig`). A track and
+  **material name** (color, texture-pattern) and **node index** (visibility, via `getModelRig`). A track and
   model are authored together in a NARC; a mismatched pairing just no-ops.
 
 ### GitHub Pages / DNS
@@ -252,7 +264,7 @@ The model is: **edits accumulate in that ROM; "Save ROM" serialises and download
   - NSBMD from scratch: `ObjImporter.parse(objText)` + `ModelBuilder`, or
     `ImdImporter.toNsbmd(imdXml, name)` / `toNsbmdWithTextures(...)` → NSBMD bytes (byte-exact vs g3dcvtr).
   - Round-trip a decoded model after edits: `ModelSet.reencodeModels()` → byte-exact NSBMD bytes.
-  - In-place NSB* edits: `G3dFile.writeBlockU8/U16` (e.g. NSBMA colour keyframes, `TextureSet.setPaletteColor`).
+  - In-place NSB* edits: `G3dFile.writeBlockU8/U16` (e.g. NSBMA color keyframes, `TextureSet.setPaletteColor`).
 
 ### 6.2 Facade methods to add (new `NitroViewerService` entries)
 Keep the contract (JSON/base64/`byte[]` in, JSON out; never throw):
@@ -325,7 +337,8 @@ Right now the facade doesn't store that link.
     (NCGR/NSCR/NCER/NANR view **+ import**), `PaletteViewer`, `TextureViewer`, `ModelViewer` (3D + tracks +
     OBJ import + grid), `ParticleViewer`, `NarcBrowser` (per-entry + folder-zip), `TreePane` (search + folder
     extract), `InfoViewer` (hex).
-- `.github/workflows/deploy.yml` · `scripts/{build-jars,serve-static,serve-spike}.{sh,py}` · `Makefile`
+- `.github/workflows/{deploy,release-desktop}.yml` · `scripts/{build-jars,vendor-cheerpj,serve-static,serve-spike}.{sh,py}` · `Makefile`
+- `web/electron/{main,serve}.cjs` — Electron shell; `scripts/vendor-cheerpj.sh` — CheerpJ 4.3 Java 8 runtime; `make build` → `release/` via electron-builder
 - Memory: `~/.claude/projects/…/memory/nitroviewer-cheerpj-spike.md` (condensed quirks, kept current) and
   `nitroviewer-game-db.md` (the authoritative sprite-NARC layouts from PokEditor-Core).
 
@@ -499,10 +512,10 @@ model). Remaining: SPA emitter isolation / adjustable frame count/size / backgro
 edge cases. (DS models are unlit by design — no lighting to add.)
 
 **✅ Sound (SDAT).** SDAT / SSEQ / SWAR / SWAV / STRM listeners over Nds4j's sequenced-audio stack:
-browse sequences / wave archives / streams / banks; play a sequence (software synth → WAV) or a wave /
-stream; a canvas **note track** (piano-roll) for SSEQ; **Import WAV** over a wave in an SDAT (or a
-standalone SWAR/SWAV); export MIDI / SoundFont. Sequence playback is a Java-side render (slow under
-CheerpJ — the UI shows “Rendering…”).
+browse sequences / wave archives / streams / banks; play a sequence (software synth → WAV, one full
+playthrough up to the loop point) or a wave / stream; a canvas **note track** (piano-roll) for SSEQ;
+**Import WAV** over a wave in an SDAT (or a standalone SWAR/SWAV); export MIDI / SoundFont. Sequence
+playback is a Java-side render (slow under CheerpJ — the UI shows “Rendering…”).
 
 **Larger gaps (need parsers / RE — each a real project).** **NFTR** fonts and **NMCR/NMAR** multi-cell — need
 Nds4j parsers. **glTF import** — needs a glTF accessor/mesh reader. **Bitmap-OBJ NCER composition** — so
