@@ -36,6 +36,29 @@ function computeTrackMask(trackCount: number, muted: boolean[], solo: boolean[])
   return mask;
 }
 
+// Rendering a whole demanding sequence to WAV (the default playback path) pushes a large base64
+// blob through the CheerpJ bridge and expands it into an equally large AudioBuffer — fine on
+// desktop, but tight enough on iOS Safari's much smaller per-tab memory ceiling to crash the page
+// (reported against SEQ_PL_BA_GIRA: 3552 notes, an 11-track boss theme, ~218s/19MB rendered WAV).
+// Two known-good sequences (873 and 1193 notes) never had this problem; the threshold sits with
+// margin on both sides of that gap. Above it, Play routes straight to the live engine — which was
+// built for exactly this (constant memory regardless of song length) — instead of the rendered-WAV
+// path, not just as a mute/solo escape hatch.
+const DEMANDING_NOTE_COUNT = 2000;
+
+function isDemandingSequence(notes: SequenceNotes): boolean {
+  return notes.notes.length > DEMANDING_NOTE_COUNT;
+}
+
+// Fallback duration when a demanding sequence goes live without the WAV render (see goLive): the
+// engine's driver runs at 192 Hz and advances one tick every time its tempoStack — accumulated at
+// `tempo` per driver-frame — clears a 240 threshold (stepper.ts runDriverFrame), so ticks/sec =
+// tempo * 192 / 240 = tempo * 0.8, i.e. seconds = ticks * 1.25 / tempo. Only used to keep the
+// note-roll's playhead scrolling at roughly the right pace; loop timing still needs the real WAV.
+function estimateSeconds(notes: SequenceNotes): number {
+  return notes.tempo > 0 ? (notes.ticks * 1.25) / notes.tempo : 0;
+}
+
 function wavToBuffer(ctx: AudioContext, wav: Uint8Array): AudioBuffer {
   const dv = new DataView(wav.buffer, wav.byteOffset, wav.byteLength);
   const channels = dv.getUint16(22, true);
@@ -762,7 +785,13 @@ export function SoundViewer() {
     w.loopEndSec > w.loopStartSec + 0.02 ? { start: Math.max(0, w.loopStartSec), end: w.loopEndSec } : null;
 
   const playSequence = async () => {
-    if (fmt !== "SDAT" || seqIndex == null) return;
+    if (fmt !== "SDAT" || seqIndex == null || !notes) return;
+    if (isDemandingSequence(notes)) {
+      // Skip the rendered-WAV path entirely for a sequence big enough to risk it — straight to the
+      // live engine, same as a mute/solo click, just triggered by Play instead.
+      await goLive(computeTrackMask(notes.trackCount, muted, solo));
+      return;
+    }
     setBusy("render");
     try {
       const w = await ensureSequenceWav();
@@ -781,7 +810,7 @@ export function SoundViewer() {
    * further mute/solo changes are just a message to the running engine, no reseed.
    */
   const goLive = async (mask: number) => {
-    if (fmt !== "SDAT" || seqIndex == null || engineRef.current) return;
+    if (fmt !== "SDAT" || seqIndex == null || engineRef.current || !notes) return;
     if (goingLiveRef.current) {
       // A goLive() is already in flight from an earlier click; record this newer mask rather than
       // dropping it, so the engine attaches with the user's latest intent, not a stale one.
@@ -793,13 +822,17 @@ export function SoundViewer() {
     const seedSeconds = audio.currentTime;
     setBusy("engine");
     try {
-      // ensureSequenceWav is cached after the first Play, so this is nearly free in the common
-      // case (mute/solo after already playing); it also supplies the loop-in-seconds timing the
-      // note-roll's playhead needs to wrap correctly across repeat loop cycles in live mode. It's
-      // independent of getSequenceEngineData, so run both together rather than back-to-back.
-      const wavPromise = ensureSequenceWav();
-      const engineDataPromise = client.getSequenceEngineData(romHandle, ref, seqIndex);
-      const [, engineData] = await Promise.all([wavPromise, engineDataPromise]);
+      // ensureSequenceWav supplies the loop-in-seconds timing the note-roll's playhead needs to
+      // wrap correctly across repeat loop cycles in live mode — worth having when it's free (cached
+      // from a previous Play) or cheap (a small sequence). But for a demanding sequence going live
+      // specifically to AVOID that render's memory cost, triggering it here just to draw a nicer
+      // playhead would defeat the entire point — skip it and let the playhead fall back to a rough
+      // tempo-based estimate (estimateSeconds) instead of an exact one.
+      const alreadyCached = seqWav != null && seqWav.index === seqIndex;
+      const wantWavTiming = alreadyCached || !isDemandingSequence(notes);
+      const engineData = wantWavTiming
+        ? (await Promise.all([ensureSequenceWav(), client.getSequenceEngineData(romHandle, ref, seqIndex)]))[1]
+        : await client.getSequenceEngineData(romHandle, ref, seqIndex);
       const ctx = audio.ctx();
       const e = await createEngine(ctx, engineData, { seedSeconds, trackMask: mask });
       if (liveGenerationRef.current !== myGeneration) {
@@ -987,7 +1020,13 @@ export function SoundViewer() {
                 <div className="controls">
                   {canPlaySeq && (
                     <button className="play-btn" disabled={busy != null || isPlaying} onClick={() => void playSequence()}>
-                      {busy === "render" ? "Rendering…" : isPlaying ? "▶ Playing" : "▶ Play"}
+                      {busy === "render"
+                        ? "Rendering…"
+                        : busy === "engine"
+                          ? "Starting…"
+                          : isPlaying
+                            ? "▶ Playing"
+                            : "▶ Play"}
                     </button>
                   )}
                   {isPlaying && (
@@ -1008,7 +1047,9 @@ export function SoundViewer() {
                     {canPlaySeq
                       ? live
                         ? " · live mixing engine"
-                        : " · first play synthesizes the whole song; mute/solo switches to live mixing"
+                        : isDemandingSequence(notes)
+                          ? " · large sequence; play uses the live mixing engine"
+                          : " · first play synthesizes the whole song; mute/solo switches to live mixing"
                       : " · open the parent SDAT to play"}
                   </span>
                 </div>
@@ -1018,7 +1059,7 @@ export function SoundViewer() {
                     live ? sourceTime(liveSeconds, seqWav ? seqLoop(seqWav) : null) : audio.currentTime,
                     notes,
                     seqWav ? seqLoop(seqWav) : null,
-                    seqWav?.seconds ?? 0
+                    seqWav?.seconds ?? (live ? estimateSeconds(notes) : 0)
                   )}
                   playing={isPlaying}
                   muted={muted}
