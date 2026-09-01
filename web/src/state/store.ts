@@ -61,6 +61,8 @@ interface AppState {
   selection: Selection | null;
   romSiblings: ResourceItem[]; // pairing candidates when a loose ROM file is selected
   navOpen: boolean; // tree drawer open (only affects narrow screens)
+  treeCollapsed: boolean; // file browser hidden on desktop (wide screens)
+  treeWidth: number; // file browser column width in px on desktop (drag-resizable)
   revealPath: string | null; // folder path the tree should scroll into view
   revealTick: number; // bumped on each reveal so re-revealing the same folder still scrolls
   narcScroll: Record<number, number>; // narcHandle -> inspector scrollTop, so "back" restores the spot
@@ -89,6 +91,8 @@ interface AppState {
 
   boot: () => Promise<void>;
   setNavOpen: (open: boolean) => void;
+  setTreeCollapsed: (collapsed: boolean) => void;
+  setTreeWidth: (width: number) => void;
   revealFolder: (folderPath: string) => void;
   setNarcScroll: (narcHandle: number, top: number) => void;
   setPairingOverride: (key: string, partial: PairOverride) => void;
@@ -329,6 +333,30 @@ function confirmDiscardDraft(get: StoreApi<AppState>["getState"]): boolean {
   return window.confirm(s.editorDiscardMessage);
 }
 
+// File-browser layout prefs persist across sessions (localStorage). Width is clamped to the same
+// range the resizer enforces, so a stale/hand-edited value can't produce an unusable panel.
+const TREE_WIDTH_KEY = "nitroviewer.treeWidth";
+const TREE_COLLAPSED_KEY = "nitroviewer.treeCollapsed";
+export const TREE_WIDTH_MIN = 200;
+export const TREE_WIDTH_MAX = 640;
+export const TREE_WIDTH_DEFAULT = 340;
+
+export function clampTreeWidth(w: number): number {
+  if (!Number.isFinite(w)) return TREE_WIDTH_DEFAULT;
+  return Math.min(TREE_WIDTH_MAX, Math.max(TREE_WIDTH_MIN, Math.round(w)));
+}
+
+function loadTreeWidth(): number {
+  if (typeof localStorage === "undefined") return TREE_WIDTH_DEFAULT;
+  const raw = localStorage.getItem(TREE_WIDTH_KEY);
+  return raw == null ? TREE_WIDTH_DEFAULT : clampTreeWidth(Number(raw));
+}
+
+function loadTreeCollapsed(): boolean {
+  if (typeof localStorage === "undefined") return false;
+  return localStorage.getItem(TREE_COLLAPSED_KEY) === "1";
+}
+
 function unpackedFolderLabel(files: File[]): string {
   for (const f of files) {
     const rel = f.webkitRelativePath;
@@ -359,6 +387,8 @@ export const useStore = create<AppState>((set, get) => ({
   selection: null,
   romSiblings: [],
   navOpen: false,
+  treeCollapsed: loadTreeCollapsed(),
+  treeWidth: loadTreeWidth(),
   revealPath: null,
   revealTick: 0,
   narcScroll: {},
@@ -402,6 +432,17 @@ export const useStore = create<AppState>((set, get) => ({
   },
 
   setNavOpen: (open) => set({ navOpen: open }),
+
+  setTreeCollapsed: (collapsed) => {
+    if (typeof localStorage !== "undefined") localStorage.setItem(TREE_COLLAPSED_KEY, collapsed ? "1" : "0");
+    set({ treeCollapsed: collapsed });
+  },
+
+  setTreeWidth: (width) => {
+    const w = clampTreeWidth(width);
+    if (typeof localStorage !== "undefined") localStorage.setItem(TREE_WIDTH_KEY, String(w));
+    set({ treeWidth: w });
+  },
 
   // Expand a folder and all its ancestors in the tree, and signal TreePane to scroll it into view.
   // folderPath is a trailing-slash path like "/poketool/trgra/" (matching the tree's expanded keys).

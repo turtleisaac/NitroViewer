@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type CSSProperties } from "react";
 import { useStore } from "./state/store";
 import { TreePane } from "./components/TreePane";
 import { InspectorPane } from "./components/InspectorPane";
@@ -16,6 +16,10 @@ export function App() {
   const openUnpackedEntries = useStore((s) => s.openUnpackedEntries);
   const navOpen = useStore((s) => s.navOpen);
   const setNavOpen = useStore((s) => s.setNavOpen);
+  const treeCollapsed = useStore((s) => s.treeCollapsed);
+  const setTreeCollapsed = useStore((s) => s.setTreeCollapsed);
+  const treeWidth = useStore((s) => s.treeWidth);
+  const setTreeWidth = useStore((s) => s.setTreeWidth);
   const dirty = useStore((s) => s.dirty);
   const saving = useStore((s) => s.saving);
   const saveRom = useStore((s) => s.saveRom);
@@ -35,10 +39,31 @@ export function App() {
   const topOpenRef = useRef<HTMLDivElement>(null);
   const emptyOpenRef = useRef<HTMLDivElement>(null);
   const [openMenu, setOpenMenu] = useState<null | "top" | "empty">(null);
+  const [resizing, setResizing] = useState(false);
 
   useEffect(() => {
     void boot();
   }, [boot]);
+
+  // Drag the divider to resize the file browser column (desktop only). clientX is measured from the
+  // viewport's left edge, which is where the column starts, so it maps directly to the column width.
+  useEffect(() => {
+    if (!resizing) return;
+    const onMove = (e: MouseEvent) => setTreeWidth(e.clientX);
+    const stop = () => setResizing(false);
+    window.addEventListener("mousemove", onMove);
+    window.addEventListener("mouseup", stop);
+    const prevCursor = document.body.style.cursor;
+    const prevSelect = document.body.style.userSelect;
+    document.body.style.cursor = "col-resize";
+    document.body.style.userSelect = "none";
+    return () => {
+      window.removeEventListener("mousemove", onMove);
+      window.removeEventListener("mouseup", stop);
+      document.body.style.cursor = prevCursor;
+      document.body.style.userSelect = prevSelect;
+    };
+  }, [resizing, setTreeWidth]);
 
   useEffect(() => {
     if (!openMenu) return;
@@ -273,10 +298,36 @@ export function App() {
             </div>
           </div>
         ) : (
-          <div className={"split" + (navOpen ? " nav-open" : "")}>
+          <div
+            className={
+              "split" + (navOpen ? " nav-open" : "") + (treeCollapsed ? " tree-collapsed" : "")
+            }
+            style={{ "--tree-w": `${treeWidth}px` } as CSSProperties}
+          >
             <TreePane />
+            {!treeCollapsed && (
+              <div
+                className={"tree-resizer" + (resizing ? " dragging" : "")}
+                role="separator"
+                aria-orientation="vertical"
+                aria-label="Resize file browser"
+                onMouseDown={(e) => {
+                  e.preventDefault();
+                  setResizing(true);
+                }}
+                onDoubleClick={() => setTreeWidth(340)}
+              />
+            )}
             <InspectorPane />
             {navOpen && <div className="scrim" onClick={() => setNavOpen(false)} />}
+            <button
+              className="tree-collapse-btn"
+              aria-label={treeCollapsed ? "Show file browser" : "Hide file browser"}
+              title={treeCollapsed ? "Show file browser" : "Hide file browser"}
+              onClick={() => setTreeCollapsed(!treeCollapsed)}
+            >
+              {treeCollapsed ? "▶" : "◀"}
+            </button>
           </div>
         )}
       </main>

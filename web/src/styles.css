@@ -61,7 +61,18 @@ body { background: var(--bg); color: var(--text); font-size: 13px; }
 
 /* Body */
 .body { flex: 1 1 auto; min-height: 0; }
-.split { display: grid; grid-template-columns: 340px 1fr; height: 100%; }
+.split { display: grid; grid-template-columns: var(--tree-w, 340px) 1fr; height: 100%; position: relative; }
+
+/* Drag divider between the file browser and the inspector (desktop only; hidden on narrow screens
+   and when the browser is collapsed). Sits over the column boundary so it's easy to grab. */
+.tree-resizer {
+  display: none; position: absolute; top: 0; bottom: 0; left: var(--tree-w, 340px);
+  width: 9px; transform: translateX(-5px); z-index: 25; cursor: col-resize;
+}
+.tree-resizer::after {
+  content: ""; position: absolute; top: 0; bottom: 0; left: 4px; width: 1px; background: var(--line);
+}
+.tree-resizer:hover::after, .tree-resizer.dragging::after { background: var(--accent); width: 2px; left: 3px; }
 
 .empty { display: grid; place-items: center; height: 100%; padding: 24px; }
 .empty-card { max-width: 460px; text-align: center; background: var(--bg-1); border: 1px solid var(--line); border-radius: 14px; padding: 40px 34px; }
@@ -470,7 +481,7 @@ body { background: var(--bg); color: var(--text); font-size: 13px; }
   font-family: ui-monospace, monospace;
 }
 
-/* Hamburger + scrim: only used on narrow screens (hidden by default). */
+/* Hamburger + scrim: only used on narrow screens (hidden by default) to open the slide-in drawer. */
 .nav-toggle {
   display: none; align-items: center; justify-content: center;
   width: 34px; height: 34px; margin-right: 8px; flex: 0 0 auto;
@@ -479,14 +490,36 @@ body { background: var(--bg); color: var(--text); font-size: 13px; }
 }
 .scrim { display: none; }
 
+/* Desktop file-browser collapse toggle: pinned to the bottom-left corner of the content area so it
+   stays put (and reachable) whether the tree pane is showing or collapsed. Desktop-only — narrow
+   screens use the topbar hamburger + slide-in drawer instead. */
+.tree-collapse-btn {
+  display: none; position: absolute; left: 8px; bottom: 8px; z-index: 35;
+  align-items: center; justify-content: center;
+  width: 26px; height: 26px; padding: 0;
+  background: var(--bg-2); color: var(--text-dim);
+  border: 1px solid var(--line-2); border-radius: 7px; font-size: 11px; cursor: pointer;
+}
+.tree-collapse-btn:hover { color: var(--text); filter: brightness(1.12); }
+
 /* Don't let a big zoomed sprite push the layout; scroll within the frame instead. */
 .canvas-wrap { overflow: auto; }
 
 /* ---------- Responsive ---------- */
 
-/* Medium: narrower tree, drop the tagline. */
+/* Desktop: the file browser can be collapsed away and drag-resized. Scoped above the drawer
+   breakpoint so it never fights the narrow-screen slide-in behavior below. */
+@media (min-width: 721px) {
+  .tree-resizer { display: block; }
+  .tree-collapse-btn { display: inline-flex; }
+  /* Collapsed: drop the hidden tree-pane out of the grid so the inspector fills a single 1fr track
+     (a "0 1fr" template would auto-place the lone inspector into the 0-width first track). */
+  .split.tree-collapsed { grid-template-columns: 1fr; }
+  .split.tree-collapsed .tree-pane, .split.tree-collapsed .tree-resizer { display: none; }
+}
+
+/* Medium: drop the tagline for more topbar room. */
 @media (max-width: 1000px) {
-  .split { grid-template-columns: 280px 1fr; }
   .tagline { display: none; }
 }
 
