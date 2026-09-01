@@ -13,7 +13,7 @@ import type { SequenceEngineData } from "../../transport/types";
 import { base64ToBytes } from "../../util";
 
 const FIXTURES_DIR = resolve(__dirname, "__fixtures__");
-const SEQUENCES = ["SEQ_PV001", "SEQ_TOWN01_D", "SEQ_CITY01_D"];
+const SEQUENCES = ["SEQ_PV001", "SEQ_TOWN01_D", "SEQ_CITY01_D", "SEQ_PL_BA_GIRA"];
 
 interface ReferenceRender {
   sampleRate: number;

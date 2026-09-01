@@ -1144,7 +1144,10 @@ class CheerpjFacadeTest
 
         // Platinum has two SDATs (a small "pl_" one and the main one); find whichever actually has
         // the named sequences we want fixtures for rather than assuming file order.
-        String[] wanted = { "SEQ_PV001", "SEQ_TOWN01_D", "SEQ_CITY01_D" };
+        // SEQ_PL_BA_GIRA (Giratina's battle theme) is the densest fixture on purpose: 3552 notes,
+        // an 11-track boss theme, and a ~218s/19MB rendered WAV — good stress coverage for both the
+        // JS engine's correctness at high polyphony and the offline render's memory footprint.
+        String[] wanted = { "SEQ_PV001", "SEQ_TOWN01_D", "SEQ_CITY01_D", "SEQ_PL_BA_GIRA" };
         int n = intField(psvc.getRomInfo(prom), "numFiles");
         int sdatId = -1;
         String sdatInfo = null;
