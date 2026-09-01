@@ -18,6 +18,7 @@ import type {
 } from "../transport";
 import { base64ToBytes, download } from "../util";
 import { createEngine, type EngineHandle } from "../sound/engine/host";
+import { LiveEngineSlot } from "../sound/engine/liveEngineSlot";
 
 type Tab = "sequences" | "waves" | "streams" | "banks";
 
@@ -667,28 +668,25 @@ export function SoundViewer() {
   // mask that no longer matches what the UI is showing.
   const [live, setLive] = useState(false);
   const [liveSeconds, setLiveSeconds] = useState(0);
-  const engineRef = useRef<EngineHandle | null>(null);
+  // AudioWorkletNode has no stop() — disconnect() only removes it from the audio graph, it does not
+  // guarantee the node stops running (or GCs) immediately, so its 'position' messages can keep
+  // arriving for a while after. LiveEngineSlot guarantees the previous engine's onPosition
+  // subscription is torn down whenever it stops being current, so a "zombie" engine's stale elapsed
+  // time can never clobber liveSeconds for whatever sequence is actually on screen — see that
+  // module for the regression this guards (the note-roll playhead teleporting to an unrelated
+  // position after switching sequences) and its unit tests.
+  const engineSlotRef = useRef(new LiveEngineSlot<EngineHandle>());
   const liveGenerationRef = useRef(0);
   const goingLiveRef = useRef(false);
   const pendingMaskRef = useRef<number | null>(null);
-  // AudioWorkletNode has no stop() — disconnect() only removes it from the audio graph, it does not
-  // guarantee the node stops running (or GCs) immediately, so its 'position' messages can keep
-  // arriving for a while after. Without unsubscribing, that stale onPosition callback keeps calling
-  // setLiveSeconds with the OLD engine's elapsed time — and since it's still the very same state
-  // setter, it clobbers whatever the CURRENTLY displayed sequence's liveSeconds should be, producing
-  // exactly the "playhead teleports to an unrelated position" bug this was seen causing. Switch
-  // sequences enough times in a row and multiple such zombies can be racing at once.
-  const engineUnsubRef = useRef<() => void>(() => {});
 
   const stopLive = () => {
     liveGenerationRef.current++;
     pendingMaskRef.current = null;
-    engineUnsubRef.current();
-    engineUnsubRef.current = () => {};
-    const e = engineRef.current;
+    const e = engineSlotRef.current.engine;
+    engineSlotRef.current.clear();
     if (!e) return;
     e.node.disconnect();
-    engineRef.current = null;
     setLive(false);
     setLiveSeconds(0);
   };
@@ -852,7 +850,7 @@ export function SoundViewer() {
    * further mute/solo changes are just a message to the running engine, no reseed.
    */
   const goLive = async (mask: number) => {
-    if (fmt !== "SDAT" || seqIndex == null || engineRef.current || !notes) return;
+    if (fmt !== "SDAT" || seqIndex == null || engineSlotRef.current.engine || !notes) return;
     if (goingLiveRef.current) {
       // A goLive() is already in flight from an earlier click; record this newer mask rather than
       // dropping it, so the engine attaches with the user's latest intent, not a stale one.
@@ -885,9 +883,8 @@ export function SoundViewer() {
       }
       e.node.connect(ctx.destination);
       audio.stop();
-      engineUnsubRef.current = e.onPosition((s) => setLiveSeconds(s));
       setLiveSeconds(seedSeconds);
-      engineRef.current = e;
+      engineSlotRef.current.set(e, (s) => setLiveSeconds(s));
       setLive(true);
       // A newer mute/solo click arrived while we were setting up (captured above instead of
       // dropped) — apply the user's latest intent now instead of leaving the engine on the mask
@@ -906,7 +903,7 @@ export function SoundViewer() {
       // before it could apply that mask itself — nothing else will ever consume it otherwise
       // (pendingMaskRef is only read from inside an in-flight goLive()), so retry with it now.
       const stillPending = pendingMaskRef.current;
-      if (stillPending != null && !engineRef.current) {
+      if (stillPending != null && !engineSlotRef.current.engine) {
         pendingMaskRef.current = null;
         void goLive(stillPending);
       }
@@ -928,7 +925,8 @@ export function SoundViewer() {
     if (kind === "mute") setMuted(next);
     else setSolo(next);
     const mask = computeTrackMask(notes.trackCount, nextMuted, nextSolo);
-    if (engineRef.current) engineRef.current.setTrackMask(mask);
+    const engine = engineSlotRef.current.engine;
+    if (engine) engine.setTrackMask(mask);
     else void goLive(mask);
   };
 
@@ -1131,17 +1129,18 @@ export function SoundViewer() {
                       ? (tick) => {
                           void (async () => {
                             try {
-                              if (isDemandingSequence(notes) && !engineRef.current) {
+                              if (isDemandingSequence(notes) && !engineSlotRef.current.engine) {
                                 // Same reasoning as Play: never render the whole song just to seek
                                 // a demanding sequence — go live first (mirrors clicking Play),
-                                // then fall into the engineRef.current branch below to seek it to
-                                // the dragged tick. A drag gesture fires this on every pointermove,
-                                // so if an earlier event in the same gesture already kicked off
-                                // goLive, just skip this one rather than racing a second attempt.
+                                // then fall into the engine branch below to seek it to the dragged
+                                // tick. A drag gesture fires this on every pointermove, so if an
+                                // earlier event in the same gesture already kicked off goLive, just
+                                // skip this one rather than racing a second attempt.
                                 if (goingLiveRef.current) return;
                                 await goLive(computeTrackMask(notes.trackCount, muted, solo));
                               }
-                              if (engineRef.current) {
+                              const engine = engineSlotRef.current.engine;
+                              if (engine) {
                                 // Use estimated timing here rather than the outer playLoop/
                                 // playSeconds — those close over this render's `live`, which is
                                 // still stale (false) immediately after the goLive() above, before
@@ -1150,7 +1149,7 @@ export function SoundViewer() {
                                 const est = estimateTiming(notes);
                                 const loop = wavOk ? seqLoop(seqWav) : est.loop;
                                 const seconds = tickToTime(tick, notes, loop, wavOk ? seqWav.seconds : est.seconds);
-                                engineRef.current.seek(seconds);
+                                engine.seek(seconds);
                                 setLiveSeconds(seconds);
                                 return;
                               }
