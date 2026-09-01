@@ -1,6 +1,13 @@
 import { useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
 import { useStore } from "../state/store";
-import { drawNoteTrack, noteTrackHeight, tickFromCanvasX, NOTE_GUTTER, NOTE_LANE_HEIGHT } from "../sound/noteTrack";
+import {
+  activeTracksAt,
+  drawNoteTrack,
+  noteTrackHeight,
+  tickFromCanvasX,
+  NOTE_GUTTER,
+  NOTE_LANE_HEIGHT,
+} from "../sound/noteTrack";
 import type {
   SdatInfo,
   SdatNamed,
@@ -190,6 +197,7 @@ function tickToTime(tick: number, notes: SequenceNotes, loop: LoopPts | null, wa
 function NoteRoll({
   notes,
   playTick,
+  playing,
   muted,
   solo,
   onSeekTick,
@@ -198,6 +206,7 @@ function NoteRoll({
 }: {
   notes: SequenceNotes;
   playTick: number;
+  playing: boolean;
   muted: boolean[];
   solo: boolean[];
   onSeekTick?: (tick: number) => void;
@@ -221,6 +230,11 @@ function NoteRoll({
 
   const height = noteTrackHeight(notes.trackCount);
   const head = dragTick ?? playTick;
+  const live = playing || dragTick != null;
+  const activeTracks = useMemo(
+    () => (live ? activeTracksAt(notes.notes, notes.trackCount, head) : null),
+    [notes, head, live]
+  );
   useEffect(() => {
     const c = canvasRef.current;
     if (!c) return;
@@ -240,8 +254,9 @@ function NoteRoll({
       notes.loopStart,
       notes.loopEnd,
       null, //silentOf(muted, solo)
+      live,
     );
-  }, [notes, head, width, height, muted, solo]);
+  }, [notes, head, width, height, muted, solo, live]);
 
   const tickAtEvent = (e: ReactPointerEvent) => {
     const c = canvasRef.current;
@@ -270,15 +285,38 @@ function NoteRoll({
     setDragTick(null);
   };
 
-  console.log(onSolo);
-  console.log(onMute);
-
   const nTracks = Math.max(1, notes.trackCount);
   return (
     <div className="note-roll" ref={wrapRef}>
       <div className="note-gutter" style={{ width: NOTE_GUTTER }}>
         {Array.from({ length: nTracks }, (_, i) => (
-          <div key={i} className="note-lane-ctrl" style={{ height: NOTE_LANE_HEIGHT }}>
+          <div
+            key={i}
+            className={"note-lane-ctrl" + (activeTracks?.[i] ? " note-lane-ctrl--active" : "")}
+            style={{ height: NOTE_LANE_HEIGHT }}
+          >
+            <button
+              type="button"
+              className={"trk-btn" + (muted[i] ? " trk-btn--mute" : "")}
+              title={muted[i] ? "Unmute track" : "Mute track"}
+              onClick={(e) => {
+                e.stopPropagation();
+                onMute?.(i);
+              }}
+            >
+              M
+            </button>
+            <button
+              type="button"
+              className={"trk-btn" + (solo[i] ? " trk-btn--solo" : "")}
+              title={solo[i] ? "Unsolo track" : "Solo / isolate track"}
+              onClick={(e) => {
+                e.stopPropagation();
+                onSolo?.(i);
+              }}
+            >
+              S
+            </button>
             <span className="trk-num">{i}</span>
           </div>
         ))}
@@ -801,6 +839,7 @@ export function SoundViewer() {
                     seqWav ? seqLoop(seqWav) : null,
                     seqWav?.seconds ?? 0
                   )}
+                  playing={audio.playing}
                   muted={muted}
                   solo={solo}
                   onMute={(t) => {

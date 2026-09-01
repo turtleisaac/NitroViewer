@@ -428,7 +428,12 @@ body { background: var(--bg); color: var(--text); font-size: 13px; }
 .note-lane-ctrl {
   display: flex; align-items: center; gap: 3px;
   padding: 0 4px; overflow: hidden; flex: 0 0 auto;
+  transition: background-color 60ms linear;
 }
+.note-lane-ctrl--active {
+  background: color-mix(in srgb, var(--accent) 22%, transparent);
+}
+.note-lane-ctrl--active .trk-num { color: var(--text); }
 .trk-btn {
   flex: 0 0 auto; width: 18px; height: 18px; padding: 0;
   border: 1px solid var(--line-2); border-radius: 4px;

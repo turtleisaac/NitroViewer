@@ -24,6 +24,18 @@ export function noteTrackHeight(trackCount: number): number {
   return Math.max(1, trackCount) * LANE_H;
 }
 
+/** Tracks with a note sounding at `tick` (all false when `tick` is null). */
+export function activeTracksAt(notes: NoteEvent[], trackCount: number, tick: number | null): boolean[] {
+  const tracks = Math.max(1, trackCount);
+  const active = new Array(tracks).fill(false) as boolean[];
+  if (tick == null) return active;
+  for (const n of notes) {
+    if (n.track < 0 || n.track >= tracks) continue;
+    if (tick >= n.tick && tick < n.tick + n.duration) active[n.track] = true;
+  }
+  return active;
+}
+
 /** Map a canvas X coordinate to a tick on the roll (clamped). */
 export function tickFromCanvasX(x: number, width: number, ticks: number): number {
   const inner = Math.max(1, width - GUTTER);
@@ -34,7 +46,10 @@ export function tickFromCanvasX(x: number, width: number, ticks: number): number
   return t;
 }
 
-/** Draw one row-per-track note strip. `playheadTick` is null when not playing. */
+/**
+ * Draw one row-per-track note strip. `playheadTick` is null when not playing.
+ * When `live` is set, notes sounding at `playheadTick` get a bright glow overlay.
+ */
 export function drawNoteTrack(
   ctx: CanvasRenderingContext2D,
   notes: NoteEvent[],
@@ -44,12 +59,14 @@ export function drawNoteTrack(
   width: number,
   loopStartTick = -1,
   loopEndTick = -1,
-  silent: boolean[] | null = null
+  silent: boolean[] | null = null,
+  live = false
 ): void {
   const tracks = Math.max(1, trackCount);
   const height = tracks * LANE_H;
   const inner = Math.max(1, width - GUTTER);
   const tMax = Math.max(1, ticks);
+  const active = live ? activeTracksAt(notes, tracks, playheadTick) : null;
 
   ctx.fillStyle = "#14161c";
   ctx.fillRect(0, 0, width, height);
@@ -69,6 +86,10 @@ export function drawNoteTrack(
     const off = silent != null && silent[t];
     ctx.fillStyle = off ? "#12141a" : t % 2 === 0 ? "#1b1e26" : "#161920";
     ctx.fillRect(GUTTER, y, inner, LANE_H);
+    if (!off && active?.[t]) {
+      ctx.fillStyle = "rgba(231, 233, 239, 0.07)";
+      ctx.fillRect(GUTTER, y, inner, LANE_H);
+    }
     ctx.fillStyle = "#262a34";
     ctx.fillRect(0, y + LANE_H - 1, width, 1);
   }
@@ -87,6 +108,31 @@ export function drawNoteTrack(
     ctx.fillStyle = COLORS[n.program % COLORS.length];
     ctx.fillRect(x, ny, w, 6);
     ctx.globalAlpha = 1;
+  }
+
+  if (live && playheadTick != null) {
+    for (const n of notes) {
+      if (n.track < 0 || n.track >= tracks) continue;
+      if (playheadTick < n.tick || playheadTick >= n.tick + n.duration) continue;
+      if (silent != null && silent[n.track]) continue;
+      const r = range[n.track];
+      const span = Math.max(1, r.max - r.min);
+      const x = GUTTER + (n.tick / tMax) * inner;
+      const w = Math.max(2, (n.duration / tMax) * inner);
+      const pad = 3;
+      const usable = LANE_H - pad * 2;
+      const ny = n.track * LANE_H + pad + (1 - (n.key - r.min) / span) * (usable - 6);
+      const color = COLORS[n.program % COLORS.length];
+      ctx.save();
+      ctx.shadowColor = color;
+      ctx.shadowBlur = 10;
+      ctx.fillStyle = color;
+      ctx.fillRect(x, ny - 1, w, 8);
+      ctx.shadowBlur = 0;
+      ctx.strokeStyle = "#e7e9ef";
+      ctx.strokeRect(x + 0.5, ny - 0.5, Math.max(1, w - 1), 7);
+      ctx.restore();
+    }
   }
 
   if (loopEndTick > loopStartTick && loopStartTick >= 0) {
