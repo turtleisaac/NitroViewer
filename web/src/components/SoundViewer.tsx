@@ -59,28 +59,36 @@ function isDemandingSequence(notes: SequenceNotes): boolean {
   return notes.notes.length > DEMANDING_NOTE_COUNT || estimateSeconds(notes) > DEMANDING_SECONDS;
 }
 
-// Estimated playback duration from tick/tempo/loop metadata alone — no render required. Used both
-// to flag demanding sequences (above) before ever rendering, and as a fallback for the note-roll's
-// playhead when a demanding sequence goes live without the WAV render (see goLive).
+// Estimated playback timing from tick/tempo/loop metadata alone — no render required. Used both to
+// flag demanding sequences (above) before ever rendering, and as a fallback for the note-roll's
+// playhead/seek-to-tick math whenever a demanding sequence is live without the real WAV timing (see
+// goLive and the onSeekTick handler below) — which, deliberately, is any time a demanding sequence
+// plays at all, since the entire point is to never trigger that render.
 //
 // The engine's driver runs at 192 Hz and advances one tick every time its tempoStack — accumulated
 // at `tempo` per driver-frame — clears a 240 threshold (stepper.ts runDriverFrame), so ticks/sec =
 // tempo * 192 / 240 = tempo * 0.8, i.e. seconds = ticks * 1.25 / tempo. For a looping sequence,
-// renderSequenceWav's own convention (see playheadTick below) is intro once, then the loop body
-// twice — once to reach the loop point, once more as the seamless repeat — so mirror that here
-// rather than using raw `ticks`, which is just the loop-end tick and undercounts by a full body.
-// This tracks measured render duration within a few percent for sequences with a constant tempo;
-// it can undershoot for a sequence with mid-song tempo-change events (its tempo/ticks reflect only
-// the initial tempo), which is one reason the note-count check above still exists as a backstop.
-function estimateSeconds(notes: SequenceNotes): number {
-  if (notes.tempo <= 0) return 0;
+// renderSequenceWav's own convention (matched by playheadTick/tickToTime below) is the loop-end tick
+// once as the "intro" pass, then just the [loopStart, loopEnd) body again as the seamless repeat —
+// mirror that to get both a matching `seconds` total and a `loop` split in seconds, not just a flat
+// duration. Verified against real renders: within ~0.1% for a from-the-top loop (loopStart 0), ~6%
+// for a loop with a real intro (loopStart > 0) — the driver's per-tick integer rounding isn't
+// modeled here, only its average rate. Both are fine for a fallback; neither is exact, which is one
+// reason the note-count check above still exists as a backstop for e.g. mid-song tempo changes this
+// can't see (tempo/ticks reflect only the initial tempo).
+function estimateTiming(notes: SequenceNotes): { loop: LoopPts | null; seconds: number } {
+  if (notes.tempo <= 0) return { loop: null, seconds: 0 };
   const secPerTick = 1.25 / notes.tempo;
   if (notes.loopEnd > notes.loopStart && notes.loopStart >= 0) {
-    const introTicks = notes.loopStart;
-    const bodyTicks = notes.loopEnd - notes.loopStart;
-    return (introTicks + 2 * bodyTicks) * secPerTick;
+    const loopStartSec = notes.loopEnd * secPerTick;
+    const bodySec = (notes.loopEnd - notes.loopStart) * secPerTick;
+    return { loop: { start: loopStartSec, end: loopStartSec + bodySec }, seconds: loopStartSec + bodySec };
   }
-  return notes.ticks * secPerTick;
+  return { loop: null, seconds: notes.ticks * secPerTick };
+}
+
+function estimateSeconds(notes: SequenceNotes): number {
+  return estimateTiming(notes).seconds;
 }
 
 function wavToBuffer(ctx: AudioContext, wav: Uint8Array): AudioBuffer {
@@ -1001,6 +1009,14 @@ export function SoundViewer() {
 
   const canPlaySeq = fmt === "SDAT" && seqIndex != null;
   const isPlaying = live || audio.playing;
+  // Real WAV timing when it's been rendered and matches the sequence on screen; otherwise, while
+  // live, the tick/tempo-only estimate (see estimateTiming) — needed for both the playhead (so it
+  // wraps at the loop instead of running off the right edge once real elapsed time passes the
+  // estimate) and for seeking (see onSeekTick) without ever triggering the render a demanding
+  // sequence is live specifically to avoid.
+  const wavReady = seqWav != null && seqWav.index === seqIndex;
+  const playLoop = wavReady ? seqLoop(seqWav) : live && notes ? estimateTiming(notes).loop : null;
+  const playSeconds = wavReady ? seqWav.seconds : live && notes ? estimateTiming(notes).seconds : 0;
 
   return (
     <div className="sound">
@@ -1080,10 +1096,10 @@ export function SoundViewer() {
                 <NoteRoll
                   notes={notes}
                   playTick={playheadTick(
-                    live ? sourceTime(liveSeconds, seqWav ? seqLoop(seqWav) : null) : audio.currentTime,
+                    live ? sourceTime(liveSeconds, playLoop) : audio.currentTime,
                     notes,
-                    seqWav ? seqLoop(seqWav) : null,
-                    seqWav?.seconds ?? (live ? estimateSeconds(notes) : 0)
+                    playLoop,
+                    playSeconds
                   )}
                   playing={isPlaying}
                   muted={muted}
@@ -1095,15 +1111,34 @@ export function SoundViewer() {
                       ? (tick) => {
                           void (async () => {
                             try {
+                              if (isDemandingSequence(notes) && !engineRef.current) {
+                                // Same reasoning as Play: never render the whole song just to seek
+                                // a demanding sequence — go live first (mirrors clicking Play),
+                                // then fall into the engineRef.current branch below to seek it to
+                                // the dragged tick. A drag gesture fires this on every pointermove,
+                                // so if an earlier event in the same gesture already kicked off
+                                // goLive, just skip this one rather than racing a second attempt.
+                                if (goingLiveRef.current) return;
+                                await goLive(computeTrackMask(notes.trackCount, muted, solo));
+                              }
+                              if (engineRef.current) {
+                                // Use estimated timing here rather than the outer playLoop/
+                                // playSeconds — those close over this render's `live`, which is
+                                // still stale (false) immediately after the goLive() above, before
+                                // React has re-rendered with setLive(true).
+                                const wavOk = seqWav != null && seqWav.index === seqIndex;
+                                const est = estimateTiming(notes);
+                                const loop = wavOk ? seqLoop(seqWav) : est.loop;
+                                const seconds = tickToTime(tick, notes, loop, wavOk ? seqWav.seconds : est.seconds);
+                                engineRef.current.seek(seconds);
+                                setLiveSeconds(seconds);
+                                return;
+                              }
+                              if (isDemandingSequence(notes)) return; // goLive above failed/was discarded — never fall back to a full render for this
                               const w = await ensureSequenceWav();
                               const loop = seqLoop(w);
                               const seconds = tickToTime(tick, notes, loop, w.seconds);
-                              if (engineRef.current) {
-                                engineRef.current.seek(seconds);
-                                setLiveSeconds(seconds);
-                              } else {
-                                audio.seek(seconds, w.bytes, loop);
-                              }
+                              audio.seek(seconds, w.bytes, loop);
                             } catch (e) {
                               alert("Render failed: " + (e as Error).message);
                             }
