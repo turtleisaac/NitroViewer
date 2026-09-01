@@ -924,6 +924,16 @@ export function SoundViewer() {
 
   const exportWav = async () => {
     if (fmt !== "SDAT" || seqIndex == null) return;
+    if (
+      notes &&
+      isDemandingSequence(notes) &&
+      !window.confirm(
+        "This is a large sequence. Rendering the full WAV to export it can use a lot of memory and " +
+          "may crash the page on some devices (notably iOS Safari). Continue?"
+      )
+    ) {
+      return;
+    }
     setBusy("render");
     try {
       download(`${seqFileName()}.wav`, (await ensureSequenceWav()).bytes, "audio/wav");
