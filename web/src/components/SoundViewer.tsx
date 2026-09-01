@@ -671,10 +671,20 @@ export function SoundViewer() {
   const liveGenerationRef = useRef(0);
   const goingLiveRef = useRef(false);
   const pendingMaskRef = useRef<number | null>(null);
+  // AudioWorkletNode has no stop() — disconnect() only removes it from the audio graph, it does not
+  // guarantee the node stops running (or GCs) immediately, so its 'position' messages can keep
+  // arriving for a while after. Without unsubscribing, that stale onPosition callback keeps calling
+  // setLiveSeconds with the OLD engine's elapsed time — and since it's still the very same state
+  // setter, it clobbers whatever the CURRENTLY displayed sequence's liveSeconds should be, producing
+  // exactly the "playhead teleports to an unrelated position" bug this was seen causing. Switch
+  // sequences enough times in a row and multiple such zombies can be racing at once.
+  const engineUnsubRef = useRef<() => void>(() => {});
 
   const stopLive = () => {
     liveGenerationRef.current++;
     pendingMaskRef.current = null;
+    engineUnsubRef.current();
+    engineUnsubRef.current = () => {};
     const e = engineRef.current;
     if (!e) return;
     e.node.disconnect();
@@ -875,7 +885,7 @@ export function SoundViewer() {
       }
       e.node.connect(ctx.destination);
       audio.stop();
-      e.onPosition((s) => setLiveSeconds(s));
+      engineUnsubRef.current = e.onPosition((s) => setLiveSeconds(s));
       setLiveSeconds(seedSeconds);
       engineRef.current = e;
       setLive(true);
