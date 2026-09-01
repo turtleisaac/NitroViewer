@@ -57,6 +57,43 @@ function sourceTime(elapsed: number, loop: LoopPts | null): number {
   return loop.start + ((elapsed - loop.end) % span);
 }
 
+/** Keep the screen awake while `active` (playback in progress); re-acquires after backgrounding. */
+function useWakeLock(active: boolean) {
+  const lockRef = useRef<WakeLockSentinel | null>(null);
+
+  useEffect(() => {
+    if (!active || !("wakeLock" in navigator)) return;
+    let cancelled = false;
+
+    const acquire = async () => {
+      try {
+        const lock = await navigator.wakeLock.request("screen");
+        if (cancelled) {
+          void lock.release();
+          return;
+        }
+        lockRef.current = lock;
+      } catch {
+        /* denied, unsupported, or page hidden right now — playback still works without it */
+      }
+    };
+    void acquire();
+
+    // The OS releases the lock when the tab/screen backgrounds; reacquire once it's foregrounded again.
+    const onVisible = () => {
+      if (document.visibilityState === "visible" && !lockRef.current) void acquire();
+    };
+    document.addEventListener("visibilitychange", onVisible);
+
+    return () => {
+      cancelled = true;
+      document.removeEventListener("visibilitychange", onVisible);
+      void lockRef.current?.release();
+      lockRef.current = null;
+    };
+  }, [active]);
+}
+
 function useAudio() {
   const ctxRef = useRef<AudioContext | null>(null);
   const srcRef = useRef<AudioBufferSourceNode | null>(null);
@@ -162,6 +199,8 @@ function useAudio() {
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  useWakeLock(playing);
 
   return { play, seek, stop, playing, currentTime };
 }
@@ -787,7 +826,7 @@ export function SoundViewer() {
       )}
 
       {((fmt === "SDAT" && tab === "sequences") || fmt === "SSEQ") && (
-        <div className={"sound-split" + (fmt === "SSEQ" ? " sound-split--solo" : "")}>
+        <div className="sound-split">
           {fmt === "SDAT" && (
             <div className="sound-col">
               <input
@@ -882,7 +921,7 @@ export function SoundViewer() {
       )}
 
       {((fmt === "SDAT" && tab === "waves") || fmt === "SWAR" || fmt === "SWAV") && (
-        <div className={"sound-split" + (fmt === "SDAT" ? "" : " sound-split--solo")}>
+        <div className="sound-split">
           {fmt === "SDAT" && info && (
             <div className="sound-col">
               <NamedList
@@ -922,7 +961,7 @@ export function SoundViewer() {
       )}
 
       {((fmt === "SDAT" && tab === "streams") || fmt === "STRM") && (
-        <div className={"sound-split" + (fmt === "STRM" ? " sound-split--solo" : "")}>
+        <div className="sound-split">
           {fmt === "SDAT" && info && (
             <NamedList items={info.streams} selected={streamIndex} onSelect={(i) => void loadStream(i)} />
           )}

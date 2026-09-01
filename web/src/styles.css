@@ -390,17 +390,15 @@ body { background: var(--bg); color: var(--text); font-size: 13px; }
 /* SDAT / SSEQ / SWAR listener */
 .sound { display: flex; flex-direction: column; gap: 12px; min-height: 0; }
 .sound-split {
-  display: grid; grid-template-columns: minmax(220px, 280px) 1fr; gap: 12px; min-height: 0;
-  align-items: stretch;
+  display: flex; flex-direction: column; gap: 12px; min-height: 0;
 }
-.sound-split--solo { grid-template-columns: 1fr; }
 .sound-col { display: flex; flex-direction: column; gap: 8px; min-height: 0; }
 .sound-filter {
   background: var(--bg-2); color: var(--text); border: 1px solid var(--line-2);
   border-radius: 6px; padding: 6px 10px; font-size: 12px;
 }
 .sound-list {
-  overflow: auto; max-height: 62vh; border: 1px solid var(--line); border-radius: 8px;
+  overflow: auto; max-height: 28vh; border: 1px solid var(--line); border-radius: 8px;
   background: var(--bg-1);
 }
 .sound-row {
@@ -455,11 +453,6 @@ body { background: var(--bg); color: var(--text); font-size: 13px; }
 .playhead-line {
   position: absolute; top: 0; bottom: 0; width: 1px; background: #e7e9ef;
   pointer-events: none; z-index: 1;
-}
-
-@media (max-width: 720px) {
-  .sound-split { grid-template-columns: 1fr; }
-  .sound-list { max-height: 28vh; }
 }
 
 /* Info / hex */
