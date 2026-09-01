@@ -105,6 +105,12 @@ jobs:
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
           CSC_IDENTITY_AUTO_DISCOVERY: ${{ secrets.CSC_LINK && 'true' || 'false' }}
         run: |
+          # electron-builder resolves an empty CSC_LINK/CSC_KEY_PASSWORD to the
+          # current directory instead of treating it as "unset", so unless the
+          # signing secrets are actually configured, unset them entirely.
+          if [ -z "${CSC_LINK:-}" ]; then unset CSC_LINK; fi
+          if [ -z "${CSC_KEY_PASSWORD:-}" ]; then unset CSC_KEY_PASSWORD; fi
+
           extra=()
           if [ "${{ matrix.os }}" = "macos-latest" ] && [ -n "${APPLE_ID:-}" ] && [ -n "${APPLE_TEAM_ID:-}" ]; then
             extra+=(-c.mac.notarize.teamId="$APPLE_TEAM_ID")
