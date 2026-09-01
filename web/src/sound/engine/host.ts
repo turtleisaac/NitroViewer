@@ -8,7 +8,15 @@ import { WORKLET_NAME, type MainToWorklet, type WorkletInit, type WorkletToMain 
 const moduleLoaded = new WeakMap<AudioContext, Promise<void>>();
 
 function workletUrl(): URL {
-  return new URL("./sseq-worklet.ts", import.meta.url);
+  // scripts/build-worklet.mjs pre-bundles sseq-worklet.ts into public/sseq-worklet.js — a real,
+  // self-contained ES module (imports resolved, TS stripped) — because AudioWorkletProcessor is
+  // loaded via addModule(url), not a static `import`, so nothing in the app's module graph ever
+  // reaches it for Vite to bundle on its own; see that script for the full story. public/ files are
+  // served at the site root the page itself was loaded from (apex domain, GitHub Pages project
+  // subpath, or Electron's local server), so resolve against location.href — not import.meta.url,
+  // which for this (bundled, chunked) module resolves to that chunk's own assets/ subdirectory, not
+  // the site root the worklet actually lives at.
+  return new URL("sseq-worklet.js", location.href);
 }
 
 function ensureModule(ctx: AudioContext): Promise<void> {

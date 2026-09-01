@@ -8,6 +8,10 @@ target/
 spike/jars/*.jar
 web/public/jars/*.jar
 
+# Pre-bundled AudioWorklet module (rebuild with `npm run build-worklet`, or automatically via
+# `npm run dev`/`npm run build` — see web/scripts/build-worklet.mjs)
+web/public/sseq-worklet.js
+
 # Node / web
 node_modules/
 dist/
