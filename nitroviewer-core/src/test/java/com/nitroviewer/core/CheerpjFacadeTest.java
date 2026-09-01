@@ -19,6 +19,11 @@ import javax.imageio.ImageIO;
 import java.awt.Color;
 import java.awt.image.BufferedImage;
 import java.io.ByteArrayOutputStream;
+import java.io.IOException;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.Paths;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.regex.Matcher;
@@ -1078,6 +1083,99 @@ class CheerpjFacadeTest
     }
 
     @Test
+    @DisplayName("getSequenceEngineData hands back raw bytecode, a full instrument table, and decoded PCM")
+    void sequenceEngineData()
+    {
+        int sdatId = findFormat("SDAT");
+        Assumptions.assumeTrue(sdatId >= 0, "no SDAT in ROM");
+        String info = svc.getSdatInfo(rom, -1, sdatId);
+        Matcher seq = Pattern.compile("\"sequences\":\\[\\{\"index\":(\\d+)").matcher(info);
+        Assumptions.assumeTrue(seq.find(), "no sequences in SDAT");
+        int seqIndex = Integer.parseInt(seq.group(1));
+
+        String data = svc.getSequenceEngineData(rom, -1, sdatId, seqIndex);
+        assertThat(data).as("facade never throws; result should not be an error").doesNotContain("\"error\"");
+        assertThat(intField(data, "bankId")).isGreaterThanOrEqualTo(0);
+
+        // The raw SSEQ event bytecode must decode to a non-empty byte stream — same bytes a JS
+        // interpreter would parse, not a derived/lossy summary like getSequenceNotes.
+        byte[] eventData = java.util.Base64.getDecoder().decode(strField(data, "eventData"));
+        assertThat(eventData).as("raw SSEQ bytecode").isNotEmpty();
+
+        assertThat(data).contains("\"instruments\":[");
+        Matcher inst = Pattern.compile("\"type\":(\\d+)").matcher(data);
+        assertThat(inst.find()).as("at least one instrument entry").isTrue();
+
+        assertThat(data).contains("\"waveArchives\":[");
+        // Exactly 4 wave-archive slots (possibly null), matching SequencePlayer.forSequence's
+        // up-to-4-archives resolution.
+        int waveArchivesAt = data.indexOf("\"waveArchives\":[");
+        String tail = data.substring(waveArchivesAt);
+        long nullSlots = countMatches(Pattern.compile("null"), tail);
+        long objSlots = countMatches(Pattern.compile("\\{\"waves\":"), tail);
+        assertThat(nullSlots + objSlots).as("exactly 4 wave-archive slots").isEqualTo(4);
+        Assumptions.assumeTrue(objSlots > 0, "sequence's bank has no resolvable wave archives");
+
+        // At least one real wave in a real archive must carry decodable PCM16 bytes and a plausible
+        // sample rate (matches getWavePreview's decode path, just batched for every wave up front).
+        Matcher wave = Pattern.compile(
+                "\"sampleRate\":(\\d+),\"timer\":(\\d+),\"loops\":(true|false),\"loopStart\":(\\d+),\"loopEnd\":(\\d+),"
+                        + "\"sampleCount\":(\\d+),\"pcmBase64\":\"([^\"]+)\"").matcher(tail);
+        assertThat(wave.find()).as("at least one decoded wave").isTrue();
+        int sampleRate = Integer.parseInt(wave.group(1));
+        int timer = Integer.parseInt(wave.group(2));
+        int sampleCount = Integer.parseInt(wave.group(6));
+        assertThat(sampleRate).isBetween(1000, 100000);
+        // getSequenceEngineData must hand back the raw ARM7 timer, not just the derived sample
+        // rate — SequencePlayer.startNote uses it directly (see NitroViewerService's javadoc note).
+        assertThat(timer).as("raw ARM7 timer-reload value").isBetween(0, 0xFFFF);
+        byte[] pcm = java.util.Base64.getDecoder().decode(wave.group(7));
+        assertThat(pcm.length).as("int16-LE PCM byte length matches sampleCount*2").isEqualTo(sampleCount * 2);
+    }
+
+    @Test
+    @DisplayName("dump getSequenceEngineData + reference-WAV fixtures for the JS engine correctness "
+            + "harness (Platinum; skipped without the ROM — never commit ROM-derived audio)")
+    void dumpSoundEngineFixtures() throws IOException
+    {
+        byte[] plat = TestRoms.require("Platinum.nds");
+        CheerpjFacade psvc = new CheerpjFacade();
+        int prom = intField(psvc.openRom(plat), "handle");
+
+        // Platinum has two SDATs (a small "pl_" one and the main one); find whichever actually has
+        // the named sequences we want fixtures for rather than assuming file order.
+        String[] wanted = { "SEQ_PV001", "SEQ_TOWN01_D", "SEQ_CITY01_D" };
+        int n = intField(psvc.getRomInfo(prom), "numFiles");
+        int sdatId = -1;
+        String sdatInfo = null;
+        for (int f = 0; f < n && sdatId < 0; f++)
+        {
+            if (!"SDAT".equals(formatField(psvc.detectFormat(prom, -1, f)))) continue;
+            String candidate = psvc.getSdatInfo(prom, -1, f);
+            if (candidate.contains("\"SEQ_TOWN01_D\"")) { sdatId = f; sdatInfo = candidate; }
+        }
+        Assumptions.assumeTrue(sdatId >= 0, "no SDAT with SEQ_TOWN01_D found in Platinum");
+
+        Path dir = Paths.get("..", "web", "src", "sound", "engine", "__fixtures__");
+        Files.createDirectories(dir);
+
+        for (String name : wanted)
+        {
+            Matcher m = Pattern.compile("\"index\":(\\d+),\"name\":\"" + Pattern.quote(name) + "\"").matcher(sdatInfo);
+            Assumptions.assumeTrue(m.find(), name + " not found in the resolved SDAT");
+            int seqIndex = Integer.parseInt(m.group(1));
+
+            String engineData = psvc.getSequenceEngineData(prom, -1, sdatId, seqIndex);
+            assertThat(engineData).as(name + " engine data").doesNotContain("\"error\"");
+            Files.write(dir.resolve(name + ".engine.json"), engineData.getBytes(StandardCharsets.UTF_8));
+
+            String reference = psvc.renderSequenceWav(prom, -1, sdatId, seqIndex, 0, 0);
+            assertThat(reference).as(name + " reference render").doesNotContain("\"error\"");
+            Files.write(dir.resolve(name + ".reference.json"), reference.getBytes(StandardCharsets.UTF_8));
+        }
+    }
+
+    @Test
     @DisplayName("importWav over an SDAT wave rewrites the archive")
     void sdatImportWav()
     {
@@ -1160,6 +1258,14 @@ class CheerpjFacadeTest
         assertThat(base64Field(svc.exportFile(rom2, -1, fileId))).isEqualTo(contentB);
         int rom3 = intField(svc.openRom(svc.saveRom(rom2)), "handle");
         assertThat(base64Field(svc.exportFile(rom3, -1, fileId))).isEqualTo(contentB);
+    }
+
+    private static long countMatches(Pattern p, String s)
+    {
+        Matcher m = p.matcher(s);
+        long n = 0;
+        while (m.find()) n++;
+        return n;
     }
 
     // --- tiny JSON field readers (avoids a JSON dependency in tests) --------------------------

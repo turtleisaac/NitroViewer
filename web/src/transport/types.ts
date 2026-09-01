@@ -131,6 +131,41 @@ export interface SequenceNotes {
   name: string | null;
   notes: SeqNote[];
 }
+export interface EngineNoteRegion {
+  recordType: number; // 1 = PCM, 2 = PSG square, 3 = PSG noise
+  waveIndex: number; // PCM: index into the wave archive; PSG square: duty cycle low 3 bits
+  waveArcIndex: number; // which of the bank's 4 wave archives (PCM only)
+  baseNote: number;
+  attack: number;
+  decay: number;
+  sustain: number;
+  release: number;
+  pan: number;
+}
+export interface EngineInstrument {
+  type: number;
+  lowNote: number; // drum set (type 16) only, else 0
+  splitPoints: number[] | null; // key-split (type 17) only
+  regions: EngineNoteRegion[];
+}
+export interface EngineWave {
+  sampleRate: number;
+  // Raw ARM7 timer-reload value. SequencePlayer's baseTimer uses this directly when it's nonzero,
+  // only falling back to a sampleRate-derived approximation otherwise — a client engine must do
+  // the same, not just recompute a timer from sampleRate every time.
+  timer: number;
+  loops: boolean;
+  loopStart: number; // decoded-PCM sample index
+  loopEnd: number; // exclusive
+  sampleCount: number;
+  pcmBase64: string; // signed 16-bit PCM, little-endian, mono
+}
+export interface SequenceEngineData {
+  bankId: number;
+  eventData: string; // base64 raw SSEQ event bytecode
+  instruments: EngineInstrument[]; // indexed by program number
+  waveArchives: ({ waves: EngineWave[] } | null)[]; // exactly 4 slots, null where unresolved
+}
 export interface WaveInfo {
   index: number;
   sampleRate: number;
@@ -375,6 +410,13 @@ export interface NitroViewerClient {
     maxSeconds: number, // 0 = full playthrough (until loop/end)
     trackMuteMask?: number // bit i set = mute track i
   ): Promise<{ sampleRate: number; seconds: number; loopStartSec: number; loopEndSec: number; base64: string }>;
+  /**
+   * Everything a client-side realtime synth needs to play one sequence itself: raw SSEQ bytecode,
+   * the resolved bank's full instrument/region table, and decoded PCM16 for every wave in the
+   * bank's up-to-4 wave archives. One bulk call — the realtime engine never round-trips through
+   * this transport during playback.
+   */
+  getSequenceEngineData(handle: number, ref: ResourceRef, seqIndex: number): Promise<SequenceEngineData>;
   getWaveArchiveInfo(
     handle: number,
     ref: ResourceRef,

@@ -351,6 +351,25 @@ public interface NitroViewerService
     String renderSequenceWav(int romHandle, int container, int id, int seqIndex, int maxSeconds, int trackMuteMask);
 
     /**
+     * Everything a client-side realtime synth needs to play one sequence itself: the sequence's raw
+     * SSEQ event bytecode, its bank's full instrument/region table, and decoded PCM16 (little-endian)
+     * for every wave in the bank's up-to-four wave archives. One bulk call so a JS/AudioWorklet engine
+     * never has to round-trip through Java during playback. {@code seqIndex} is the SEQUENCE record
+     * index; the resource must be an SDAT (the sequence's bank comes from the archive's INFO tables).
+     * @return {"bankId":int,"eventData":base64,
+     *         "instruments":[{"type":int,"lowNote":int,"splitPoints":[int,...]|null,
+     *           "regions":[{"recordType":1|2|3,"waveIndex":int,"waveArcIndex":int,"baseNote":int,
+     *             "attack":int,"decay":int,"sustain":int,"release":int,"pan":int}]}],
+     *         "waveArchives":[{"waves":[{"sampleRate":int,"timer":int,"loops":bool,"loopStart":int,
+     *           "loopEnd":int,"sampleCount":int,"pcmBase64":base64 int16-LE}]} | null, ...4 slots]} | {"error"}
+     * {@code timer} is the raw ARM7 SOUND CNT timer-reload value ({@link
+     * io.github.turtleisaac.nds4j.sound.Wave#getTimer()}); SequencePlayer's baseTimer uses it
+     * directly when present, only falling back to a sampleRate-derived approximation when it's 0 —
+     * a client-side synth needs to replicate that exactly, not just resend sampleRate.
+     */
+    String getSequenceEngineData(int romHandle, int container, int id, int seqIndex);
+
+    /**
      * Decode one wave of a wave archive (or a standalone SWAV / the only wave of a SWAR).
      * {@code waveArcIndex}/{@code waveIndex} apply to an SDAT; a standalone SWAR uses waveArcIndex=0
      * and {@code waveIndex}; a standalone SWAV ignores both.

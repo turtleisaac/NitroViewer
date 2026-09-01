@@ -17,10 +17,24 @@ import type {
   WavePreview,
 } from "../transport";
 import { base64ToBytes, download } from "../util";
+import { createEngine, type EngineHandle } from "../sound/engine/host";
 
 type Tab = "sequences" | "waves" | "streams" | "banks";
 
 type LoopPts = { start: number; end: number };
+
+/** When any track is soloed, only soloed tracks are audible; otherwise every non-muted track is.
+ *  Shared by the live engine's track mask and the note-roll's mute/solo dimming so the two can't
+ *  drift out of sync with each other. */
+function trackAudible(t: number, muted: boolean[], solo: boolean[]): boolean {
+  return solo.some(Boolean) ? !!solo[t] : !muted[t];
+}
+
+function computeTrackMask(trackCount: number, muted: boolean[], solo: boolean[]): number {
+  let mask = 0;
+  for (let t = 0; t < trackCount; t++) if (trackAudible(t, muted, solo)) mask |= 1 << t;
+  return mask;
+}
 
 function wavToBuffer(ctx: AudioContext, wav: Uint8Array): AudioBuffer {
   const dv = new DataView(wav.buffer, wav.byteOffset, wav.byteLength);
@@ -202,7 +216,7 @@ function useAudio() {
 
   useWakeLock(playing);
 
-  return { play, seek, stop, playing, currentTime };
+  return { play, seek, stop, playing, currentTime, ctx };
 }
 
 function playheadTick(
@@ -274,6 +288,10 @@ function NoteRoll({
     () => (live ? activeTracksAt(notes.notes, notes.trackCount, head) : null),
     [notes, head, live]
   );
+  const silent = useMemo(
+    () => Array.from({ length: notes.trackCount }, (_, t) => !trackAudible(t, muted, solo)),
+    [notes.trackCount, muted, solo]
+  );
   useEffect(() => {
     const c = canvasRef.current;
     if (!c) return;
@@ -292,10 +310,10 @@ function NoteRoll({
       width,
       notes.loopStart,
       notes.loopEnd,
-      null, //silentOf(muted, solo)
+      silent,
       live,
     );
-  }, [notes, head, width, height, muted, solo, live]);
+  }, [notes, head, width, height, silent, live]);
 
   const tickAtEvent = (e: ReactPointerEvent) => {
     const c = canvasRef.current;
@@ -580,6 +598,39 @@ export function SoundViewer() {
     [streamPrev]
   );
 
+  // Live (AudioWorklet) engine: default playback stays on the rendered-WAV path above; the first
+  // mute/solo click spins this up, seeded to the current position. Tracked via refs, not state:
+  // every consumer that acts on the engine (seek/setTrackMask/disconnect) needs the CURRENT handle
+  // from effects and async callbacks where state would risk a stale closure — `live` (state) exists
+  // only to trigger a re-render when engine presence changes. `liveGeneration` is bumped by every
+  // teardown path (stop, sequence switch, tab switch, resource switch, unmount) so an in-flight
+  // goLive() can tell it was cancelled after its awaits resolve and discard the engine it just
+  // built instead of attaching a now-stale one; `goingLive` blocks goLive() from being re-entered
+  // while already in flight (its own awaits are the only gap where that's possible) — a mask that
+  // arrives during that gap is captured in `pendingMask` instead of being dropped, and applied the
+  // moment the in-flight engine attaches, so the engine never starts audible with a stale mute/solo
+  // mask that no longer matches what the UI is showing.
+  const [live, setLive] = useState(false);
+  const [liveSeconds, setLiveSeconds] = useState(0);
+  const engineRef = useRef<EngineHandle | null>(null);
+  const liveGenerationRef = useRef(0);
+  const goingLiveRef = useRef(false);
+  const pendingMaskRef = useRef<number | null>(null);
+
+  const stopLive = () => {
+    liveGenerationRef.current++;
+    pendingMaskRef.current = null;
+    const e = engineRef.current;
+    if (!e) return;
+    e.node.disconnect();
+    engineRef.current = null;
+    setLive(false);
+    setLiveSeconds(0);
+  };
+
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  useEffect(() => () => stopLive(), []); // tear down on unmount too, not just on the lifecycle events below
+
   const { container, id } = selection.ref;
   const ref = selection.ref;
 
@@ -596,6 +647,7 @@ export function SoundViewer() {
     setSeqWav(null);
     setFilter("");
     audio.stop();
+    stopLive();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [container, id, fmt]);
 
@@ -610,6 +662,7 @@ export function SoundViewer() {
 
   useEffect(() => {
     audio.stop();
+    stopLive();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tab]);
 
@@ -677,6 +730,7 @@ export function SoundViewer() {
     setSeqWav(null);
     setBusy("notes");
     audio.stop();
+    stopLive();
     try {
       setNotes(await client.getSequenceNotes(romHandle, ref, index));
     } catch (e) {
@@ -718,6 +772,89 @@ export function SoundViewer() {
     } finally {
       setBusy(null);
     }
+  };
+
+  /**
+   * Switch from the default rendered-WAV playback to the live AudioWorklet engine, seeded to the
+   * current position, so mute/solo actually change what's audible instead of only the note-roll
+   * highlight. Only reachable via the first mute/solo click (see toggleTrack below); once live,
+   * further mute/solo changes are just a message to the running engine, no reseed.
+   */
+  const goLive = async (mask: number) => {
+    if (fmt !== "SDAT" || seqIndex == null || engineRef.current) return;
+    if (goingLiveRef.current) {
+      // A goLive() is already in flight from an earlier click; record this newer mask rather than
+      // dropping it, so the engine attaches with the user's latest intent, not a stale one.
+      pendingMaskRef.current = mask;
+      return;
+    }
+    goingLiveRef.current = true;
+    const myGeneration = liveGenerationRef.current;
+    const seedSeconds = audio.currentTime;
+    setBusy("engine");
+    try {
+      // ensureSequenceWav is cached after the first Play, so this is nearly free in the common
+      // case (mute/solo after already playing); it also supplies the loop-in-seconds timing the
+      // note-roll's playhead needs to wrap correctly across repeat loop cycles in live mode. It's
+      // independent of getSequenceEngineData, so run both together rather than back-to-back.
+      const wavPromise = ensureSequenceWav();
+      const engineDataPromise = client.getSequenceEngineData(romHandle, ref, seqIndex);
+      const [, engineData] = await Promise.all([wavPromise, engineDataPromise]);
+      const ctx = audio.ctx();
+      const e = await createEngine(ctx, engineData, { seedSeconds, trackMask: mask });
+      if (liveGenerationRef.current !== myGeneration) {
+        // Stopped, switched sequences, or unmounted while we were setting up — discard rather
+        // than attach a live engine nobody asked for anymore.
+        e.node.disconnect();
+        return;
+      }
+      e.node.connect(ctx.destination);
+      audio.stop();
+      e.onPosition((s) => setLiveSeconds(s));
+      setLiveSeconds(seedSeconds);
+      engineRef.current = e;
+      setLive(true);
+      // A newer mute/solo click arrived while we were setting up (captured above instead of
+      // dropped) — apply the user's latest intent now instead of leaving the engine on the mask
+      // from whichever click happened to be first.
+      if (pendingMaskRef.current != null) {
+        e.setTrackMask(pendingMaskRef.current);
+        pendingMaskRef.current = null;
+      }
+    } catch (e) {
+      alert("Live engine failed to start: " + (e as Error).message);
+    } finally {
+      goingLiveRef.current = false;
+      setBusy(null);
+      // A mask arrived (and was queued into pendingMaskRef) while this call was in flight, but
+      // this call ended up discarding its engine (stopped/switched away mid-setup) or erroring out
+      // before it could apply that mask itself — nothing else will ever consume it otherwise
+      // (pendingMaskRef is only read from inside an in-flight goLive()), so retry with it now.
+      const stillPending = pendingMaskRef.current;
+      if (stillPending != null && !engineRef.current) {
+        pendingMaskRef.current = null;
+        void goLive(stillPending);
+      }
+    }
+  };
+
+  const stopPlayback = () => {
+    stopLive();
+    audio.stop();
+  };
+
+  const toggleTrack = (kind: "mute" | "solo", t: number) => {
+    if (!notes) return;
+    const flags = kind === "mute" ? muted : solo;
+    const next = Array.from({ length: notes.trackCount }, (_, i) => flags[i] ?? false);
+    next[t] = !next[t];
+    const nextMuted = kind === "mute" ? next : muted;
+    const nextSolo = kind === "solo" ? next : solo;
+    if (kind === "mute") setMuted(next);
+    else setSolo(next);
+    const mask = computeTrackMask(notes.trackCount, nextMuted, nextSolo);
+    if (engineRef.current) engineRef.current.setTrackMask(mask);
+    else void goLive(mask);
   };
 
   const exportWav = async () => {
@@ -806,6 +943,7 @@ export function SoundViewer() {
   if (fmt === "SDAT" && !info) return <div className="placeholder">Opening SDAT…</div>;
 
   const canPlaySeq = fmt === "SDAT" && seqIndex != null;
+  const isPlaying = live || audio.playing;
 
   return (
     <div className="sound">
@@ -848,12 +986,12 @@ export function SoundViewer() {
               <>
                 <div className="controls">
                   {canPlaySeq && (
-                    <button className="play-btn" disabled={busy != null} onClick={() => void playSequence()}>
-                      {busy === "render" ? "Rendering…" : audio.playing ? "▶ Playing" : "▶ Play"}
+                    <button className="play-btn" disabled={busy != null || isPlaying} onClick={() => void playSequence()}>
+                      {busy === "render" ? "Rendering…" : isPlaying ? "▶ Playing" : "▶ Play"}
                     </button>
                   )}
-                  {audio.playing && (
-                    <button className="play-btn" onClick={audio.stop}>
+                  {isPlaying && (
+                    <button className="play-btn" onClick={stopPlayback}>
                       ⏹ Stop
                     </button>
                   )}
@@ -867,35 +1005,26 @@ export function SoundViewer() {
                   </button>
                   <span className="dim">
                     {notes.name || "SSEQ"} · {notes.notes.length} notes · {notes.tempo} BPM · {notes.trackCount} tracks
-                    {canPlaySeq ? " · first play synthesizes the whole song" : " · open the parent SDAT to play"}
+                    {canPlaySeq
+                      ? live
+                        ? " · live mixing engine"
+                        : " · first play synthesizes the whole song; mute/solo switches to live mixing"
+                      : " · open the parent SDAT to play"}
                   </span>
                 </div>
                 <NoteRoll
                   notes={notes}
                   playTick={playheadTick(
-                    audio.currentTime,
+                    live ? sourceTime(liveSeconds, seqWav ? seqLoop(seqWav) : null) : audio.currentTime,
                     notes,
                     seqWav ? seqLoop(seqWav) : null,
                     seqWav?.seconds ?? 0
                   )}
-                  playing={audio.playing}
+                  playing={isPlaying}
                   muted={muted}
                   solo={solo}
-                  onMute={(t) => {
-                    setMuted((m) => {
-                      const next = Array.from({ length: notes.trackCount }, (_, i) => m[i] ?? false);
-                      next[t] = !next[t];
-                      return next;
-                    })
-                  }
-                  }
-                  onSolo={(t) =>
-                    setSolo((s) => {
-                      const next = Array.from({ length: notes.trackCount }, (_, i) => s[i] ?? false);
-                      next[t] = !next[t];
-                      return next;
-                    })
-                  }
+                  onMute={(t) => toggleTrack("mute", t)}
+                  onSolo={(t) => toggleTrack("solo", t)}
                   onSeekTick={
                     canPlaySeq
                       ? (tick) => {
@@ -903,7 +1032,13 @@ export function SoundViewer() {
                             try {
                               const w = await ensureSequenceWav();
                               const loop = seqLoop(w);
-                              audio.seek(tickToTime(tick, notes, loop, w.seconds), w.bytes, loop);
+                              const seconds = tickToTime(tick, notes, loop, w.seconds);
+                              if (engineRef.current) {
+                                engineRef.current.seek(seconds);
+                                setLiveSeconds(seconds);
+                              } else {
+                                audio.seek(seconds, w.bytes, loop);
+                              }
                             } catch (e) {
                               alert("Render failed: " + (e as Error).message);
                             }

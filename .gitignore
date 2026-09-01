@@ -21,6 +21,10 @@ release/
 # Vendored CheerpJ runtime (downloaded by scripts/vendor-cheerpj.sh)
 web/vendor/cheerpj/
 
+# JS sound-engine correctness fixtures — decoded audio extracted from a retail ROM at test time
+# (see CheerpjFacadeTest#dumpSoundEngineFixtures); never commit ROM-derived assets.
+web/src/sound/engine/__fixtures__/
+
 # OS / editor
 .DS_Store
 .idea/

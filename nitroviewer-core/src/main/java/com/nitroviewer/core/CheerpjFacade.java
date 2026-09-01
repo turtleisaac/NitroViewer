@@ -24,6 +24,7 @@ import io.github.turtleisaac.nds4j.images.CellBank;
 import io.github.turtleisaac.nds4j.images.IndexedImage;
 import io.github.turtleisaac.nds4j.images.Palette;
 import io.github.turtleisaac.nds4j.images.Screen;
+import io.github.turtleisaac.nds4j.sound.InstrumentBank;
 import io.github.turtleisaac.nds4j.sound.Sequence;
 import io.github.turtleisaac.nds4j.sound.SequenceMidi;
 import io.github.turtleisaac.nds4j.sound.SequenceNotes;
@@ -1559,6 +1560,100 @@ public final class CheerpjFacade implements NitroViewerService
     }
 
     @Override
+    public String getSequenceEngineData(int romHandle, int container, int id, int seqIndex)
+    {
+        try
+        {
+            byte[] data = resolve(rom(romHandle), container, id);
+            if (!magic(data).equals("SDAT"))
+                throw new IllegalArgumentException("sequence engine data needs an SDAT (bank + samples)");
+            SoundArchive sdat = SoundArchive.fromBytes(data);
+            byte[] seqFile = sdat.getFileFor(SoundArchive.RecordType.SEQUENCE, seqIndex);
+            if (seqFile == null || !magic(seqFile).equals("SSEQ"))
+                throw new IllegalArgumentException("no sequence " + seqIndex);
+            Sequence seq = Sequence.fromBytes(seqFile);
+            int bankId = sdat.getSequenceBankId(seqIndex);
+            byte[] bankFile = sdat.getFileFor(SoundArchive.RecordType.BANK, bankId);
+            if (bankFile == null || !magic(bankFile).equals("SBNK"))
+                throw new IllegalArgumentException("sequence " + seqIndex + " has no bank");
+            InstrumentBank bank = InstrumentBank.fromBytes(bankFile);
+            int[] slots = sdat.getBankWaveArchives(bankId);
+
+            StringBuilder sb = new StringBuilder("{");
+            sb.append("\"bankId\":").append(bankId).append(',');
+            sb.append("\"eventData\":").append(jstr(base64(seq.getEventData()))).append(',');
+            sb.append("\"instruments\":[");
+            int instCount = bank.getInstrumentCount();
+            for (int p = 0; p < instCount; p++)
+            {
+                if (p > 0) sb.append(',');
+                InstrumentBank.Instrument inst = bank.getInstrument(p);
+                sb.append("{\"type\":").append(inst.type)
+                        .append(",\"lowNote\":").append(inst.lowNote)
+                        .append(",\"splitPoints\":");
+                if (inst.splitPoints == null) sb.append("null");
+                else
+                {
+                    sb.append('[');
+                    for (int i = 0; i < inst.splitPoints.length; i++)
+                    {
+                        if (i > 0) sb.append(',');
+                        sb.append(inst.splitPoints[i]);
+                    }
+                    sb.append(']');
+                }
+                sb.append(",\"regions\":[");
+                for (int r = 0; r < inst.regions.size(); r++)
+                {
+                    if (r > 0) sb.append(',');
+                    InstrumentBank.NoteRegion reg = inst.regions.get(r);
+                    sb.append("{\"recordType\":").append(reg.recordType)
+                            .append(",\"waveIndex\":").append(reg.waveIndex)
+                            .append(",\"waveArcIndex\":").append(reg.waveArcIndex)
+                            .append(",\"baseNote\":").append(reg.baseNote)
+                            .append(",\"attack\":").append(reg.attack)
+                            .append(",\"decay\":").append(reg.decay)
+                            .append(",\"sustain\":").append(reg.sustain)
+                            .append(",\"release\":").append(reg.release)
+                            .append(",\"pan\":").append(reg.pan).append('}');
+                }
+                sb.append("]}");
+            }
+            sb.append("],\"waveArchives\":[");
+            for (int a = 0; a < 4; a++)
+            {
+                if (a > 0) sb.append(',');
+                int slot = a < slots.length ? slots[a] : 0xFFFF;
+                WaveArchive arc = null;
+                if (slot != 0xFFFF)
+                {
+                    byte[] wf = sdat.getFileFor(SoundArchive.RecordType.WAVE_ARCHIVE, slot);
+                    if (wf != null) arc = WaveArchive.fromBytes(wf);
+                }
+                if (arc == null) { sb.append("null"); continue; }
+                sb.append("{\"waves\":[");
+                for (int w = 0; w < arc.getWaveCount(); w++)
+                {
+                    if (w > 0) sb.append(',');
+                    Wave wave = arc.getWave(w);
+                    short[] pcm = wave.decode();
+                    sb.append("{\"sampleRate\":").append(wave.getSampleRate())
+                            .append(",\"timer\":").append(wave.getTimer())
+                            .append(",\"loops\":").append(wave.loops())
+                            .append(",\"loopStart\":").append(wave.getLoopStartSample())
+                            .append(",\"loopEnd\":").append(wave.getLoopEndSample())
+                            .append(",\"sampleCount\":").append(pcm.length)
+                            .append(",\"pcmBase64\":").append(jstr(base64(pcm16LE(pcm)))).append('}');
+                }
+                sb.append("]}");
+            }
+            sb.append("]}");
+            return sb.toString();
+        }
+        catch (Throwable t) { return err(t); }
+    }
+
+    @Override
     public String getWaveArchiveInfo(int romHandle, int container, int id, int waveArcIndex)
     {
         try
@@ -1846,6 +1941,18 @@ public final class CheerpjFacade implements NitroViewerService
     private static String base64(byte[] b)
     {
         return Base64.getEncoder().encodeToString(b);
+    }
+
+    /** Signed 16-bit PCM as little-endian bytes (no WAV header) — for shipping decoded waves to JS. */
+    private static byte[] pcm16LE(short[] samples)
+    {
+        byte[] out = new byte[samples.length * 2];
+        for (int i = 0; i < samples.length; i++)
+        {
+            out[i * 2] = (byte) samples[i];
+            out[i * 2 + 1] = (byte) (samples[i] >> 8);
+        }
+        return out;
     }
 
     private static String hex(Color c)

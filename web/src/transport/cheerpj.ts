@@ -17,6 +17,7 @@ import type {
   RomInfo,
   SdatInfo,
   ScreenImportResult,
+  SequenceEngineData,
   SequenceNotes,
   StreamPreview,
   TexturePatternAnim,
@@ -511,6 +512,12 @@ export class CheerpjTransport implements NitroViewerClient {
   ): Promise<{ sampleRate: number; seconds: number; loopStartSec: number; loopEndSec: number; base64: string }> {
     return this.enqueue(async () =>
       unwrap(await this.f.renderSequenceWav(handle, ref.container, ref.id, seqIndex, maxSeconds, trackMuteMask))
+    );
+  }
+
+  getSequenceEngineData(handle: number, ref: ResourceRef, seqIndex: number): Promise<SequenceEngineData> {
+    return this.enqueue(async () =>
+      unwrap(await this.f.getSequenceEngineData(handle, ref.container, ref.id, seqIndex))
     );
   }
 
