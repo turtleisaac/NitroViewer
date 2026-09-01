@@ -43,8 +43,15 @@ and Save ROM. What's left (asset encoders, the per-game manifest, polish) is sna
   - **OBJ → NSBMD** (Import OBJ ↑): re-encode a mesh — the `.obj` alone (untextured) or with a texture image
     (embedded TEX0). glTF export, Capture PNG, raw export all remain.
   - **WAV → SDAT/SWAR/SWAV**: import a PCM WAV over a wave (encoded as the slot's existing PCM8/PCM16/ADPCM).
-- **Sound:** SDAT browser (sequences / waves / streams / banks), SSEQ note-track canvas + play (synth → WAV),
-  SWAV/STRM preview + play, MIDI / SoundFont export.
+- **Sound:** SDAT browser (sequences / waves / streams / banks), SSEQ note-track canvas + play, SWAV/STRM
+  preview + play, MIDI / SoundFont export. Two playback paths: the default is a Java-side render to WAV
+  (one full playthrough up to the loop point); a **realtime AudioWorklet engine** (a from-scratch JS port
+  of the Java `SequencePlayer`, bit-exact — see `web/src/sound/engine/`) is used for mute/solo (so they're
+  actually audible, not just a note-roll highlight) and, for sequences flagged **demanding** (long/dense
+  enough that rendering the whole thing to WAV risks an iOS Safari OOM crash — real incidents, not
+  theoretical), for **Play and seeking too**, skipping the WAV render entirely. Export WAV still always
+  renders (inherent to exporting audio) and warns first for a demanding sequence. See §9 for the details
+  and the open follow-ups.
 - **Game DB (§8) — built:** `state/grouping.ts` + `gamedb/gamedb.json`, manifest-first with `pairing.ts`
   fallback: a **"◆ Game DB" badge**, render hints, and declared groupings, sourced from PokEditor-Core's
   sprite-NARC layouts. Drives model↔NSBCA pairing **by clip name** and the **D/P battle-sprite scan
@@ -336,7 +343,12 @@ Right now the facade doesn't store that link.
   - `components/` — `InspectorPane` (format→viewer router + header Import/Export), `SpriteViewer`
     (NCGR/NSCR/NCER/NANR view **+ import**), `PaletteViewer`, `TextureViewer`, `ModelViewer` (3D + tracks +
     OBJ import + grid), `ParticleViewer`, `NarcBrowser` (per-entry + folder-zip), `TreePane` (search + folder
-    extract), `InfoViewer` (hex).
+    extract), `InfoViewer` (hex), `SoundViewer` (SDAT browser + note-roll + WAV/live playback — see §9).
+  - `sound/engine/` — the realtime AudioWorklet SSEQ engine: `stepper.ts` (bytecode VM + mixer, bit-exact
+    port of Java `SequencePlayer`), `load.ts` (engine-data decode), `host.ts` (main-thread `createEngine`),
+    `sseq-worklet.ts` (the `AudioWorkletProcessor`), `protocol.ts` (message types), `liveEngineSlot.ts`
+    (single-live-engine bookkeeping, unit-tested — see §9). `sound/noteTrack.ts` — the note-roll canvas
+    drawing (pure, tested separately from the component).
 - `.github/workflows/{deploy,release-desktop}.yml` · `scripts/{build-jars,vendor-cheerpj,serve-static,serve-spike}.{sh,py}` · `Makefile`
 - `web/electron/{main,serve}.cjs` — Electron shell; `scripts/vendor-cheerpj.sh` — CheerpJ 4.3 Java 8 runtime; `make build` → `release/` via electron-builder
 - Memory: `~/.claude/projects/…/memory/nitroviewer-cheerpj-spike.md` (condensed quirks, kept current) and
@@ -512,10 +524,42 @@ model). Remaining: SPA emitter isolation / adjustable frame count/size / backgro
 edge cases. (DS models are unlit by design — no lighting to add.)
 
 **✅ Sound (SDAT).** SDAT / SSEQ / SWAR / SWAV / STRM listeners over Nds4j's sequenced-audio stack:
-browse sequences / wave archives / streams / banks; play a sequence (software synth → WAV, one full
-playthrough up to the loop point) or a wave / stream; a canvas **note track** (piano-roll) for SSEQ;
-**Import WAV** over a wave in an SDAT (or a standalone SWAR/SWAV); export MIDI / SoundFont. Sequence
-playback is a Java-side render (slow under CheerpJ — the UI shows “Rendering…”).
+browse sequences / wave archives / streams / banks; play a sequence or a wave / stream; a canvas **note
+track** (piano-roll) for SSEQ with live note glow + gutter highlighting while a track is sounding;
+**Import WAV** over a wave in an SDAT (or a standalone SWAR/SWAV); export MIDI / SoundFont.
+
+**✅ Realtime AudioWorklet engine (constant-memory playback).** `web/src/sound/engine/` (`stepper.ts`,
+`load.ts`, `host.ts`, `sseq-worklet.ts`, `protocol.ts`) is a from-scratch JS port of the Java
+`SequencePlayer` bytecode VM, running on an `AudioWorkletProcessor` — bit-exact against the Java reference
+render (`stepper.fixtures.test.ts`, 5 real Platinum sequences incl. two dense/long ones, 100% sample match).
+Two playback paths in `SoundViewer.tsx`:
+- **Default:** Play renders the whole sequence to WAV Java-side (one playthrough to the loop point) and
+  plays that — simple, but the render + resulting `AudioBuffer` scale with song length.
+- **Live engine:** used for mute/solo always (so they're actually audible, not just a note-roll
+  highlight), and for **Play and seeking too** when `isDemandingSequence()` flags the sequence — routes
+  straight to the live engine, skipping the WAV render entirely.
+- **Why "demanding" exists:** rendering a long/dense sequence to WAV crashed real iOS Safari sessions
+  (`SEQ_PL_BA_GIRA` and `SEQ_D_MOUNT1` in Platinum, both real user reports) — the base64 blob through the
+  CheerpJ bridge plus the resulting `AudioBuffer` is fine on desktop but too much for iOS's tighter per-tab
+  memory ceiling. `isDemandingSequence()` (in `SoundViewer.tsx`) checks note count **or** an estimated
+  render duration (tick/tempo/loop-aware, no render needed — `estimateTiming()`) against thresholds
+  calibrated off real measured renders of both crash cases plus two known-safe controls; note count alone
+  wasn't a reliable enough signal (`SEQ_D_MOUNT1` crashed with fewer notes than one safe control). Export
+  WAV can't route around this the same way — exporting audio requires actually rendering it — so it warns
+  (`window.confirm`) before rendering a demanding sequence instead.
+- **`LiveEngineSlot`** (`sound/engine/liveEngineSlot.ts`, unit-tested) owns the single live `EngineHandle`
+  and guarantees its `onPosition` subscription is torn down whenever it stops being current. This exists
+  because `AudioWorkletNode` has no `stop()` — `disconnect()` doesn't guarantee the node's position
+  postMessages stop right away — and an earlier version of this code forgot to unsubscribe on
+  switch/stop, which let a "zombie" engine's stale elapsed time keep clobbering `liveSeconds` for
+  whatever sequence was actually on screen (reproduced as the note-roll playhead teleporting to unrelated
+  positions, worse the more sequences you'd switched through). Fixed + regression-tested; **there's still
+  no component-test harness for `SoundViewer.tsx` itself** (`vitest.config.ts` is deliberately DOM-free/
+  pure-logic-only), so this class is how that invariant stays testable — keep extracting logic this way
+  rather than adding jsdom/RTL for one component.
+- **Known gap:** the demanding-sequence duration estimate is tempo-constant; a sequence with mid-song
+  tempo-change events will be under-estimated (ticks/tempo only reflect the *initial* tempo) — the
+  note-count check is the backstop for that case, not a fully independent signal.
 
 **Larger gaps (need parsers / RE — each a real project).** **NFTR** fonts and **NMCR/NMAR** multi-cell — need
 Nds4j parsers. **glTF import** — needs a glTF accessor/mesh reader. **Bitmap-OBJ NCER composition** — so
