@@ -38,25 +38,49 @@ function computeTrackMask(trackCount: number, muted: boolean[], solo: boolean[])
 
 // Rendering a whole demanding sequence to WAV (the default playback path) pushes a large base64
 // blob through the CheerpJ bridge and expands it into an equally large AudioBuffer — fine on
-// desktop, but tight enough on iOS Safari's much smaller per-tab memory ceiling to crash the page
-// (reported against SEQ_PL_BA_GIRA: 3552 notes, an 11-track boss theme, ~218s/19MB rendered WAV).
-// Two known-good sequences (873 and 1193 notes) never had this problem; the threshold sits with
-// margin on both sides of that gap. Above it, Play routes straight to the live engine — which was
-// built for exactly this (constant memory regardless of song length) — instead of the rendered-WAV
-// path, not just as a mute/solo escape hatch.
-const DEMANDING_NOTE_COUNT = 2000;
+// desktop, but tight enough on iOS Safari's much smaller per-tab memory ceiling to crash the page.
+// The actual memory cost is driven by rendered duration (WAV bytes), not note count — note count is
+// only a cheap proxy available before any render happens. Two real crash reports plus two known-good
+// controls, sorted by note count:
+//   SEQ_CITY01_D  1193 notes,  89.7s render — safe
+//   SEQ_TOWN01_D   873 notes, 150.5s render — safe
+//   SEQ_D_MOUNT1  1699 notes, 167.9s render — CRASHED (note count alone would miss this: it's below
+//                                              a naive 2000 threshold despite crashing)
+//   SEQ_PL_BA_GIRA 3552 notes, 218.1s render — CRASHED
+// Note count alone can't separate MOUNT1 (crashed) from CITY01/TOWN01 (safe) with real margin, so
+// `isDemandingSequence` also checks estimateSeconds (below), which tracks actual render duration
+// much more closely for the common loop-doubled case. Either signal routes Play straight to the
+// live engine — built for exactly this (constant memory regardless of song length) — instead of the
+// rendered-WAV path, not just as a mute/solo escape hatch.
+const DEMANDING_NOTE_COUNT = 1500;
+const DEMANDING_SECONDS = 130;
 
 function isDemandingSequence(notes: SequenceNotes): boolean {
-  return notes.notes.length > DEMANDING_NOTE_COUNT;
+  return notes.notes.length > DEMANDING_NOTE_COUNT || estimateSeconds(notes) > DEMANDING_SECONDS;
 }
 
-// Fallback duration when a demanding sequence goes live without the WAV render (see goLive): the
-// engine's driver runs at 192 Hz and advances one tick every time its tempoStack — accumulated at
-// `tempo` per driver-frame — clears a 240 threshold (stepper.ts runDriverFrame), so ticks/sec =
-// tempo * 192 / 240 = tempo * 0.8, i.e. seconds = ticks * 1.25 / tempo. Only used to keep the
-// note-roll's playhead scrolling at roughly the right pace; loop timing still needs the real WAV.
+// Estimated playback duration from tick/tempo/loop metadata alone — no render required. Used both
+// to flag demanding sequences (above) before ever rendering, and as a fallback for the note-roll's
+// playhead when a demanding sequence goes live without the WAV render (see goLive).
+//
+// The engine's driver runs at 192 Hz and advances one tick every time its tempoStack — accumulated
+// at `tempo` per driver-frame — clears a 240 threshold (stepper.ts runDriverFrame), so ticks/sec =
+// tempo * 192 / 240 = tempo * 0.8, i.e. seconds = ticks * 1.25 / tempo. For a looping sequence,
+// renderSequenceWav's own convention (see playheadTick below) is intro once, then the loop body
+// twice — once to reach the loop point, once more as the seamless repeat — so mirror that here
+// rather than using raw `ticks`, which is just the loop-end tick and undercounts by a full body.
+// This tracks measured render duration within a few percent for sequences with a constant tempo;
+// it can undershoot for a sequence with mid-song tempo-change events (its tempo/ticks reflect only
+// the initial tempo), which is one reason the note-count check above still exists as a backstop.
 function estimateSeconds(notes: SequenceNotes): number {
-  return notes.tempo > 0 ? (notes.ticks * 1.25) / notes.tempo : 0;
+  if (notes.tempo <= 0) return 0;
+  const secPerTick = 1.25 / notes.tempo;
+  if (notes.loopEnd > notes.loopStart && notes.loopStart >= 0) {
+    const introTicks = notes.loopStart;
+    const bodyTicks = notes.loopEnd - notes.loopStart;
+    return (introTicks + 2 * bodyTicks) * secPerTick;
+  }
+  return notes.ticks * secPerTick;
 }
 
 function wavToBuffer(ctx: AudioContext, wav: Uint8Array): AudioBuffer {
