@@ -9,12 +9,29 @@ export interface ResourceRef {
 }
 
 export const ROM_CONTAINER = -1;
+/** Sentinel container addressing the ROM's icon/title banner (not a FAT file). Routed through the same
+ *  (container,id) plumbing as files so it reuses extract/replace/undo/save; id is ignored (use 0). */
+export const BANNER_CONTAINER = -2;
+export const BANNER_REF: ResourceRef = { container: BANNER_CONTAINER, id: 0 };
 export const refKey = (r: ResourceRef): string => `${r.container}:${r.id}`;
 
 export interface RomInfo {
   title: string;
   gameCode: string;
   numFiles: number;
+}
+
+/** The ROM's icon/title banner: the 32×32 DS home-menu icon and the per-language game titles. */
+export interface BannerTitle {
+  language: string; // "JAPANESE" | "ENGLISH" | ... (IconBanner.Language name)
+  text: string; // up to three '\n'-separated lines
+}
+export interface BannerInfo {
+  present: boolean;
+  version: number; // 0x0001/0x0002/0x0003/0x0103
+  languageCount: number;
+  iconPng: string; // data:image/png;base64,... (32×32, index 0 transparent)
+  titles: BannerTitle[];
 }
 
 export interface TreeFile {
@@ -199,6 +216,12 @@ export interface NitroViewerClient {
    */
   openUnpackedRom(zipBytes: Uint8Array): Promise<{ handle: number; len: number }>;
   getRomInfo(handle: number): Promise<RomInfo>;
+  /** The ROM's icon/title banner (icon PNG + per-language titles), or `{present:false}` if it has none. */
+  getBanner(handle: number): Promise<BannerInfo>;
+  /** Replace the 32×32 menu icon from an image (must be 32×32, ≤15 opaque colors; index 0 = transparent). */
+  setBannerIcon(handle: number, pngBytes: Uint8Array): Promise<{ ok: boolean }>;
+  /** Set one language's title (≤3 '\n'-separated lines, ≤127 UTF-16 units). languageOrdinal indexes titles. */
+  setBannerTitle(handle: number, languageOrdinal: number, text: string): Promise<{ ok: boolean }>;
   listTree(handle: number): Promise<TreeFolder>;
   detectFormat(handle: number, ref: ResourceRef): Promise<FormatInfo>;
 

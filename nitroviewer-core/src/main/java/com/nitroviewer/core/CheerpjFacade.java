@@ -6,6 +6,7 @@
 package com.nitroviewer.core;
 
 import io.github.turtleisaac.nds4j.Fnt;
+import io.github.turtleisaac.nds4j.IconBanner;
 import io.github.turtleisaac.nds4j.Narc;
 import io.github.turtleisaac.nds4j.NintendoDsRom;
 import io.github.turtleisaac.nds4j.framework.NitroLz;
@@ -67,6 +68,15 @@ public final class CheerpjFacade implements NitroViewerService
     private final AtomicInteger romSeq = new AtomicInteger(1);
     private final AtomicInteger narcSeq = new AtomicInteger(1);
     private volatile String lastError = "";
+
+    /**
+     * Sentinel container addressing the ROM's icon/title banner (the DS home-menu icon + per-language
+     * titles) instead of a file. It isn't a FAT resource, but routing it through the same (container,id)
+     * plumbing lets the banner reuse the whole extract/replace/undo/dirty/save machinery unchanged
+     * (its raw bytes flow through {@link #resolveRaw}/{@link #writeResource}; {@link #detectFormat}
+     * reports it as {@code "BANNER"}). {@code id} is ignored.
+     */
+    public static final int BANNER_CONTAINER = -2;
 
     // --- session -----------------------------------------------------------------------------
 
@@ -133,6 +143,70 @@ public final class CheerpjFacade implements NitroViewerService
         roms.remove(romHandle);
     }
 
+    // --- icon / title banner -----------------------------------------------------------------
+
+    @Override
+    public String getBanner(int romHandle)
+    {
+        try
+        {
+            IconBanner banner = rom(romHandle).getBanner();
+            if (banner == null) return "{\"present\":false}";
+            StringBuilder sb = new StringBuilder("{\"present\":true");
+            sb.append(",\"version\":").append(banner.getVersion());
+            sb.append(",\"languageCount\":").append(banner.getLanguageCount());
+            sb.append(",\"iconPng\":").append(jstr(pngDataUrl(banner.getIcon())));
+            sb.append(",\"titles\":[");
+            IconBanner.Language[] langs = IconBanner.Language.values();
+            for (int i = 0; i < banner.getLanguageCount(); i++)
+            {
+                if (i > 0) sb.append(',');
+                sb.append("{\"language\":").append(jstr(langs[i].name()))
+                        .append(",\"text\":").append(jstr(banner.getTitle(langs[i]))).append('}');
+            }
+            return sb.append("]}").toString();
+        }
+        catch (Throwable t) { return err(t); }
+    }
+
+    @Override
+    public String setBannerIcon(int romHandle, byte[] pngBytes)
+    {
+        try
+        {
+            NintendoDsRom rom = rom(romHandle);
+            IconBanner banner = rom.getBanner();
+            if (banner == null) return "{\"ok\":false,\"error\":" + jstr("this ROM has no icon/title banner") + "}";
+            BufferedImage src = ImageIO.read(new java.io.ByteArrayInputStream(pngBytes));
+            if (src == null) return "{\"ok\":false,\"error\":" + jstr("Could not decode the imported file as an image.") + "}";
+            // setIcon enforces the DS banner constraints (32x32, index 0 = transparent, <=15 opaque colors)
+            // and throws IllegalArgumentException with a friendly message otherwise.
+            banner.setIcon(src);
+            rom.setBanner(banner);
+            return "{\"ok\":true}";
+        }
+        catch (Throwable t) { return "{\"ok\":false,\"error\":" + jstr(describe(t)) + "}"; }
+    }
+
+    @Override
+    public String setBannerTitle(int romHandle, int languageOrdinal, byte[] utf8TextBytes)
+    {
+        try
+        {
+            NintendoDsRom rom = rom(romHandle);
+            IconBanner banner = rom.getBanner();
+            if (banner == null) return "{\"ok\":false,\"error\":" + jstr("this ROM has no icon/title banner") + "}";
+            IconBanner.Language[] langs = IconBanner.Language.values();
+            if (languageOrdinal < 0 || languageOrdinal >= banner.getLanguageCount())
+                return "{\"ok\":false,\"error\":" + jstr("no such language in this banner: " + languageOrdinal) + "}";
+            String text = new String(utf8TextBytes, StandardCharsets.UTF_8);
+            banner.setTitle(langs[languageOrdinal], text);
+            rom.setBanner(banner);
+            return "{\"ok\":true}";
+        }
+        catch (Throwable t) { return "{\"ok\":false,\"error\":" + jstr(describe(t)) + "}"; }
+    }
+
     // --- filesystem --------------------------------------------------------------------------
 
     @Override
@@ -177,6 +251,12 @@ public final class CheerpjFacade implements NitroViewerService
         try
         {
             NintendoDsRom rom = rom(romHandle);
+            if (container == BANNER_CONTAINER)
+            {
+                byte[] banner = rom.getIconBanner();
+                int size = banner == null ? 0 : banner.length;
+                return "{\"format\":\"BANNER\",\"compressed\":false,\"size\":" + size + "}";
+            }
             byte[] raw = resolveRaw(rom, container, id);
             byte[] data = maybeDecompress(raw);
             boolean compressed = data != raw;
@@ -693,6 +773,13 @@ public final class CheerpjFacade implements NitroViewerService
      */
     private void writeResource(int romHandle, int container, int id, byte[] bytes)
     {
+        if (container == BANNER_CONTAINER)
+        {
+            // Restore raw banner bytes verbatim (never compressed): setBanner recomputes the CRC over the
+            // same data, so a valid banner round-trips byte-for-byte — exactly what undo/redo needs.
+            rom(romHandle).setBanner(new IconBanner(bytes));
+            return;
+        }
         if (container < 0)
         {
             NintendoDsRom rom = rom(romHandle);
@@ -1850,9 +1937,16 @@ public final class CheerpjFacade implements NitroViewerService
         return narc;
     }
 
-    /** Raw (as-stored) bytes for a (container,id): container &lt; 0 =&gt; ROM file, else NARC entry. */
+    /** Raw (as-stored) bytes for a (container,id): the banner sentinel =&gt; the icon/title banner;
+     *  container &lt; 0 =&gt; ROM file; else NARC entry. */
     private byte[] resolveRaw(NintendoDsRom rom, int container, int id)
     {
+        if (container == BANNER_CONTAINER)
+        {
+            byte[] banner = rom.getIconBanner();
+            if (banner == null) throw new IllegalStateException("this ROM has no icon/title banner");
+            return banner;
+        }
         return container < 0 ? rom.getFile(id) : narc(container).getFile(id);
     }
 

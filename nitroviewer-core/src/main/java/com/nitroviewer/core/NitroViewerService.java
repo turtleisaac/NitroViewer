@@ -44,6 +44,30 @@ public interface NitroViewerService
 
     void closeRom(int romHandle);
 
+    // --- icon / title banner ---
+    /**
+     * The ROM's icon/title banner: the 32&times;32 DS home-menu icon and the per-language game titles.
+     * @return {"present":false} when the ROM has no banner, else
+     *         {"present":true,"version":int,"languageCount":int,"iconPng":dataUrl,
+     *          "titles":[{"language":str,"text":str},...]} | {"error":str}
+     */
+    String getBanner(int romHandle);
+
+    /**
+     * Replace the 32&times;32 menu icon from an image (single trailing {@code byte[]} for CheerpJ). The
+     * image must be 32&times;32 and use at most 15 distinct opaque colors (index&nbsp;0 is transparency).
+     * @return {"ok":true} | {"ok":false,"error":str}
+     */
+    String setBannerIcon(int romHandle, byte[] pngBytes);
+
+    /**
+     * Set one language's title (up to three {@code '\n'}-separated lines, &le;127 UTF-16 units). The text
+     * crosses as UTF-8 {@code byte[]} to stay on the proven CheerpJ marshalling path (no {@code String} param).
+     * {@code languageOrdinal} indexes {@code IconBanner.Language} (0=Japanese, 1=English, …).
+     * @return {"ok":true} | {"ok":false,"error":str}
+     */
+    String setBannerTitle(int romHandle, int languageOrdinal, byte[] utf8TextBytes);
+
     // --- filesystem ---
     /** @return recursive {"name","folders":[...],"files":[{"name","id"}]} */
     String listTree(int romHandle);

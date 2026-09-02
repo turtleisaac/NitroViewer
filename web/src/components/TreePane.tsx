@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useStore } from "../state/store";
-import { ROM_CONTAINER, type TreeFolder } from "../transport";
+import { BANNER_CONTAINER, BANNER_REF, ROM_CONTAINER, type TreeFolder } from "../transport";
 import { base64ToBytes, download } from "../util";
 
 function FolderNode({ folder, path }: { folder: TreeFolder; path: string }) {
@@ -76,8 +76,10 @@ export function TreePane() {
   const revealTick = useStore((s) => s.revealTick);
   const idToPath = useStore((s) => s.idToPath);
   const select = useStore((s) => s.select);
+  const selection = useStore((s) => s.selection);
   const scrollRef = useRef<HTMLDivElement>(null);
   const [query, setQuery] = useState("");
+  const bannerSelected = selection?.ref.container === BANNER_CONTAINER;
 
   // When a breadcrumb folder is clicked, revealFolder expands its ancestors and bumps revealTick;
   // scroll that folder's row into view (it now exists in the DOM because its ancestors are open).
@@ -112,6 +114,15 @@ export function TreePane() {
         />
       </div>
       <div className="tree-scroll" ref={scrollRef}>
+        {/* The icon/title banner isn't a file, but it lives in the ROM — pin it above the filesystem. */}
+        <div
+          className={"tree-row file tree-pinned" + (bannerSelected ? " selected" : "")}
+          title="The DS home-menu icon and per-language game titles"
+          onClick={() => void select(BANNER_REF, "Game icon")}
+        >
+          <span className="twisty">◆</span>
+          <span className="file-name">Game icon &amp; titles</span>
+        </div>
         {q ? (
           <div className="search-results">
             <div className="search-count">{results.length}{results.length >= 300 ? "+" : ""} matches</div>

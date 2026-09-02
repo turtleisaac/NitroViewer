@@ -4,6 +4,7 @@
 // serialising calls) live here and nowhere else; the rest of the app is transport-agnostic.
 
 import type {
+  BannerInfo,
   DecodedImage,
   FormatInfo,
   IndexedRaster,
@@ -42,7 +43,7 @@ const APP_DIR = typeof location !== "undefined" ? location.pathname.replace(/[^/
 // Cache-bust the jar URLs so a rebuilt/redeployed jar isn't shadowed by CheerpJ's URL-keyed jar cache
 // (which otherwise loads a stale class — an old facade method is silently missing → NoSuchMethodError).
 // Dev changes every load (jars change constantly); prod uses a fixed version, bumped when a jar changes.
-const JAR_VERSION = import.meta.env.DEV ? String(Date.now()) : "5";
+const JAR_VERSION = import.meta.env.DEV ? String(Date.now()) : "6";
 const jar = (name: string) => `/app${APP_DIR}jars/${name}?v=${JAR_VERSION}`;
 const CLASSPATH = `${jar("nitroviewer-core.jar")}:${jar("Nds4j.jar")}`;
 
@@ -119,6 +120,23 @@ export class CheerpjTransport implements NitroViewerClient {
 
   getRomInfo(handle: number): Promise<RomInfo> {
     return this.enqueue(async () => unwrap<RomInfo>(await this.f.getRomInfo(handle)));
+  }
+
+  getBanner(handle: number): Promise<BannerInfo> {
+    return this.enqueue(async () => unwrap<BannerInfo>(await this.f.getBanner(handle)));
+  }
+
+  setBannerIcon(handle: number, pngBytes: Uint8Array): Promise<{ ok: boolean }> {
+    const signed = new Int8Array(pngBytes.buffer, pngBytes.byteOffset, pngBytes.byteLength);
+    return this.enqueue(async () => unwrap(await this.f.setBannerIcon(handle, signed)));
+  }
+
+  setBannerTitle(handle: number, languageOrdinal: number, text: string): Promise<{ ok: boolean }> {
+    // The text crosses as UTF-8 bytes (single trailing byte[]) — the proven CheerpJ marshalling shape,
+    // avoiding a String param that fails overload resolution.
+    const utf8 = new TextEncoder().encode(text);
+    const signed = new Int8Array(utf8.buffer, utf8.byteOffset, utf8.byteLength);
+    return this.enqueue(async () => unwrap(await this.f.setBannerTitle(handle, languageOrdinal, signed)));
   }
 
   listTree(handle: number): Promise<TreeFolder> {

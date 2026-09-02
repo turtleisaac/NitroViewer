@@ -2,6 +2,7 @@ import { lazy, Suspense, useRef, useState, type ReactNode } from "react";
 import { useStore } from "../state/store";
 import { refKey, type ResourceRef } from "../transport";
 import { base64ToBytes, download, exportFileName } from "../util";
+import { BannerViewer } from "./BannerViewer";
 import { NarcBrowser } from "./NarcBrowser";
 import { PaletteViewer } from "./PaletteViewer";
 import { SpriteViewer } from "./SpriteViewer";
@@ -140,24 +141,39 @@ export function InspectorPane() {
   const isNarc = fmt === "NARC"; // a NARC anywhere — including a NARC-in-NARC — opens the browser
   const isImage = fmt === "NCGR" || fmt === "NSCR" || fmt === "NCER" || fmt === "NANR";
   const isSound = fmt === "SDAT" || fmt === "SSEQ" || fmt === "SWAR" || fmt === "SWAV" || fmt === "STRM";
+  // The banner isn't a FAT file: it has its own icon/title controls, so it skips the generic
+  // Breadcrumb / Import / Export header (which assume a real (container,id) resource).
+  const isBanner = fmt === "BANNER";
 
   return (
     <section className="pane inspector">
       <div className="pane-head inspector-head">
-        <Breadcrumb />
-        <span className="badge badge--fmt">{fmt || "raw"}</span>
+        {isBanner ? (
+          <span className="insp-crumbs">
+            <span className="crumb crumb--current">Game icon &amp; titles</span>
+          </span>
+        ) : (
+          <Breadcrumb />
+        )}
+        <span className="badge badge--fmt">{isBanner ? "BANNER" : fmt || "raw"}</span>
         {selection.compressed && <span className="badge badge--lz">LZ</span>}
         <span className="dim">{selection.size.toLocaleString()} B</span>
         <span className="spacer" />
-        <ImportButton />
-        <ExportButton />
+        {!isBanner && (
+          <>
+            <ImportButton />
+            <ExportButton />
+          </>
+        )}
       </div>
       <div className="inspector-body">
         {(() => {
           // Fold editVersion into each viewer key so importing new bytes remounts the viewer and it
           // re-decodes from the edited ROM instead of showing stale pixels.
           const vkey = `${refKey(selection.ref)}:${editVersion}`;
-          return isNarc ? (
+          return isBanner ? (
+            <BannerViewer key={vkey} />
+          ) : isNarc ? (
             <NarcBrowser />
           ) : fmt === "NCLR" ? (
             <PaletteViewer key={vkey} />

@@ -1265,6 +1265,69 @@ class CheerpjFacadeTest
         assertThat(base64Field(svc.exportFile(rom3, -1, fileId))).isEqualTo(contentB);
     }
 
+    @Test
+    @DisplayName("getBanner exposes the icon PNG + language titles, and edits round-trip through save")
+    void bannerReadEditRoundTrip() throws Exception
+    {
+        int rom2 = intField(svc.openRom(romBytes), "handle");
+
+        // Read: a real ROM has a banner with an icon data-URL and an English title.
+        String banner = svc.getBanner(rom2);
+        assertThat(banner).contains("\"present\":true");
+        assertThat(strField(banner, "iconPng")).startsWith("data:image/png;base64,");
+        assertThat(banner).contains("\"language\":\"ENGLISH\"");
+        assertThat(intField(banner, "version")).isGreaterThan(0);
+
+        // detectFormat reports the banner sentinel as BANNER (so the UI routes it to the banner viewer).
+        assertThat(formatField(svc.detectFormat(rom2, CheerpjFacade.BANNER_CONTAINER, 0))).isEqualTo("BANNER");
+
+        // Edit the first title (Japanese = ordinal 0, so the naive test JSON reader — which reads the first
+        // "text" — compares the one we changed). The text crosses as UTF-8 bytes, like the real transport.
+        // (Single line so the reader compares it verbatim; newlines survive too — the real transport
+        // JSON.parses them — but the app's UI is what exercises the multi-line path.)
+        String newTitle = "NITROVIEWER TEST TITLE";
+        assertThat(svc.setBannerTitle(rom2, 0, newTitle.getBytes(StandardCharsets.UTF_8))).contains("\"ok\":true");
+        assertThat(strField(svc.getBanner(rom2), "text")).isEqualTo(newTitle);
+
+        // Edit the icon with a valid 32x32 image: transparency + a handful of opaque colors (<=15).
+        int[] swatch = {0xFFE53935, 0xFF43A047, 0xFF1E88E5, 0xFFFDD835};
+        BufferedImage icon = new BufferedImage(32, 32, BufferedImage.TYPE_INT_ARGB);
+        for (int y = 0; y < 32; y++)
+            for (int x = 0; x < 32; x++)
+                icon.setRGB(x, y, ((x + y) % 5 == 0) ? 0 : swatch[((x / 8) + (y / 8)) % swatch.length]);
+        ByteArrayOutputStream png = new ByteArrayOutputStream();
+        ImageIO.write(icon, "png", png);
+        assertThat(svc.setBannerIcon(rom2, png.toByteArray())).contains("\"ok\":true");
+
+        // Reject a wrong-size icon with a structured error (never an exception across the boundary).
+        BufferedImage bad = new BufferedImage(16, 16, BufferedImage.TYPE_INT_ARGB);
+        ByteArrayOutputStream badPng = new ByteArrayOutputStream();
+        ImageIO.write(bad, "png", badPng);
+        assertThat(svc.setBannerIcon(rom2, badPng.toByteArray())).contains("\"ok\":false").contains("32x32");
+
+        // The title edit persists through a save → reopen.
+        int rom3 = intField(svc.openRom(svc.saveRom(rom2)), "handle");
+        assertThat(strField(svc.getBanner(rom3), "text")).isEqualTo(newTitle);
+    }
+
+    @Test
+    @DisplayName("the banner round-trips as raw bytes through exportRaw/importRaw (undo support)")
+    void bannerRawRoundTrip()
+    {
+        int rom2 = intField(svc.openRom(romBytes), "handle");
+        int c = CheerpjFacade.BANNER_CONTAINER;
+
+        // Snapshot the pristine banner bytes (what the store's undo captures).
+        byte[] before = base64Field(svc.exportRaw(rom2, c, 0));
+        assertThat(before.length).isGreaterThan(0);
+
+        // Edit a title, then restore the snapshot via importRaw (an undo) — byte-for-byte back to pristine.
+        assertThat(svc.setBannerTitle(rom2, 1, "CHANGED".getBytes(StandardCharsets.UTF_8))).contains("\"ok\":true");
+        assertThat(base64Field(svc.exportRaw(rom2, c, 0))).isNotEqualTo(before);
+        assertThat(svc.importRaw(rom2, c, 0, before)).contains("\"ok\":true");
+        assertThat(base64Field(svc.exportRaw(rom2, c, 0))).isEqualTo(before);
+    }
+
     private static long countMatches(Pattern p, String s)
     {
         Matcher m = p.matcher(s);

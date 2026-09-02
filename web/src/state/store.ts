@@ -1,5 +1,6 @@
 import { create, type StoreApi } from "zustand";
 import {
+  BANNER_REF,
   createClient,
   refKey,
   ROM_CONTAINER,
@@ -192,6 +193,10 @@ interface AppState {
     dryRun: boolean,
     bytes: Uint8Array
   ) => Promise<{ ok: boolean; unmatched: number; cellIndex: number }>;
+  /** Replace the ROM's 32×32 menu icon from an image file (undoable). */
+  setBannerIcon: (bytes: Uint8Array) => Promise<void>;
+  /** Set one banner language's title (undoable). languageOrdinal indexes the banner's titles. */
+  setBannerTitle: (languageOrdinal: number, text: string) => Promise<void>;
   undo: () => Promise<void>;
   redo: () => Promise<void>;
 }
@@ -771,6 +776,27 @@ export const useStore = create<AppState>((set, get) => ({
     } finally {
       set({ saving: false });
     }
+  },
+
+  setBannerIcon: async (bytes) => {
+    const { client, romHandle } = get();
+    if (romHandle == null) throw new Error("no ROM open");
+    // The banner rides the same (container,id) snapshot/undo plumbing as files (BANNER_REF sentinel).
+    const snap = await snapshot(client, romHandle, [BANNER_REF], "Edit icon");
+    const res = await client.setBannerIcon(romHandle, bytes);
+    if (!res.ok) throw new Error("setBannerIcon failed");
+    set((s) => ({ undoStack: [...s.undoStack, snap], redoStack: [] }));
+    await refreshAfterEdit(get, set, romHandle, [BANNER_REF]);
+  },
+
+  setBannerTitle: async (languageOrdinal, text) => {
+    const { client, romHandle } = get();
+    if (romHandle == null) throw new Error("no ROM open");
+    const snap = await snapshot(client, romHandle, [BANNER_REF], "Edit title");
+    const res = await client.setBannerTitle(romHandle, languageOrdinal, text);
+    if (!res.ok) throw new Error("setBannerTitle failed");
+    set((s) => ({ undoStack: [...s.undoStack, snap], redoStack: [] }));
+    await refreshAfterEdit(get, set, romHandle, [BANNER_REF]);
   },
 
   // Restore the most recent edit's prior bytes, moving it to the redo stack (snapshotting the current

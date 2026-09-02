@@ -20,6 +20,12 @@ and Save ROM. What's left (asset encoders, the per-game manifest, polish) is sna
   sub-palette selection, LZ decompression, PNG export.
 - **NARC** browse (format-typed entries), incl. **NARC-in-NARC** (nested archives browse; edits repack up
   the whole nesting chain to the ROM) + **raw file export**.
+- **Icon/title banner** (the DS home-menu game icon): a **"◆ Game icon & titles"** entry pinned above the
+  filesystem opens a viewer for the 32×32 icon (Export PNG / **Replace icon…** — 32×32, ≤15 opaque colors,
+  index 0 = transparent) and the per-language titles (editable, up to 3 lines each). Undoable + Save ROM like
+  any edit. It's not a FAT file: it rides a **`BANNER_CONTAINER` (-2) sentinel** through the same
+  (container,id) resolveRaw/writeResource plumbing, so extract/replace/undo/save reuse works unchanged; the
+  Nds4j `IconBanner` class does the icon 4bpp/BGR555 + UTF-16 title + CRC work.
 - **3D / effects (full Nitro stack):** NSBMD models + NSBTX textures (three.js, orbit/zoom/pan, unlit),
   NSBCA animation (glTF node-TRS), NSBMA/NSBVA/NSBTP tracks (three.js-driven per-frame), SPA particles
   (server-rendered frame player), glTF export, **Capture PNG of the 3D view**, model/texture/animation
@@ -69,7 +75,7 @@ and Save ROM. What's left (asset encoders, the per-game manifest, polish) is sna
   rendering the manene model**. **Crawlable static landing content** lives in `#root` (hero + features +
   formats + FAQ) so non-JS crawlers get real text; React replaces it on mount. Positioning is a **Tinke
   replacement** (copy avoids "free"/"in your browser").
-- **Infra:** responsive layout, GitHub Actions CI/CD to Pages, **~27 JUnit facade tests + ~11 Nds4j
+- **Infra:** responsive layout, GitHub Actions CI/CD to Pages, **~29 JUnit facade tests + ~11 Nds4j
   image/write-back tests + 30 vitest tests** (pairing + game-DB grouping). CheerpJ's JRE is **Java 8** — see
   §4 (any Nds4j code the facade calls must avoid Java 9+ APIs; nitroviewer-core is guarded with
   `maven.compiler.release=8`).
