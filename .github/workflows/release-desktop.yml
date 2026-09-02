@@ -40,7 +40,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           repository: turtleisaac/Nds4j
-          ref: feature/3d-formats
+          ref: main
           path: Nds4j
 
       - name: Set up JDK

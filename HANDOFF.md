@@ -130,7 +130,7 @@ for the website. `npm run electron` after `npm run build` + vendor runs the unpa
   -Djava.awt.headless=true`. ROMs (`HeartGold.nds`, `Platinum.nds`, …) live in the workspace root and are
   **never committed** (`.gitignore`). Tests `Assumptions`-skip when a ROM is absent, so CI (no ROM) skips
   them; CI still compiles the test sources.
-- **Deploy:** push to `main` → `.github/workflows/deploy.yml` checks out `turtleisaac/Nds4j@feature/3d-formats`
+- **Deploy:** push to `main` → `.github/workflows/deploy.yml` checks out `turtleisaac/Nds4j@main`
   beside the repo, builds both jars + the SPA (running `npm test`), publishes `web/dist` to Pages.
 - **Desktop release:** publishing a GitHub Release (or `workflow_dispatch`) runs
   `.github/workflows/release-desktop.yml` — macOS (arm64+x64 dmg/zip), Windows (x64+arm64 nsis/zip),
@@ -204,10 +204,10 @@ frames' buffers to detect animation. Keep throwaway driver scripts in a scratch 
   (`/app<dir>/jars/…`), so one build works at both the apex root and the `…github.io/NitroViewer/` subpath.
 
 ### Nds4j
-- **CI builds Nds4j from `turtleisaac/Nds4j@feature/3d-formats`.** Any Nds4j method the facade calls must be
-  **pushed to that branch first**, and **verify it compiles before pushing** (a duplicate `getBitDepth()` broke
-  the branch once — recovered with a forward-fix; force-push is blocked by the permission classifier). The
-  facade currently depends on `Nds4j:1.0.0` (a local build of that branch shadows Central).
+- **CI builds Nds4j from `turtleisaac/Nds4j@main`** (the `feature/3d-formats` work is now merged). Any Nds4j
+  method the facade calls must be **pushed to main first**, and **verify it compiles before pushing** (a
+  duplicate `getBitDepth()` broke the branch once — recovered with a forward-fix). The facade currently
+  depends on `Nds4j:1.0.0` (a local build of main shadows Central).
 - **`NitroLz.isCompressed()` is a heuristic** and false-positives on some uncompressed files (Platinum's
   `area_build.narc` sub-files), where `decompress` then throws AIOOB. Always go through
   `CheerpjFacade.maybeDecompress()` (falls back to raw on failure).

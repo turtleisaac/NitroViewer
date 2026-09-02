@@ -29,8 +29,8 @@
         <dependency>
             <groupId>io.github.turtleisaac</groupId>
             <artifactId>Nds4j</artifactId>
-            <!-- Consumes the local build of the feature/3d-formats branch: scripts/build-jars.sh runs
-                 `mvn install` from ../../Nds4j first, which installs that branch's code into ~/.m2 under
+            <!-- Consumes the local build of Nds4j main: scripts/build-jars.sh runs
+                 `mvn install` from ../../Nds4j first, which installs main's code into ~/.m2 under
                  the pom's own version (1.0.0), shadowing Maven Central for this build. Bump this to the
                  real release coordinate once Nds4j 1.1.0 is published. -->
             <version>1.0.0</version>

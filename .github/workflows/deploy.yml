@@ -28,12 +28,12 @@ jobs:
         with:
           path: NitroViewer
 
-      # Nds4j lives in its own repo; the facade depends on the feature/3d-formats branch.
+      # Nds4j lives in its own repo; the 3d-formats work is now merged to main.
       - name: Checkout Nds4j
         uses: actions/checkout@v4
         with:
           repository: turtleisaac/Nds4j
-          ref: feature/3d-formats
+          ref: main
           path: Nds4j
 
       - name: Set up JDK
