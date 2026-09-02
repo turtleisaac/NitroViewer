@@ -211,6 +211,32 @@ frames' buffers to detect animation. Keep throwaway driver scripts in a scratch 
 - **`NitroLz.isCompressed()` is a heuristic** and false-positives on some uncompressed files (Platinum's
   `area_build.narc` sub-files), where `decompress` then throws AIOOB. Always go through
   `CheerpjFacade.maybeDecompress()` (falls back to raw on failure).
+- **✅ FIXED: the distinct "`LZ77`"-tagged compression wrapper.** Found live-driving Animal Crossing: Wild
+  World's `carpet/floor_*.nsbtx` (loose top-level ROM files): the raw bytes are the 4-byte ASCII tag
+  `"LZ77"` followed by a *standard* LZ10/LZ11 header (`[type][u24 decompressedSize]`) and then the normal
+  compressed stream. `NitroLz.isCompressed()`/`decompress()` now detect and transparently skip the tag
+  (Nds4j `feature/3d-formats`, commit `bb0ef1c`); `compressLz77Tagged()`/`compressLz11Lz77Tagged()` re-emit
+  it for write-back. In Animal Crossing alone this unlocked 6348 previously-invisible top-level files, 3974
+  of them valid Nitro assets (2503 `BTX0` alone). **Requires a `make jars` rebuild** to pick up the new
+  Nds4j jar in the SPA.
+- **✅ ALIGNED (2026-09-02): Nds4j edit-path fixes + new BMG/NFTR editing API.** A round of Nds4j work on
+  `feature/3d-formats` (commit `7ad2f1b`) that the SPA now runs after a `make jars` rebuild — **re-verified
+  green**: the `nitroviewer-core` facade JUnit suite (41 tests, incl. `setPaletteColors` / `setNcgrPixels` /
+  `importPng → saveRom → reopen`) plus the headless banner E2E (boot → title/icon edit → Save ROM → reopen).
+  All Nds4j changes are additive (no removed/renamed public API), so nothing on the NitroViewer side needed
+  code changes.
+  - **Free wins from the rebuild (paths the facade already exercises):** `NitroLz.encode` is now O(n) (was
+    O(n²)) — the `matchCompression`/`reCompress` path (editing a large LZ-stored NCGR/NCLR/map) no longer
+    crawls or hangs; `SequenceNotes` guards multi-byte reads so a truncated SSEQ degrades instead of
+    throwing (piano-roll robustness); `Model` MTX-restore is bounds-safe on malformed SBC.
+  - **Latent (read-only in the facade today):** `TextureSet.setPaletteColor` and the
+    `MaterialColorAnimationSet` colour setters were fixed (BGR555 `>>3`; bit-15 / animated-alpha-width
+    preservation) — only matters once a texture-palette or MCA-colour *editor* is added.
+  - **NEW Nds4j editing API now available to surface (see §5/§9):** NFTR fonts (`NitroFont`:
+    `getGlyphImage`/`renderGlyphSheet`/`renderString` to view, `setGlyphPixels`/`setWidths`/FontInfo metric
+    setters to edit) and BMG text (`BinaryMessage`: decode + `Message.setText`/`setInfo`/`setParts`,
+    `Escape.setType`/`setData`, `setEncoding`/`setBigEndian`). NMCR/NMAR multi-cell are parseable/editable now
+    too. Both editing surfaces are backed in Nds4j by an edit-path round-trip survey + functional tests.
 
 ### Test fixtures (retail ROMs, workspace root)
 - **manene** (Mime Jr., a known-good animated model): **Platinum NARC file 142, model index 51, animation 53.**
@@ -228,7 +254,13 @@ frames' buffers to detect animation. Keep throwaway driver scripts in a scratch 
 - ~~NANR: auto-select a multi-frame clip~~ **DONE** (`SpriteViewer` jumps to the first `frames > 1` clip).
 - ~~"capture PNG" of the 3D view~~ **DONE**. ~~ground grid~~ **DONE** (`ModelViewer` Grid toggle + Reset view).
   Still open: model lighting/material polish (DS models are unlit — mostly N/A).
-- Formats Nds4j can't parse yet: **NFTR** (fonts), **NMCR/NMAR** (multi-cell) — need Nds4j support first.
+- **Nds4j-ready, not yet surfaced (NitroViewer-side work only): NFTR fonts, BMG text, NMCR/NMAR multi-cell.**
+  As of 2026-09-02 Nds4j parses **and edits** all of these (§4) — the old "need Nds4j support first" blocker
+  is gone. None are in `formatOf`, so they currently show as *unknown* in the tree and can't be opened. To
+  surface them: add `formatOf` magics (`RTFN`/`NFTR`→`NFTR`, `MESG`→`BMG`, `RCMN`→`NMCR`, `RAMN`→`NMAR`),
+  facade decode/render/edit/save methods, and web panels (a font glyph-sheet + per-glyph editor mirroring the
+  NCGR/NCER panels; a BMG message table + text editor). Nds4j editing APIs are listed in §4. Scoped out of
+  the 2026-09-02 Nds4j session by decision — it's frontend/facade work, not a parser task.
 - SPA: emitter isolation, adjustable frame count/size, background toggle.
 
 ---
@@ -567,8 +599,10 @@ Two playback paths in `SoundViewer.tsx`:
   tempo-change events will be under-estimated (ticks/tempo only reflect the *initial* tempo) — the
   note-count check is the backstop for that case, not a fully independent signal.
 
-**Larger gaps (need parsers / RE — each a real project).** **NFTR** fonts and **NMCR/NMAR** multi-cell — need
-Nds4j parsers. **glTF import** — needs a glTF accessor/mesh reader. **Bitmap-OBJ NCER composition** — so
+**Larger gaps.** **NFTR** fonts, **BMG** text, and **NMCR/NMAR** multi-cell — **Nds4j now parses and edits all
+of these** (as of 2026-09-02, §4), so these are no longer Nds4j-parser tasks: the remaining work is
+NitroViewer-side (`formatOf` recognition + facade decode/edit/save methods + web panels; see §5).
+**glTF import** — needs a glTF accessor/mesh reader (still a real RE task). **Bitmap-OBJ NCER composition** — so
 scanned sprites (DPPt trbgra) compose per-cell instead of the raw-bitmap fallback (a Nds4j RE task).
 *(Note: the NCER/NANR **write-back** that used to be listed here is DONE — §6; only the scanned-bitmap
 compose is still blocked.)*
