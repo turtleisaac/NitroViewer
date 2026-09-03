@@ -601,3 +601,50 @@ body { background: var(--bg); color: var(--text); font-size: 13px; }
 }
 @keyframes nv-spin { to { transform: rotate(360deg); } }
 @media (prefers-reduced-motion: reduce) { .spinner { animation-duration: 2s; } }
+
+/* BMG message table */
+.bmg-filter {
+  background: var(--bg-2); color: var(--text); border: 1px solid var(--line-2);
+  border-radius: 6px; padding: 6px 10px; font-size: 12.5px; min-width: 200px;
+}
+.bmg-body { display: grid; grid-template-columns: minmax(220px, 360px) 1fr; gap: 16px; align-items: start; }
+.bmg-list {
+  display: flex; flex-direction: column; gap: 2px; max-height: 60vh; overflow-y: auto;
+  border: 1px solid var(--line); border-radius: 10px; padding: 4px;
+}
+.bmg-row {
+  display: flex; align-items: center; gap: 8px; text-align: left; background: none; border: 0;
+  border-radius: 6px; padding: 6px 8px; cursor: pointer; color: var(--text-dim); font-size: 12.5px;
+}
+.bmg-row:hover { background: var(--bg-2); }
+.bmg-row--selected { background: var(--bg-2); color: var(--text); outline: 1px solid var(--accent); }
+.bmg-row-idx { font-family: ui-monospace, monospace; color: var(--text-faint); flex: 0 0 auto; }
+.bmg-row-text { flex: 1 1 auto; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.bmg-editor { display: flex; flex-direction: column; gap: 10px; }
+.bmg-editor-head { display: flex; flex-direction: column; gap: 4px; color: var(--text-dim); font-size: 12.5px; }
+.bmg-textarea {
+  background: var(--bg-2); color: var(--text); border: 1px solid var(--line-2); border-radius: 8px;
+  padding: 10px; font-size: 13px; font-family: ui-monospace, monospace; resize: vertical;
+}
+.bmg-editor-actions { display: flex; gap: 8px; }
+
+/* NFTR font viewer */
+.font-preview { display: flex; flex-direction: column; gap: 8px; margin-bottom: 16px; }
+.font-preview input[type="text"] {
+  background: var(--bg-2); color: var(--text); border: 1px solid var(--line-2);
+  border-radius: 6px; padding: 8px 10px; font-size: 13px;
+}
+.font-preview-img { align-self: flex-start; background: var(--bg-1); border: 1px solid var(--line); border-radius: 6px; padding: 8px; }
+.font-sheet-wrap { position: relative; display: inline-block; }
+.font-sheet-grid { position: absolute; inset: 0; display: grid; }
+.font-glyph-cell { background: none; border: 1px solid transparent; cursor: pointer; padding: 0; }
+.font-glyph-cell:hover:not(:disabled) { border-color: color-mix(in srgb, var(--accent) 60%, transparent); }
+.font-glyph-cell--selected { border-color: #fff; }
+.font-glyph-cell:disabled { cursor: default; }
+.font-editor { margin-top: 18px; display: flex; flex-direction: column; gap: 10px; }
+.font-editor-head { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; font-size: 12.5px; color: var(--text-dim); }
+.font-glyph-editor {
+  display: grid; gap: 1px; background: var(--line-2); border: 1px solid var(--line-2);
+  border-radius: 4px; width: max-content;
+}
+.font-glyph-px { cursor: pointer; user-select: none; }

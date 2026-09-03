@@ -432,4 +432,93 @@ public interface NitroViewerService
      * @return {"base64":str} | {"error"}
      */
     String exportBankSf2(int romHandle, int container, int id, int bankIndex);
+
+    // --- text (BMG) ----------------------------------------------------------------------------
+
+    /**
+     * Catalogue a BMG message table. Each message's text is its parts flattened to a single string
+     * ({@code String} parts concatenated; an embedded {@code Escape} renders as {@code "[type:hexdata]"},
+     * e.g. {@code "[255:00000300]"}) &mdash; {@code hasEscapes} flags whether the message actually
+     * contains one, as a heads-up that the text includes that bracket syntax, not literal game text.
+     * @return {"encoding":int,"bigEndian":bool,"hasFlw1":bool,"hasFli1":bool,"count":int,
+     *         "messages":[{"text":str,"isNull":bool,"hasEscapes":bool},...]} | {"error"}
+     */
+    String decodeBmg(int romHandle, int container, int id);
+
+    /**
+     * Replace one message's content (UTF-8 bytes, not a {@code String} param, to stay on the proven
+     * CheerpJ marshalling path), parsing the same {@code "[type:hexdata]"} bracket syntax {@link
+     * #decodeBmg} renders back into real {@code Escape} sequences &mdash; so re-saving an unedited
+     * message's displayed text round-trips its escapes instead of flattening them to plain text, and a
+     * user can add/remove/retype a bracket token to edit an escape directly. A malformed bracket (odd
+     * hex-digit count, etc.) surfaces as a structured error rather than corrupting the message. A message
+     * that was "null" (no text at all, distinct from empty) is promoted to a real, present message.
+     * @return {"ok":true} | {"ok":false,"error":str}
+     */
+    String setBmgMessage(int romHandle, int container, int id, int msgIndex, byte[] utf8TextBytes);
+
+    // --- fonts (NFTR) ----------------------------------------------------------------------------
+
+    /**
+     * NFTR font metadata + metrics.
+     * @return {"numGlyphs":int,"bitDepth":int,"cellWidth":int,"cellHeight":int,"lineFeed":int,
+     *         "defaultLeft":int,"defaultGlyphWidth":int,"defaultCharWidth":int} | {"error"}
+     */
+    String decodeFontMeta(int romHandle, int container, int id);
+
+    /**
+     * Render every glyph as one grid PNG (glyph cells laid out {@code columns} wide), for browsing the
+     * font. {@code scale} multiplies each glyph cell's pixel size (nearest-neighbour, for a readable
+     * preview of small fonts).
+     * @return {"width","height","columns":int,"rows":int,"cellWidth":int,"cellHeight":int,"png":dataUrl} | {"error"}
+     */
+    String renderFontGlyphSheet(int romHandle, int container, int id, int columns, int scale);
+
+    /**
+     * Render a preview string through the font (for spot-checking an edited glyph in context).
+     * @return {"width","height","png":dataUrl} | {"error"}
+     */
+    String renderFontString(int romHandle, int container, int id, int scale, byte[] utf8TextBytes);
+
+    /**
+     * Decode one glyph's raw intensity pixels (0-255 per pixel, row-major, {@code cellWidth * cellHeight}
+     * bytes) for a pixel-level glyph editor.
+     * @return {"width","height","pixels":base64} | {"error"}
+     */
+    String decodeFontGlyphPixels(int romHandle, int container, int id, int glyphIndex);
+
+    /**
+     * Overwrite one glyph's pixels in place (same size as {@link #decodeFontGlyphPixels}; re-quantised to
+     * the font's bit depth).
+     * @return {"ok":true} | {"ok":false,"error":str}
+     */
+    String setFontGlyphPixels(int romHandle, int container, int id, int glyphIndex, byte[] intensityPixels);
+
+    // --- multi-cell (NMCR/NMAR) ------------------------------------------------------------------
+
+    /** @return {"multiCellCount":int} | {"error"} */
+    String decodeNmcrMeta(int romHandle, int nmcrContainer, int nmcrId);
+
+    /**
+     * Render one multi-cell (a placement of several NCER cells) through its companion NCER/NCGR/NCLR —
+     * the NMCR analog of {@link #decodeNcer}.
+     * @return {"width","height","png"} | {"error"}
+     */
+    String decodeNmcr(int romHandle,
+                      int nmcrContainer, int nmcrId, int ncerContainer, int ncerId,
+                      int ncgrContainer, int ncgrId, int nclrContainer, int nclrId,
+                      int multiCellIndex, boolean transparent);
+
+    /** @return {"animations":[{"name":str,"frames":int}]} | {"error"} */
+    String decodeNmarMeta(int romHandle, int nmarContainer, int nmarId);
+
+    /**
+     * Render one NMAR animation frame through its companion NMCR/NCER/NCGR/NCLR — the NMAR analog of
+     * {@link #decodeNanr}.
+     * @return {"width","height","png"} | {"error"}
+     */
+    String decodeNmar(int romHandle,
+                      int nmarContainer, int nmarId, int nmcrContainer, int nmcrId,
+                      int ncerContainer, int ncerId, int ncgrContainer, int ncgrId,
+                      int nclrContainer, int nclrId, int animIndex, int frameIndex, boolean transparent);
 }

@@ -206,6 +206,45 @@ export interface StreamPreview {
   wavBase64: string;
 }
 
+export interface BmgMessage {
+  text: string; // parts flattened to plain text; an embedded escape renders as "[type:hexdata]"
+  isNull: boolean; // true = no text at all (distinct from an empty string)
+  hasEscapes: boolean; // heads-up that `text` includes "[type:hexdata]" bracket tokens, not literal game text
+}
+export interface BmgData {
+  encoding: number; // 1=cp1252, 2=UTF-16, 3=Shift-JIS, 4=UTF-8
+  bigEndian: boolean;
+  hasFlw1: boolean;
+  hasFli1: boolean;
+  count: number;
+  messages: BmgMessage[];
+}
+
+export interface FontMeta {
+  numGlyphs: number;
+  bitDepth: number;
+  cellWidth: number;
+  cellHeight: number;
+  lineFeed: number;
+  defaultLeft: number;
+  defaultGlyphWidth: number;
+  defaultCharWidth: number;
+}
+export interface FontGlyphSheet {
+  width: number;
+  height: number;
+  columns: number;
+  rows: number;
+  cellWidth: number;
+  cellHeight: number;
+  png: string;
+}
+export interface FontGlyphPixels {
+  width: number;
+  height: number;
+  pixels: string; // base64, width*height bytes, row-major intensity 0-255
+}
+
 export interface NitroViewerClient {
   init(onProgress?: (msg: string) => void): Promise<void>;
 
@@ -461,4 +500,51 @@ export interface NitroViewerClient {
   ): Promise<{ ok: boolean; sampleRate: number; samples: number; type: string }>;
   exportSequenceMidi(handle: number, ref: ResourceRef, seqIndex: number): Promise<{ base64: string }>;
   exportBankSf2(handle: number, ref: ResourceRef, bankIndex: number): Promise<{ base64: string }>;
+
+  // --- text (BMG) ----------------------------------------------------------------------------
+  decodeBmg(handle: number, ref: ResourceRef): Promise<BmgData>;
+  /** Replace one message's content; "[type:hexdata]" bracket tokens in `text` parse back into escapes. */
+  setBmgMessage(handle: number, ref: ResourceRef, msgIndex: number, text: string): Promise<{ ok: boolean }>;
+
+  // --- fonts (NFTR) ----------------------------------------------------------------------------
+  decodeFontMeta(handle: number, ref: ResourceRef): Promise<FontMeta>;
+  /** Every glyph laid out as one grid PNG, `columns` wide. scale = integer magnification. */
+  renderFontGlyphSheet(handle: number, ref: ResourceRef, columns: number, scale: number): Promise<FontGlyphSheet>;
+  /** Render a preview string through the font. */
+  renderFontString(handle: number, ref: ResourceRef, scale: number, text: string): Promise<DecodedImage>;
+  /** One glyph's raw intensity pixels (0-255), for a pixel-level glyph editor. */
+  decodeFontGlyphPixels(handle: number, ref: ResourceRef, glyphIndex: number): Promise<FontGlyphPixels>;
+  /** Overwrite one glyph's pixels in place (same size as decodeFontGlyphPixels). */
+  setFontGlyphPixels(
+    handle: number,
+    ref: ResourceRef,
+    glyphIndex: number,
+    intensityPixels: Uint8Array
+  ): Promise<{ ok: boolean }>;
+
+  // --- multi-cell (NMCR/NMAR) ------------------------------------------------------------------
+  decodeNmcrMeta(handle: number, nmcr: ResourceRef): Promise<{ multiCellCount: number }>;
+  /** Render one multi-cell through its companion NCER/NCGR/NCLR — the NMCR analog of decodeNcer. */
+  decodeNmcr(
+    handle: number,
+    nmcr: ResourceRef,
+    ncer: ResourceRef,
+    ncgr: ResourceRef,
+    nclr: ResourceRef,
+    multiCellIndex: number,
+    transparent: boolean
+  ): Promise<DecodedImage>;
+  decodeNmarMeta(handle: number, nmar: ResourceRef): Promise<{ animations: { name: string; frames: number }[] }>;
+  /** Render one NMAR animation frame through its companion NMCR/NCER/NCGR/NCLR — the NMAR analog of decodeNanr. */
+  decodeNmar(
+    handle: number,
+    nmar: ResourceRef,
+    nmcr: ResourceRef,
+    ncer: ResourceRef,
+    ncgr: ResourceRef,
+    nclr: ResourceRef,
+    animIndex: number,
+    frameIndex: number,
+    transparent: boolean
+  ): Promise<DecodedImage>;
 }

@@ -75,13 +75,13 @@ and Save ROM. What's left (asset encoders, the per-game manifest, polish) is sna
   rendering the manene model**. **Crawlable static landing content** lives in `#root` (hero + features +
   formats + FAQ) so non-JS crawlers get real text; React replaces it on mount. Positioning is a **Tinke
   replacement** (copy avoids "free"/"in your browser").
-- **Infra:** responsive layout, GitHub Actions CI/CD to Pages, **~29 JUnit facade tests + ~11 Nds4j
-  image/write-back tests + 30 vitest tests** (pairing + game-DB grouping). CheerpJ's JRE is **Java 8** — see
+- **Infra:** responsive layout, GitHub Actions CI/CD to Pages, **44 JUnit facade tests + ~11 Nds4j
+  image/write-back tests + 88 vitest tests** (pairing + game-DB grouping). CheerpJ's JRE is **Java 8** — see
   §4 (any Nds4j code the facade calls must avoid Java 9+ APIs; nitroviewer-core is guarded with
   `maven.compiler.release=8`).
 
-**Not done (larger — need parsers/RE):** glTF *import* (OBJ import is done); **NFTR** fonts;
-**NMCR/NMAR**; bitmap-OBJ NCER composition (so scanned sprites compose per-cell). See §9 for the full snapshot.
+**Not done (larger — need parsers/RE):** glTF *import* (OBJ import is done); bitmap-OBJ NCER composition
+(so scanned sprites compose per-cell). See §9 for the full snapshot.
 
 > **Sprite viewing tip:** the **Width (px)** control (NCGR) sets the sprite width in pixels (step 8; 0 = auto)
 > — auto can look like a garbled linear strip.
@@ -206,8 +206,21 @@ frames' buffers to detect animation. Keep throwaway driver scripts in a scratch 
 ### Nds4j
 - **CI builds Nds4j from `turtleisaac/Nds4j@main`** (the `feature/3d-formats` work is now merged). Any Nds4j
   method the facade calls must be **pushed to main first**, and **verify it compiles before pushing** (a
-  duplicate `getBitDepth()` broke the branch once — recovered with a forward-fix). The facade currently
-  depends on `Nds4j:1.0.0` (a local build of main shadows Central).
+  duplicate `getBitDepth()` broke the branch once — recovered with a forward-fix).
+- **✅ FIXED (2026-09-02): the Nds4j dependency version must track Nds4j's own `pom.xml`, not be
+  hardcoded.** `nitroviewer-core/pom.xml` had `Nds4j` pinned to a literal `1.0.0`, but Nds4j's own `pom.xml`
+  has declared `1.1.0-SNAPSHOT` since Aug 27. `build-jars.sh`'s `mvn install` on a fresh Nds4j checkout
+  installs under whatever version *that* `pom.xml` says (`1.1.0-SNAPSHOT`), so the pinned `1.0.0` resolved to
+  the **old published Maven Central release** instead — missing every 3D-format class, and every 3D-touching
+  Nds4j method added since. This silently broke every CI deploy for hours (compiled locally because a stale
+  `1.0.0` jar happened to already sit in `~/.m2` from an earlier local build; a truly fresh checkout —
+  exactly what CI does — always hit it). Fixed: `nitroviewer-core/pom.xml`'s dependency version is now
+  `${nds4j.version}` (default `1.0.0` for a bare `mvn test`), and `build-jars.sh` reads Nds4j's real version
+  via `mvn help:evaluate -Dexpression=project.version -DforceStdout` and passes it through
+  (`-Dnds4j.version=...`) so the two can never drift again. **If a `make jars`/CI build ever fails with
+  "cannot find symbol" for a class that clearly exists in Nds4j's source, suspect this class of bug first** —
+  reproduce locally with `rm -rf ~/.m2/repository/io/github/turtleisaac/Nds4j/<pinned-version> && mvn clean
+  test` to force resolution against the *actual* published artifact instead of a lucky local cache.
 - **`NitroLz.isCompressed()` is a heuristic** and false-positives on some uncompressed files (Platinum's
   `area_build.narc` sub-files), where `decompress` then throws AIOOB. Always go through
   `CheerpjFacade.maybeDecompress()` (falls back to raw on failure).
@@ -254,13 +267,17 @@ frames' buffers to detect animation. Keep throwaway driver scripts in a scratch 
 - ~~NANR: auto-select a multi-frame clip~~ **DONE** (`SpriteViewer` jumps to the first `frames > 1` clip).
 - ~~"capture PNG" of the 3D view~~ **DONE**. ~~ground grid~~ **DONE** (`ModelViewer` Grid toggle + Reset view).
   Still open: model lighting/material polish (DS models are unlit — mostly N/A).
-- **Nds4j-ready, not yet surfaced (NitroViewer-side work only): NFTR fonts, BMG text, NMCR/NMAR multi-cell.**
-  As of 2026-09-02 Nds4j parses **and edits** all of these (§4) — the old "need Nds4j support first" blocker
-  is gone. None are in `formatOf`, so they currently show as *unknown* in the tree and can't be opened. To
-  surface them: add `formatOf` magics (`RTFN`/`NFTR`→`NFTR`, `MESG`→`BMG`, `RCMN`→`NMCR`, `RAMN`→`NMAR`),
-  facade decode/render/edit/save methods, and web panels (a font glyph-sheet + per-glyph editor mirroring the
-  NCGR/NCER panels; a BMG message table + text editor). Nds4j editing APIs are listed in §4. Scoped out of
-  the 2026-09-02 Nds4j session by decision — it's frontend/facade work, not a parser task.
+- ~~NFTR fonts, BMG text, NMCR/NMAR multi-cell surfacing~~ **DONE (2026-09-02).** `formatOf` recognizes all
+  four magics; facade decode/render/edit/save methods added (`decodeBmg`/`setBmgMessage`,
+  `decodeFontMeta`/`renderFontGlyphSheet`/`renderFontString`/`decodeFontGlyphPixels`/`setFontGlyphPixels`,
+  `decodeNmcrMeta`/`decodeNmcr`/`decodeNmarMeta`/`decodeNmar`); three new web panels (`BmgViewer` — message
+  table + text editor, escape-code-aware; `FontViewer` — glyph sheet + string preview + click-to-paint pixel
+  editor; `MultiCellViewer` — NMCR/NMAR composed through a cascading NCER→NCGR/NCLR (and NMCR, for NMAR)
+  auto-pair chain, mirroring `SpriteViewer`'s NCER/NANR heuristic one level deeper). Verified against real
+  fixtures both at the facade layer and live in-browser (playwright): BMG/NFTR in Phantom Hourglass,
+  NMCR/NMAR in White2's `a/0/0/4` NARC. New `CheerpjFacadeTextFontMultiCellTest` (JUnit) opens those specific
+  ROMs by exact name (`TestRoms.requireNamed`, not the shared `-Drom.name` default) since these formats are
+  rare enough that the default HeartGold fixture carries none of them.
 - SPA: emitter isolation, adjustable frame count/size, background toggle.
 
 ---
@@ -599,9 +616,7 @@ Two playback paths in `SoundViewer.tsx`:
   tempo-change events will be under-estimated (ticks/tempo only reflect the *initial* tempo) — the
   note-count check is the backstop for that case, not a fully independent signal.
 
-**Larger gaps.** **NFTR** fonts, **BMG** text, and **NMCR/NMAR** multi-cell — **Nds4j now parses and edits all
-of these** (as of 2026-09-02, §4), so these are no longer Nds4j-parser tasks: the remaining work is
-NitroViewer-side (`formatOf` recognition + facade decode/edit/save methods + web panels; see §5).
+**Larger gaps.** ~~**NFTR** fonts, **BMG** text, and **NMCR/NMAR** multi-cell~~ **DONE (2026-09-02)** — see §5.
 **glTF import** — needs a glTF accessor/mesh reader (still a real RE task). **Bitmap-OBJ NCER composition** — so
 scanned sprites (DPPt trbgra) compose per-cell instead of the raw-bitmap fallback (a Nds4j RE task).
 *(Note: the NCER/NANR **write-back** that used to be listed here is DONE — §6; only the scanned-bitmap

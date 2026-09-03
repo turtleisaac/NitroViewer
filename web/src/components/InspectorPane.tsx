@@ -10,6 +10,9 @@ import { TextureViewer } from "./TextureViewer";
 import { ParticleViewer } from "./ParticleViewer";
 import { InfoViewer } from "./InfoViewer";
 import { SoundViewer } from "./SoundViewer";
+import { BmgViewer } from "./BmgViewer";
+import { FontViewer } from "./FontViewer";
+import { MultiCellViewer } from "./MultiCellViewer";
 
 // three.js is heavy; only load the 3D viewer (and three) when a model is actually opened.
 const ModelViewer = lazy(() => import("./ModelViewer"));
@@ -140,6 +143,7 @@ export function InspectorPane() {
   const fmt = selection.format;
   const isNarc = fmt === "NARC"; // a NARC anywhere — including a NARC-in-NARC — opens the browser
   const isImage = fmt === "NCGR" || fmt === "NSCR" || fmt === "NCER" || fmt === "NANR";
+  const isMultiCell = fmt === "NMCR" || fmt === "NMAR";
   const isSound = fmt === "SDAT" || fmt === "SSEQ" || fmt === "SWAR" || fmt === "SWAV" || fmt === "STRM";
   // The banner isn't a FAT file: it has its own icon/title controls, so it skips the generic
   // Breadcrumb / Import / Export header (which assume a real (container,id) resource).
@@ -181,6 +185,12 @@ export function InspectorPane() {
             // Keyed by ref only (not editVersion): the SpriteViewer re-decodes edits in place so an
             // import doesn't reset the user's tile width / palette / zoom. Other viewers remount.
             <SpriteViewer key={refKey(selection.ref)} />
+          ) : isMultiCell ? (
+            <MultiCellViewer key={refKey(selection.ref)} />
+          ) : fmt === "BMG" ? (
+            <BmgViewer key={refKey(selection.ref)} />
+          ) : fmt === "NFTR" ? (
+            <FontViewer key={refKey(selection.ref)} />
           ) : fmt === "NSBTX" ? (
             <TextureViewer key={vkey} />
           ) : fmt === "SPA" ? (

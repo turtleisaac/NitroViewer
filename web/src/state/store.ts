@@ -34,6 +34,7 @@ export interface PairOverride {
   ncgr?: ResourceRef;
   nclr?: ResourceRef;
   ncer?: ResourceRef;
+  nmcr?: ResourceRef;
 }
 
 /** A reversible edit: the raw (as-stored, base64) bytes of each resource it changed, before the edit. */
@@ -128,6 +129,10 @@ interface AppState {
     scanFrontToBack: boolean,
     pixels: Uint8Array
   ) => Promise<{ width: number; height: number }>;
+  /** Replace one BMG message's text (undoable). Discards any embedded escapes that message had. */
+  setBmgMessage: (bmg: ResourceRef, msgIndex: number, text: string) => Promise<void>;
+  /** Overwrite one NFTR glyph's pixels in place (undoable). */
+  setFontGlyphPixels: (nftr: ResourceRef, glyphIndex: number, pixels: Uint8Array) => Promise<void>;
   /** Persist a sprite-editor save: pixels always, NCLR colors only when `colors` is provided. */
   saveSpriteEdit: (
     ncgr: ResourceRef,
@@ -655,6 +660,26 @@ export const useStore = create<AppState>((set, get) => ({
     set((s) => ({ undoStack: [...s.undoStack, snap], redoStack: [] }));
     await refreshAfterEdit(get, set, romHandle, [ncgr]);
     return { width: res.width, height: res.height };
+  },
+
+  setBmgMessage: async (bmg, msgIndex, text) => {
+    const { client, romHandle } = get();
+    if (romHandle == null) throw new Error("no ROM open");
+    const snap = await snapshot(client, romHandle, [bmg], "Edit message");
+    const res = await client.setBmgMessage(romHandle, bmg, msgIndex, text);
+    if (!res.ok) throw new Error("setBmgMessage failed");
+    set((s) => ({ undoStack: [...s.undoStack, snap], redoStack: [] }));
+    await refreshAfterEdit(get, set, romHandle, [bmg]);
+  },
+
+  setFontGlyphPixels: async (nftr, glyphIndex, pixels) => {
+    const { client, romHandle } = get();
+    if (romHandle == null) throw new Error("no ROM open");
+    const snap = await snapshot(client, romHandle, [nftr], "Edit glyph");
+    const res = await client.setFontGlyphPixels(romHandle, nftr, glyphIndex, pixels);
+    if (!res.ok) throw new Error("setFontGlyphPixels failed");
+    set((s) => ({ undoStack: [...s.undoStack, snap], redoStack: [] }));
+    await refreshAfterEdit(get, set, romHandle, [nftr]);
   },
 
   saveSpriteEdit: async (ncgr, nclr, tilesWidth, scanFrontToBack, pixels, colors) => {

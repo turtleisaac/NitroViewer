@@ -5,7 +5,11 @@
 
 import type {
   BannerInfo,
+  BmgData,
   DecodedImage,
+  FontGlyphPixels,
+  FontGlyphSheet,
+  FontMeta,
   FormatInfo,
   IndexedRaster,
   MaterialColorAnim,
@@ -43,7 +47,7 @@ const APP_DIR = typeof location !== "undefined" ? location.pathname.replace(/[^/
 // Cache-bust the jar URLs so a rebuilt/redeployed jar isn't shadowed by CheerpJ's URL-keyed jar cache
 // (which otherwise loads a stale class — an old facade method is silently missing → NoSuchMethodError).
 // Dev changes every load (jars change constantly); prod uses a fixed version, bumped when a jar changes.
-const JAR_VERSION = import.meta.env.DEV ? String(Date.now()) : "6";
+const JAR_VERSION = import.meta.env.DEV ? String(Date.now()) : "7";
 const jar = (name: string) => `/app${APP_DIR}jars/${name}?v=${JAR_VERSION}`;
 const CLASSPATH = `${jar("nitroviewer-core.jar")}:${jar("Nds4j.jar")}`;
 
@@ -608,5 +612,107 @@ export class CheerpjTransport implements NitroViewerClient {
       if (res.startsWith("ERROR:")) throw new Error(res.slice(6).trim());
       return res;
     });
+  }
+
+  // --- text (BMG) ----------------------------------------------------------------------------
+
+  decodeBmg(handle: number, ref: ResourceRef): Promise<BmgData> {
+    return this.enqueue(async () => unwrap<BmgData>(await this.f.decodeBmg(handle, ref.container, ref.id)));
+  }
+
+  setBmgMessage(handle: number, ref: ResourceRef, msgIndex: number, text: string): Promise<{ ok: boolean }> {
+    const utf8 = new TextEncoder().encode(text);
+    const signed = new Int8Array(utf8.buffer, utf8.byteOffset, utf8.byteLength);
+    return this.enqueue(async () =>
+      unwrap(await this.f.setBmgMessage(handle, ref.container, ref.id, msgIndex, signed))
+    );
+  }
+
+  // --- fonts (NFTR) ----------------------------------------------------------------------------
+
+  decodeFontMeta(handle: number, ref: ResourceRef): Promise<FontMeta> {
+    return this.enqueue(async () => unwrap<FontMeta>(await this.f.decodeFontMeta(handle, ref.container, ref.id)));
+  }
+
+  renderFontGlyphSheet(handle: number, ref: ResourceRef, columns: number, scale: number): Promise<FontGlyphSheet> {
+    return this.enqueue(async () =>
+      unwrap<FontGlyphSheet>(await this.f.renderFontGlyphSheet(handle, ref.container, ref.id, columns, scale))
+    );
+  }
+
+  renderFontString(handle: number, ref: ResourceRef, scale: number, text: string): Promise<DecodedImage> {
+    const utf8 = new TextEncoder().encode(text);
+    const signed = new Int8Array(utf8.buffer, utf8.byteOffset, utf8.byteLength);
+    return this.enqueue(async () =>
+      unwrap<DecodedImage>(await this.f.renderFontString(handle, ref.container, ref.id, scale, signed))
+    );
+  }
+
+  decodeFontGlyphPixels(handle: number, ref: ResourceRef, glyphIndex: number): Promise<FontGlyphPixels> {
+    return this.enqueue(async () =>
+      unwrap<FontGlyphPixels>(await this.f.decodeFontGlyphPixels(handle, ref.container, ref.id, glyphIndex))
+    );
+  }
+
+  setFontGlyphPixels(
+    handle: number,
+    ref: ResourceRef,
+    glyphIndex: number,
+    intensityPixels: Uint8Array
+  ): Promise<{ ok: boolean }> {
+    const signed = new Int8Array(intensityPixels.buffer, intensityPixels.byteOffset, intensityPixels.byteLength);
+    return this.enqueue(async () =>
+      unwrap(await this.f.setFontGlyphPixels(handle, ref.container, ref.id, glyphIndex, signed))
+    );
+  }
+
+  // --- multi-cell (NMCR/NMAR) ------------------------------------------------------------------
+
+  decodeNmcrMeta(handle: number, nmcr: ResourceRef): Promise<{ multiCellCount: number }> {
+    return this.enqueue(async () => unwrap(await this.f.decodeNmcrMeta(handle, nmcr.container, nmcr.id)));
+  }
+
+  decodeNmcr(
+    handle: number,
+    nmcr: ResourceRef,
+    ncer: ResourceRef,
+    ncgr: ResourceRef,
+    nclr: ResourceRef,
+    multiCellIndex: number,
+    transparent: boolean
+  ): Promise<DecodedImage> {
+    return this.enqueue(async () =>
+      unwrap<DecodedImage>(
+        await this.f.decodeNmcr(
+          handle, nmcr.container, nmcr.id, ncer.container, ncer.id,
+          ncgr.container, ncgr.id, nclr.container, nclr.id, multiCellIndex, transparent
+        )
+      )
+    );
+  }
+
+  decodeNmarMeta(handle: number, nmar: ResourceRef): Promise<{ animations: { name: string; frames: number }[] }> {
+    return this.enqueue(async () => unwrap(await this.f.decodeNmarMeta(handle, nmar.container, nmar.id)));
+  }
+
+  decodeNmar(
+    handle: number,
+    nmar: ResourceRef,
+    nmcr: ResourceRef,
+    ncer: ResourceRef,
+    ncgr: ResourceRef,
+    nclr: ResourceRef,
+    animIndex: number,
+    frameIndex: number,
+    transparent: boolean
+  ): Promise<DecodedImage> {
+    return this.enqueue(async () =>
+      unwrap<DecodedImage>(
+        await this.f.decodeNmar(
+          handle, nmar.container, nmar.id, nmcr.container, nmcr.id, ncer.container, ncer.id,
+          ncgr.container, ncgr.id, nclr.container, nclr.id, animIndex, frameIndex, transparent
+        )
+      )
+    );
   }
 }

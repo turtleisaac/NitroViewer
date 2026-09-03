@@ -38,4 +38,25 @@ final class TestRoms
             throw new RuntimeException("could not read ROM at " + path, e);
         }
     }
+
+    /**
+     * Like {@link #require}, but for a specific ROM by exact filename, ignoring {@code -Drom.name}.
+     * For tests whose fixture data (a particular BMG/NFTR/NMCR file, say) only exists in one specific
+     * game, so they can't just decode whatever ROM {@code -Drom.name} happens to select.
+     */
+    static byte[] requireNamed(String exactName)
+    {
+        Path path = Paths.get(System.getProperty("rom.dir", "."), exactName);
+        Assumptions.assumeTrue(Files.exists(path),
+                () -> "Skipping: test ROM not found at " + path.toAbsolutePath()
+                        + " -- set -Drom.dir=<dir> to a directory containing " + exactName + " to run this suite.");
+        try
+        {
+            return Files.readAllBytes(path);
+        }
+        catch (IOException e)
+        {
+            throw new RuntimeException("could not read ROM at " + path, e);
+        }
+    }
 }

@@ -23,6 +23,9 @@ import io.github.turtleisaac.nds4j.g3d.VisibilityAnimationSet;
 import io.github.turtleisaac.nds4j.images.CellAnimation;
 import io.github.turtleisaac.nds4j.images.CellBank;
 import io.github.turtleisaac.nds4j.images.IndexedImage;
+import io.github.turtleisaac.nds4j.images.MultiCellAnimation;
+import io.github.turtleisaac.nds4j.images.MultiCellBank;
+import io.github.turtleisaac.nds4j.images.NitroFont;
 import io.github.turtleisaac.nds4j.images.Palette;
 import io.github.turtleisaac.nds4j.images.Screen;
 import io.github.turtleisaac.nds4j.sound.InstrumentBank;
@@ -36,6 +39,7 @@ import io.github.turtleisaac.nds4j.sound.Stream;
 import io.github.turtleisaac.nds4j.sound.Wave;
 import io.github.turtleisaac.nds4j.sound.WaveArchive;
 import io.github.turtleisaac.nds4j.sound.WaveformRenderer;
+import io.github.turtleisaac.nds4j.text.BinaryMessage;
 
 import javax.imageio.ImageIO;
 import java.awt.Color;
@@ -45,6 +49,7 @@ import java.io.File;
 import java.io.FileOutputStream;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Base64;
 import java.util.List;
@@ -1897,6 +1902,272 @@ public final class CheerpjFacade implements NitroViewerService
         catch (Throwable t) { return err(t); }
     }
 
+    // --- text (BMG) ----------------------------------------------------------------------------
+
+    @Override
+    public String decodeBmg(int romHandle, int container, int id)
+    {
+        try
+        {
+            BinaryMessage bmg = new BinaryMessage(resolve(rom(romHandle), container, id));
+            List<BinaryMessage.Message> messages = bmg.getMessages();
+            StringBuilder sb = new StringBuilder("{\"encoding\":").append(bmg.getEncoding())
+                    .append(",\"bigEndian\":").append(bmg.isBigEndian())
+                    .append(",\"hasFlw1\":").append(bmg.hasFlw1())
+                    .append(",\"hasFli1\":").append(bmg.hasFli1())
+                    .append(",\"count\":").append(messages.size())
+                    .append(",\"messages\":[");
+            for (int i = 0; i < messages.size(); i++)
+            {
+                if (i > 0) sb.append(',');
+                BinaryMessage.Message m = messages.get(i);
+                boolean hasEscapes = false;
+                for (Object part : m.getParts())
+                    if (part instanceof BinaryMessage.Message.Escape) { hasEscapes = true; break; }
+                sb.append("{\"text\":").append(jstr(m.toString()))
+                  .append(",\"isNull\":").append(m.isNull())
+                  .append(",\"hasEscapes\":").append(hasEscapes)
+                  .append('}');
+            }
+            return sb.append("]}").toString();
+        }
+        catch (Throwable t) { return err(t); }
+    }
+
+    @Override
+    public String setBmgMessage(int romHandle, int container, int id, int msgIndex, byte[] utf8TextBytes)
+    {
+        try
+        {
+            if (utf8TextBytes == null) throw new IllegalArgumentException("no text");
+            NintendoDsRom rom = rom(romHandle);
+            BinaryMessage bmg = new BinaryMessage(resolve(rom, container, id));
+            List<BinaryMessage.Message> messages = bmg.getMessages();
+            if (msgIndex < 0 || msgIndex >= messages.size())
+                throw new IllegalArgumentException("message index out of range: " + msgIndex);
+            String text = new String(utf8TextBytes, StandardCharsets.UTF_8);
+            List<Object> parts = parseBmgParts(text);
+            BinaryMessage.Message existing = messages.get(msgIndex);
+            if (existing.isNull())
+                // isNull is fixed at construction (save() always writes offset 0 for it regardless of
+                // parts), so giving a previously-empty message real text means swapping in a new,
+                // non-null Message rather than mutating the old one. getMessages() returns the live
+                // list, so .set() here is visible to bmg.save() below.
+                messages.set(msgIndex, new BinaryMessage.Message(existing.getInfo(), parts, false));
+            else
+                existing.setParts(parts);
+            writeResource(romHandle, container, id, bmg.save());
+            return "{\"ok\":true}";
+        }
+        catch (Throwable t)
+        {
+            return "{\"ok\":false,\"error\":" + jstr(describe(t)) + "}";
+        }
+    }
+
+    // Matches decodeBmg's Message.toString() rendering of an Escape ("[type:hexdata]") exactly, so
+    // an unedited message's displayed text parses back to the SAME parts (plain runs + escapes) it
+    // was decoded from, instead of always flattening to one plain-text run and losing them.
+    private static final java.util.regex.Pattern BMG_ESCAPE = java.util.regex.Pattern.compile("\\[(\\d{1,3}):([0-9a-fA-F]*)\\]");
+
+    private static List<Object> parseBmgParts(String text)
+    {
+        List<Object> parts = new ArrayList<>();
+        java.util.regex.Matcher m = BMG_ESCAPE.matcher(text);
+        int last = 0;
+        while (m.find())
+        {
+            if (m.start() > last) parts.add(text.substring(last, m.start()));
+            int type = Integer.parseInt(m.group(1)) & 0xFF;
+            String hex = m.group(2);
+            byte[] data = new byte[hex.length() / 2];
+            for (int i = 0; i < data.length; i++)
+                data[i] = (byte) Integer.parseInt(hex.substring(i * 2, i * 2 + 2), 16);
+            parts.add(new BinaryMessage.Message.Escape(type, data));
+            last = m.end();
+        }
+        if (last < text.length() || parts.isEmpty())
+            parts.add(text.substring(last));
+        return parts;
+    }
+
+    // --- fonts (NFTR) ----------------------------------------------------------------------------
+
+    @Override
+    public String decodeFontMeta(int romHandle, int container, int id)
+    {
+        try
+        {
+            NitroFont font = new NitroFont(resolve(rom(romHandle), container, id));
+            NitroFont.FontInfo info = font.getFontInfo();
+            NitroFont.GlyphData glyphs = font.getGlyphData();
+            return "{\"numGlyphs\":" + font.getNumGlyphs()
+                    + ",\"bitDepth\":" + (glyphs == null ? 0 : glyphs.getBpp())
+                    + ",\"cellWidth\":" + (glyphs == null ? 0 : glyphs.getCellWidth())
+                    + ",\"cellHeight\":" + (glyphs == null ? 0 : glyphs.getCellHeight())
+                    + ",\"lineFeed\":" + info.getLineFeed()
+                    + ",\"defaultLeft\":" + info.getDefaultLeft()
+                    + ",\"defaultGlyphWidth\":" + info.getDefaultGlyphWidth()
+                    + ",\"defaultCharWidth\":" + info.getDefaultCharWidth()
+                    + "}";
+        }
+        catch (Throwable t) { return err(t); }
+    }
+
+    @Override
+    public String renderFontGlyphSheet(int romHandle, int container, int id, int columns, int scale)
+    {
+        try
+        {
+            NitroFont font = new NitroFont(resolve(rom(romHandle), container, id));
+            BufferedImage img = font.renderGlyphSheet(columns <= 0 ? 16 : columns, scale <= 0 ? 1 : scale);
+            NitroFont.GlyphData glyphs = font.getGlyphData();
+            int cols = columns <= 0 ? 16 : columns;
+            int rows = (font.getNumGlyphs() + cols - 1) / cols;
+            return "{\"width\":" + img.getWidth() + ",\"height\":" + img.getHeight()
+                    + ",\"columns\":" + cols + ",\"rows\":" + rows
+                    + ",\"cellWidth\":" + (glyphs == null ? 0 : glyphs.getCellWidth())
+                    + ",\"cellHeight\":" + (glyphs == null ? 0 : glyphs.getCellHeight())
+                    + ",\"png\":" + jstr(pngDataUrl(img)) + "}";
+        }
+        catch (Throwable t) { return err(t); }
+    }
+
+    @Override
+    public String renderFontString(int romHandle, int container, int id, int scale, byte[] utf8TextBytes)
+    {
+        try
+        {
+            if (utf8TextBytes == null) throw new IllegalArgumentException("no text");
+            NitroFont font = new NitroFont(resolve(rom(romHandle), container, id));
+            String text = new String(utf8TextBytes, StandardCharsets.UTF_8);
+            BufferedImage img = font.renderString(text, scale <= 0 ? 1 : scale);
+            return imageJson(img);
+        }
+        catch (Throwable t) { return err(t); }
+    }
+
+    @Override
+    public String decodeFontGlyphPixels(int romHandle, int container, int id, int glyphIndex)
+    {
+        try
+        {
+            NitroFont font = new NitroFont(resolve(rom(romHandle), container, id));
+            NitroFont.GlyphData glyphs = font.getGlyphData();
+            int[] px = glyphs.getGlyphPixels(glyphIndex);
+            byte[] packed = new byte[px.length];
+            for (int i = 0; i < px.length; i++) packed[i] = (byte) px[i];
+            return "{\"width\":" + glyphs.getCellWidth() + ",\"height\":" + glyphs.getCellHeight()
+                    + ",\"pixels\":" + jstr(base64(packed)) + "}";
+        }
+        catch (Throwable t) { return err(t); }
+    }
+
+    @Override
+    public String setFontGlyphPixels(int romHandle, int container, int id, int glyphIndex, byte[] intensityPixels)
+    {
+        try
+        {
+            if (intensityPixels == null) throw new IllegalArgumentException("no pixels");
+            NintendoDsRom rom = rom(romHandle);
+            NitroFont font = new NitroFont(resolve(rom, container, id));
+            NitroFont.GlyphData glyphs = font.getGlyphData();
+            int expected = glyphs.getCellWidth() * glyphs.getCellHeight();
+            if (intensityPixels.length != expected)
+                throw new IllegalArgumentException("expected " + expected + " pixels, got " + intensityPixels.length);
+            int[] px = new int[intensityPixels.length];
+            for (int i = 0; i < px.length; i++) px[i] = intensityPixels[i] & 0xFF;
+            glyphs.setGlyphPixels(glyphIndex, px);
+            writeResource(romHandle, container, id, font.save());
+            return "{\"ok\":true}";
+        }
+        catch (Throwable t)
+        {
+            return "{\"ok\":false,\"error\":" + jstr(describe(t)) + "}";
+        }
+    }
+
+    // --- multi-cell (NMCR/NMAR) ------------------------------------------------------------------
+
+    @Override
+    public String decodeNmcrMeta(int romHandle, int nmcrContainer, int nmcrId)
+    {
+        try
+        {
+            MultiCellBank bank = new MultiCellBank(resolve(rom(romHandle), nmcrContainer, nmcrId));
+            return "{\"multiCellCount\":" + bank.getNumMultiCells() + "}";
+        }
+        catch (Throwable t) { return err(t); }
+    }
+
+    @Override
+    public String decodeNmcr(int romHandle, int nmcrContainer, int nmcrId,
+                             int ncerContainer, int ncerId, int ncgrContainer, int ncgrId,
+                             int nclrContainer, int nclrId, int multiCellIndex, boolean transparent)
+    {
+        try
+        {
+            NintendoDsRom rom = rom(romHandle);
+            IndexedImage ncgr = ncgr(rom, ncgrContainer, ncgrId, 0);
+            ncgr.setPalette(new Palette(resolve(rom, nclrContainer, nclrId), 0));
+            if (ncgr.isScanned())
+                return scannedNcgrJson(ncgr, transparent);
+            CellBank cellBank = new CellBank(resolve(rom, ncerContainer, ncerId));
+            cellBank.setParentImage(ncgr);
+            MultiCellBank bank = new MultiCellBank(resolve(rom, nmcrContainer, nmcrId));
+            bank.setCellBank(cellBank);
+            BufferedImage img = transparent ? bank.getTransparentMultiCellImage(multiCellIndex)
+                                            : bank.getMultiCellImage(multiCellIndex);
+            return imageJson(img);
+        }
+        catch (Throwable t) { return err(t); }
+    }
+
+    @Override
+    public String decodeNmarMeta(int romHandle, int nmarContainer, int nmarId)
+    {
+        try
+        {
+            MultiCellAnimation anim = new MultiCellAnimation(resolve(rom(romHandle), nmarContainer, nmarId));
+            MultiCellAnimation.Animation[] animations = anim.getAnimations();
+            StringBuilder sb = new StringBuilder("{\"animations\":[");
+            for (int i = 0; i < animations.length; i++)
+            {
+                if (i > 0) sb.append(',');
+                String name = animations[i].getName();
+                sb.append("{\"name\":").append(jstr(name == null ? "" : name))
+                  .append(",\"frames\":").append(animations[i].getFrames().length).append('}');
+            }
+            return sb.append("]}").toString();
+        }
+        catch (Throwable t) { return err(t); }
+    }
+
+    @Override
+    public String decodeNmar(int romHandle, int nmarContainer, int nmarId,
+                             int nmcrContainer, int nmcrId, int ncerContainer, int ncerId,
+                             int ncgrContainer, int ncgrId, int nclrContainer, int nclrId,
+                             int animIndex, int frameIndex, boolean transparent)
+    {
+        try
+        {
+            NintendoDsRom rom = rom(romHandle);
+            IndexedImage ncgr = ncgr(rom, ncgrContainer, ncgrId, 0);
+            ncgr.setPalette(new Palette(resolve(rom, nclrContainer, nclrId), 0));
+            if (ncgr.isScanned())
+                return scannedNcgrJson(ncgr, transparent);
+            CellBank cellBank = new CellBank(resolve(rom, ncerContainer, ncerId));
+            cellBank.setParentImage(ncgr);
+            MultiCellBank bank = new MultiCellBank(resolve(rom, nmcrContainer, nmcrId));
+            bank.setCellBank(cellBank);
+            MultiCellAnimation anim = new MultiCellAnimation(resolve(rom, nmarContainer, nmarId));
+            anim.setMultiCellBank(bank);
+            MultiCellAnimation.Animation.Frame frame = anim.getAnimations()[animIndex].getFrames()[frameIndex];
+            return imageJson(anim.getFrameImage(frame));
+        }
+        catch (Throwable t) { return err(t); }
+    }
+
     private WaveArchive waveArchiveOf(NintendoDsRom rom, int container, int id, int waveArcIndex)
     {
         byte[] data = resolve(rom, container, id);
@@ -2070,6 +2341,10 @@ public final class CheerpjFacade implements NitroViewerService
             case "RCSN": return "NSCR";
             case "RECN": return "NCER";
             case "RNAN": return "NANR";
+            case "RTFN": return "NFTR";
+            case "MESG": return "BMG";
+            case "RCMN": return "NMCR";
+            case "RAMN": return "NMAR";
             case "BMD0": return "NSBMD";
             case "BTX0": return "NSBTX";
             case "BCA0": return "NSBCA";
