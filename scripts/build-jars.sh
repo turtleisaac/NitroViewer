@@ -12,8 +12,14 @@ nds4j="$(cd "${NDS4J_DIR:-$here/../Nds4j}" && pwd)"
 echo "==> Installing Nds4j (main) from $nds4j"
 mvn -q -f "$nds4j/pom.xml" -DskipTests install
 
+# Read Nds4j's own declared version rather than hardcoding it: it has drifted from
+# nitroviewer-core's pinned dependency before (1.0.0 vs 1.1.0-SNAPSHOT), which silently
+# pulled the old published Maven Central release instead of this fresh local build.
+nds4j_version="$(mvn -q -f "$nds4j/pom.xml" help:evaluate -Dexpression=project.version -DforceStdout)"
+echo "==> Nds4j version: $nds4j_version"
+
 echo "==> Packaging nitroviewer-core"
-mvn -q -f "$here/nitroviewer-core/pom.xml" -DskipTests package
+mvn -q -f "$here/nitroviewer-core/pom.xml" -DskipTests -Dnds4j.version="$nds4j_version" package
 
 core_jar="$(ls "$here"/nitroviewer-core/target/nitroviewer-core-*.jar | head -1)"
 nds4j_jar="$(ls "$nds4j"/target/Nds4j-*.jar | head -1)"

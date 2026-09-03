@@ -23,17 +23,19 @@
              fine under source/target 8 but throws NoSuchMethodError in the browser. This guard turns that
              into a build error HERE. Scoped to NitroViewer only — Nds4j keeps its own build config. -->
         <maven.compiler.release>8</maven.compiler.release>
+        <!-- scripts/build-jars.sh installs the local Nds4j checkout via `mvn install` (under whatever
+             version Nds4j's own pom.xml currently declares) and passes -Dnds4j.version to override this
+             default. A hardcoded version here would silently drift from Nds4j's actual pom version
+             (it has before — 1.0.0 vs 1.1.0-SNAPSHOT — and pulled the old Maven Central release instead
+             of the fresh local build, breaking CI compilation without any local repro). -->
+        <nds4j.version>1.0.0</nds4j.version>
     </properties>
 
     <dependencies>
         <dependency>
             <groupId>io.github.turtleisaac</groupId>
             <artifactId>Nds4j</artifactId>
-            <!-- Consumes the local build of Nds4j main: scripts/build-jars.sh runs
-                 `mvn install` from ../../Nds4j first, which installs main's code into ~/.m2 under
-                 the pom's own version (1.0.0), shadowing Maven Central for this build. Bump this to the
-                 real release coordinate once Nds4j 1.1.0 is published. -->
-            <version>1.0.0</version>
+            <version>${nds4j.version}</version>
         </dependency>
         <dependency>
             <groupId>org.junit.jupiter</groupId>
