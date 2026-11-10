@@ -13,6 +13,7 @@ const FILES = [
   ["wide-phone-palette.NCLR", "sprite.nclr"],
   ["wide-phone-texture.NSBTX", "texture.nsbtx"],
   ["wide-phone-model.NSBMD", "model.nsbmd"],
+  ["wide-desktop-sound.SDAT", "sound.sdat"],
 ];
 
 /** Little-endian uint16. */
@@ -25,13 +26,29 @@ function u32(buf, offset, value) {
   buf.writeUInt32LE(value, offset);
 }
 
+/** Extra bytes a folder entry uses for its directory id. */
+function folderExtra(folderId) {
+  return folderId == null ? 0 : 2;
+}
+
+/** The high bit that marks a folder name. */
+function folderFlag(folderId) {
+  return folderId == null ? 0 : 0x80;
+}
+
+/** Write a folder's directory id after its name. */
+function writeFolderId(out, nameLength, folderId) {
+  if (folderId == null) return;
+  u16(out, 1 + nameLength, folderId);
+}
+
 /** One filename-table entry. A folder also carries its directory id. */
 function entry(name, folderId) {
   const body = Buffer.from(name, "latin1");
-  const out = Buffer.alloc(1 + body.length + (folderId == null ? 0 : 2));
-  out[0] = body.length | (folderId == null ? 0 : 0x80);
+  const out = Buffer.alloc(1 + body.length + folderExtra(folderId));
+  out[0] = body.length | folderFlag(folderId);
   body.copy(out, 1);
-  if (folderId != null) u16(out, 1 + body.length, folderId);
+  writeFolderId(out, body.length, folderId);
   return out;
 }
 
