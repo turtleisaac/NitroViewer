@@ -141,7 +141,7 @@ export function sequenceHint(canPlay: boolean, live: boolean, demanding: boolean
   if (!canPlay) return " · open the parent SDAT to play";
   if (live) return " · live mixing engine";
   if (demanding) return " · large sequence; play uses the live mixing engine";
-  return " · first play synthesizes the whole song; mute/solo switches to live mixing";
+  return "";
 }
 
 /** One-line description of the open sequence. */

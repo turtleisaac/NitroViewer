@@ -185,7 +185,7 @@ describe("sound viewer logic", () => {
     expect(sequenceHint(false, false, false)).toContain("parent SDAT");
     expect(sequenceHint(true, true, true)).toContain("live mixing");
     expect(sequenceHint(true, false, true)).toContain("large sequence");
-    expect(sequenceHint(true, false, false)).toContain("mute/solo");
+    expect(sequenceHint(true, false, false)).toBe("");
     expect(showSequencePane("SSEQ", "waves")).toBe(true);
     expect(showWavePane("SWAV", "sequences")).toBe(true);
     expect(showWavePane("STRM", "waves")).toBe(false);
