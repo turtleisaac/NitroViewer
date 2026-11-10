@@ -12,7 +12,7 @@ export default mergeConfig(
         reporter: ["lcov"],
         reportsDirectory: "../target/coverage/typescript",
         include: ["src/**/*.{ts,tsx}"],
-        exclude: ["src/**/*.test.ts", "src/**/*.d.ts"],
+        exclude: ["src/**/*.test.ts", "src/**/*.test.tsx", "src/**/*.d.ts"],
       },
     },
   }),

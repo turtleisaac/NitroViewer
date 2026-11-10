@@ -531,7 +531,13 @@ function NamedList({
   );
 }
 
-function WavePanel({
+/** Sample duration in seconds. */
+function waveSeconds(sampleRate: number, samples: number): number {
+  if (sampleRate <= 0) return 0;
+  return samples / sampleRate;
+}
+
+export function WavePanel({
   waves,
   selected,
   preview,
@@ -593,7 +599,7 @@ function WavePanel({
             <WaveformScrub
               png={preview.png}
               currentTime={currentTime}
-              duration={preview.sampleRate > 0 ? preview.samples / preview.sampleRate : 0}
+              duration={waveSeconds(preview.sampleRate, preview.samples)}
               onSeek={onSeek}
             />
             <input

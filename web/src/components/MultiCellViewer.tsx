@@ -1,10 +1,10 @@
 import { useEffect, useMemo, useState } from "react";
 import { useStore, type ResourceItem } from "../state/store";
 import { useChangedKey } from "../useChangedKey";
-import { pickSibling } from "../state/pairing";
 import { refKey, type DecodedImage, type ResourceRef } from "../transport";
-import { base64ToBytes, download } from "../util";
 import { Icon } from "./icons";
+import { loadMultiImage, loadMultiMeta, saveMultiPng, startFrameLoop } from "./multiCellLoad";
+import { canPlayFrames, maxFrameOf, pairMultiCell } from "./multiCellPair";
 
 function RefSelect({
   label,
@@ -77,13 +77,10 @@ export function MultiCellViewer() {
   const container = selection.ref.container;
   const selKey = refKey(selection.ref);
 
-  const items: ResourceItem[] = useMemo(() => {
-    if (container >= 0) {
-      const n = narcs[container];
-      return n ? n.entries.map((e) => ({ ref: { container, id: e.index }, label: `#${e.index}`, format: e.format })) : [];
-    }
-    return romSiblings;
-  }, [container, narcs, romSiblings]);
+  const items: ResourceItem[] = useMemo(
+    () => siblingItems(container, narcs, romSiblings),
+    [container, narcs, romSiblings]
+  );
 
   const nclrs = useMemo(() => items.filter((i) => i.format === "NCLR"), [items]);
   const ncgrs = useMemo(() => items.filter((i) => i.format === "NCGR"), [items]);
@@ -114,21 +111,7 @@ export function MultiCellViewer() {
   const itemsKey = items.map((i) => `${i.ref.container}:${i.ref.id}:${i.format}`).join("|");
   if (useChangedKey(`${selKey}:${itemsKey}`)) {
     const saved = useStore.getState().pairingOverrides[selKey] ?? {};
-    let nmcr: ResourceRef | undefined;
-    let ncerPeerId = selection.ref.id;
-    let ncerPeerList = selfPeers;
-    if (fmt === "NMAR") {
-      nmcr = saved.nmcr ?? pickSibling(nmcrs, selfPeers, selection.ref.id);
-      const nmcrPeers = items.filter((i) => i.format === "NMCR").slice().sort((a, b) => a.ref.id - b.ref.id);
-      ncerPeerId = nmcr ? nmcr.id : selection.ref.id;
-      ncerPeerList = nmcrPeers;
-    }
-    const ncer = saved.ncer ?? pickSibling(ncers, ncerPeerList, ncerPeerId);
-    const ncerPeers = items.filter((i) => i.format === "NCER").slice().sort((a, b) => a.ref.id - b.ref.id);
-    const ncgrPeerId = ncer ? ncer.id : ncerPeerId;
-    const ncgr = saved.ncgr ?? pickSibling(ncgrs, ncerPeers, ncgrPeerId);
-    const nclr = saved.nclr ?? pickSibling(nclrs, ncerPeers, ncgrPeerId);
-    setPair({ nmcr, ncer, ncgr, nclr });
+    setPair(pairMultiCell(fmt, selection.ref.id, items, { nmcrs, ncers, ncgrs, nclrs }, selfPeers, saved));
   }
 
   if (useChangedKey(selKey)) {
@@ -140,47 +123,21 @@ export function MultiCellViewer() {
 
   useEffect(() => {
     if (fmt !== "NMAR" || !playing) return;
-    const frames = animFrames[animIndex]?.frames ?? 0;
-    if (frames <= 1) return;
-    const id = setInterval(() => setFrameIndex((f) => (f + 1) % frames), 240);
-    return () => clearInterval(id);
+    return startFrameLoop(animFrames[animIndex]?.frames ?? 0, setFrameIndex);
   }, [fmt, playing, animIndex, animFrames]);
 
   useEffect(() => {
-    let alive = true;
-    if (fmt === "NMCR") {
-      client
-        .decodeNmcrMeta(romHandle, selection.ref)
-        .then((m) => alive && setMultiCellCount(m.multiCellCount))
-        .catch(() => alive && setMultiCellCount(0));
-    } else if (fmt === "NMAR") {
-      client
-        .decodeNmarMeta(romHandle, selection.ref)
-        .then((m) => {
-          if (!alive) return;
-          setAnimFrames(m.animations);
-          const firstMulti = m.animations.findIndex((a) => a.frames > 1);
-          if (firstMulti > 0) {
-            setAnimIndex(firstMulti);
-            setFrameIndex(0);
-          }
-          setPlaying(firstMulti >= 0);
-        })
-        .catch(() => alive && setAnimFrames([]));
-    }
-    return () => {
-      alive = false;
-    };
+    return loadMultiMeta(
+      fmt, romHandle, selection.ref, client,
+      setMultiCellCount, setAnimFrames, setAnimIndex, setFrameIndex, setPlaying
+    );
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selKey, fmt]);
 
   const depKey = JSON.stringify({
     selKey,
     fmt,
-    nmcr: pair.nmcr && refKey(pair.nmcr),
-    ncer: pair.ncer && refKey(pair.ncer),
-    ncgr: pair.ncgr && refKey(pair.ncgr),
-    nclr: pair.nclr && refKey(pair.nclr),
+    ...pairKeys(pair),
     transparent,
     multiCellIndex,
     animIndex,
@@ -189,50 +146,108 @@ export function MultiCellViewer() {
   });
 
   useEffect(() => {
-    let alive = true;
-    void (async () => {
-      setBusy(true);
-      setError(null);
-      try {
-        let img: DecodedImage;
-        if (fmt === "NMCR") {
-          if (!pair.ncer || !pair.ncgr || !pair.nclr) throw new Error("A multi-cell needs NCER + NCGR + NCLR.");
-          img = await client.decodeNmcr(romHandle, selection.ref, pair.ncer, pair.ncgr, pair.nclr, multiCellIndex, transparent);
-        } else if (fmt === "NMAR") {
-          if (!pair.nmcr || !pair.ncer || !pair.ncgr || !pair.nclr)
-            throw new Error("An NMAR animation needs NMCR + NCER + NCGR + NCLR.");
-          img = await client.decodeNmar(
-            romHandle, selection.ref, pair.nmcr, pair.ncer, pair.ncgr, pair.nclr, animIndex, frameIndex, transparent
-          );
-        } else {
-          throw new Error("Unsupported: " + fmt);
-        }
-        if (alive) setImage(img);
-      } catch (e) {
-        if (alive) {
-          setError((e as Error).message);
-          setImage(null);
-        }
-      } finally {
-        if (alive) setBusy(false);
-      }
-    })();
-    return () => {
-      alive = false;
-    };
+    return loadMultiImage(
+      fmt, romHandle, selection.ref, pair, multiCellIndex, animIndex, frameIndex, transparent,
+      client, setBusy, setError, setImage
+    );
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [depKey]);
 
-  const maxFrame = animFrames[animIndex] ? animFrames[animIndex].frames - 1 : -1;
-
-  const savePng = () => {
-    if (!image) return;
-    const base = (selection.name.split(/[/:]/).pop() || "image").replace(/[^\w.-]+/g, "_");
-    download(`${base}.png`, base64ToBytes(image.png.split(",")[1]), "image/png");
-  };
+  const maxFrame = maxFrameOf(animFrames, animIndex);
 
   return (
     <div className="sprite">
+      <MultiCellControls
+        fmt={fmt}
+        nmcrs={nmcrs}
+        ncers={ncers}
+        ncgrs={ncgrs}
+        nclrs={nclrs}
+        pair={pair}
+        setPair={setPair}
+        setPairingOverride={setPairingOverride}
+        selKey={selKey}
+        multiCellIndex={multiCellIndex}
+        multiCellCount={multiCellCount}
+        setMultiCellIndex={setMultiCellIndex}
+        animIndex={animIndex}
+        animFrames={animFrames}
+        setAnimIndex={setAnimIndex}
+        frameIndex={frameIndex}
+        maxFrame={maxFrame}
+        setFrameIndex={setFrameIndex}
+        playing={playing}
+        setPlaying={setPlaying}
+        transparent={transparent}
+        setTransparent={setTransparent}
+        zoom={zoom}
+        setZoom={setZoom}
+      />
+      <MultiCellStage
+        error={error}
+        image={image}
+        busy={busy}
+        zoom={zoom}
+        name={selection.name}
+      />
+    </div>
+  );
+}
+
+/** Files shown in the sibling dropdowns. A NARC lists its entries; a ROM lists the open folder. */
+function siblingItems(
+  container: number,
+  narcs: Record<number, { entries: { index: number; format: string }[] } | undefined>,
+  romSiblings: ResourceItem[]
+): ResourceItem[] {
+  if (container < 0) return romSiblings;
+  const n = narcs[container];
+  if (!n) return [];
+  return n.entries.map((e) => ({ ref: { container, id: e.index }, label: `#${e.index}`, format: e.format }));
+}
+
+/** Stable keys for the four paired files, used to re-decode when a pairing changes. */
+function pairKeys(pair: { nmcr?: ResourceRef; ncer?: ResourceRef; ncgr?: ResourceRef; nclr?: ResourceRef }) {
+  return {
+    nmcr: pair.nmcr && refKey(pair.nmcr),
+    ncer: pair.ncer && refKey(pair.ncer),
+    ncgr: pair.ncgr && refKey(pair.ncgr),
+    nclr: pair.nclr && refKey(pair.nclr),
+  };
+}
+
+function MultiCellControls(props: {
+  fmt: string;
+  nmcrs: ResourceItem[];
+  ncers: ResourceItem[];
+  ncgrs: ResourceItem[];
+  nclrs: ResourceItem[];
+  pair: { nmcr?: ResourceRef; ncer?: ResourceRef; ncgr?: ResourceRef; nclr?: ResourceRef };
+  setPair: (fn: (p: { nmcr?: ResourceRef; ncer?: ResourceRef; ncgr?: ResourceRef; nclr?: ResourceRef }) => { nmcr?: ResourceRef; ncer?: ResourceRef; ncgr?: ResourceRef; nclr?: ResourceRef }) => void;
+  setPairingOverride: (key: string, patch: { nmcr?: ResourceRef; ncer?: ResourceRef; ncgr?: ResourceRef; nclr?: ResourceRef }) => void;
+  selKey: string;
+  multiCellIndex: number;
+  multiCellCount: number;
+  setMultiCellIndex: (n: number) => void;
+  animIndex: number;
+  animFrames: { name: string; frames: number }[];
+  setAnimIndex: (n: number) => void;
+  frameIndex: number;
+  maxFrame: number;
+  setFrameIndex: (n: number) => void;
+  playing: boolean;
+  setPlaying: (fn: (p: boolean) => boolean) => void;
+  transparent: boolean;
+  setTransparent: (v: boolean) => void;
+  zoom: number;
+  setZoom: (z: number) => void;
+}) {
+  const {
+    fmt, nmcrs, ncers, ncgrs, nclrs, pair, setPair, setPairingOverride, selKey,
+    multiCellIndex, multiCellCount, setMultiCellIndex, animIndex, animFrames, setAnimIndex,
+    frameIndex, maxFrame, setFrameIndex, playing, setPlaying, transparent, setTransparent, zoom, setZoom,
+  } = props;
+  return (
       <div className="controls">
         {fmt === "NMAR" && (
           <RefSelect
@@ -253,7 +268,7 @@ export function MultiCellViewer() {
             <Stepper label="Frame" value={frameIndex} max={maxFrame} onChange={setFrameIndex} />
             <label className="ctrl">
               <span>Playback</span>
-              <button className="play-btn" onClick={() => setPlaying((p) => !p)} disabled={(animFrames[animIndex]?.frames ?? 0) <= 1}>
+              <button className="play-btn" onClick={() => setPlaying((p) => !p)} disabled={!canPlayFrames(animFrames[animIndex]?.frames)}>
                 {playing ? <><Icon name="pause" /> Pause</> : <><Icon name="play" /> Play</>}
               </button>
             </label>
@@ -273,7 +288,19 @@ export function MultiCellViewer() {
           </select>
         </label>
       </div>
+  );
+}
 
+function MultiCellStage(props: {
+  error: string | null;
+  image: DecodedImage | null;
+  busy: boolean;
+  zoom: number;
+  name: string;
+}) {
+  const { error, image, busy, zoom, name } = props;
+  return (
+    <>
       <div className="canvas-wrap">
         {error ? (
           <div className="error">{error}</div>
@@ -288,11 +315,11 @@ export function MultiCellViewer() {
           <span>
             {image.width}×{image.height}px{busy ? " · decoding…" : ""}
           </span>
-          <button className="link-btn" onClick={savePng}>
+          <button className="link-btn" onClick={() => saveMultiPng(name, image)}>
             Save PNG
           </button>
         </div>
       )}
-    </div>
+    </>
   );
 }
