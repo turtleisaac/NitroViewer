@@ -118,6 +118,7 @@ interface AppState {
     tilesWidth: number,
     rebuildPalette: boolean,
     dryRun: boolean,
+    scanFrontToBack: boolean,
     bytes: Uint8Array
   ) => Promise<PngImportResult>;
   saveRom: () => Promise<void>;
@@ -616,13 +617,15 @@ export const useStore = create<AppState>((set, get) => ({
     await refreshAfterEdit(get, set, romHandle, [ref]);
   },
 
-  importPng: async (ncgr, nclr, paletteIndex, tilesWidth, rebuildPalette, dryRun, bytes) => {
+  importPng: async (ncgr, nclr, paletteIndex, tilesWidth, rebuildPalette, dryRun, scanFrontToBack, bytes) => {
     const { client, romHandle } = get();
     if (romHandle == null) throw new Error("no ROM open");
     const touched = rebuildPalette ? [ncgr, nclr] : [ncgr];
     // Snapshot the affected resources' prior bytes BEFORE the facade re-encodes them (real runs only).
     const snap = dryRun ? null : await snapshot(client, romHandle, touched, "Import PNG");
-    const res = await client.importPng(romHandle, ncgr, nclr, paletteIndex, tilesWidth, rebuildPalette, dryRun, bytes);
+    const res = await client.importPng(
+      romHandle, ncgr, nclr, paletteIndex, tilesWidth, rebuildPalette, dryRun, scanFrontToBack, bytes
+    );
     if (!dryRun) {
       if (snap) set((s) => ({ undoStack: [...s.undoStack, snap], redoStack: [] }));
       // A real import touched the NCGR (and the NCLR too, when the palette was rebuilt).

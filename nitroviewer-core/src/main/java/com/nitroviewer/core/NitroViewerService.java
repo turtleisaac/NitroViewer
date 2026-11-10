@@ -114,32 +114,32 @@ public interface NitroViewerService
     String importNarcZip(int romHandle, int container, int id, byte[] zipBytes);
 
     // --- 2D graphics decode (each returns {"width","height","png"} | {"error"}) ---
-    /** {@code scanFrontToBack} only affects scanned (bitmap) NCGRs: Pt/HG/SS=true, Diamond/Pearl=false. */
+    /** {@code scanFrontToBack} is the fallback for a scanned NCGR. A known gen 4 ciphered sprite overrides it. */
     String decodeNcgr(int romHandle,
-                      int ncgrContainer, int ncgrId, int nclrContainer, int nclrId,
-                      int tilesWidth, boolean transparent, int paletteIndex, boolean scanFrontToBack);
+            int ncgrContainer, int ncgrId, int nclrContainer, int nclrId,
+            int tilesWidth, boolean transparent, int paletteIndex, boolean scanFrontToBack);
 
     /** @return {"count":int,"colors":["#rrggbb",...]} | {"error"} */
     String decodePalette(int romHandle, int nclrContainer, int nclrId);
 
     String decodeNscr(int romHandle,
-                      int nscrContainer, int nscrId, int ncgrContainer, int ncgrId,
-                      int nclrContainer, int nclrId, boolean transparent);
+            int nscrContainer, int nscrId, int ncgrContainer, int ncgrId,
+            int nclrContainer, int nclrId, boolean transparent);
 
     /** @return {"cellCount":int} | {"error"} */
     String decodeNcerMeta(int romHandle, int ncerContainer, int ncerId);
 
     String decodeNcer(int romHandle,
-                      int ncerContainer, int ncerId, int ncgrContainer, int ncgrId,
-                      int nclrContainer, int nclrId, int cellIndex, boolean transparent);
+            int ncerContainer, int ncerId, int ncgrContainer, int ncgrId,
+            int nclrContainer, int nclrId, int cellIndex, boolean transparent);
 
     /** @return {"animations":[{"frames":int}]} | {"error"} */
     String decodeNanrMeta(int romHandle, int nanrContainer, int nanrId);
 
     String decodeNanr(int romHandle,
-                      int nanrContainer, int nanrId, int ncerContainer, int ncerId,
-                      int ncgrContainer, int ncgrId, int nclrContainer, int nclrId,
-                      int animIndex, int frameIndex, boolean transparent);
+            int nanrContainer, int nanrId, int ncerContainer, int ncerId,
+            int ncgrContainer, int ncgrId, int nclrContainer, int nclrId,
+            int animIndex, int frameIndex, boolean transparent);
 
     // --- export ---
     /** @return {"size":int,"base64":str} raw (as-stored, possibly LZ-compressed) bytes | {"error"} */
@@ -211,13 +211,13 @@ public interface NitroViewerService
      *       match-vs-rebuild prompt).</li>
      * </ul>
      * For 4bpp sprites {@code paletteIndex} selects which 16-color sub-palette to match/rebuild.
+     * {@code scanFrontToBack} is the caller's scan direction. A known ciphered sprite overrides it.
+     * A missing or unloadable game DB is reported; it is not treated as front-to-back.
      *
      * @return {"ok":true,"width","height","unmatched":int,"paletteRebuilt":bool,"dryRun":bool}
      *         | {"ok":false,"error":str}
      */
-    String importPng(int romHandle, int ncgrContainer, int ncgrId, int nclrContainer, int nclrId,
-                     int paletteIndex, int tilesWidth, boolean rebuildPalette, boolean dryRun,
-                     byte[] pngBytes);
+    String importPng(int romHandle, int ncgrContainer, int ncgrId, int nclrContainer, int nclrId, int paletteIndex, int tilesWidth, boolean rebuildPalette, boolean dryRun, boolean scanFrontToBack, byte[] pngBytes);
 
     /**
      * Replace an NCLR's colors from an image (a swatch strip, an indexed PNG's palette, or any image's
@@ -244,10 +244,9 @@ public interface NitroViewerService
      * {@code scanFrontToBack} match {@link #decodeNcgr} so the editor sees the same geometry as the
      * viewer. {@code pixels} is base64 of {@code width * height} bytes, row-major, one index per pixel.
      *
-     * @return {"width","height","bitDepth","scanned":bool,"pixels":base64} | {"error"}
+     * @return {"width","height","bitDepth","scanned":bool,"ciphered":bool,"seedAtEnd":bool,"pixels":base64} | {"error"}
      */
-    String decodeNcgrIndexed(int romHandle, int ncgrContainer, int ncgrId,
-                             int tilesWidth, boolean scanFrontToBack);
+    String decodeNcgrIndexed(int romHandle, int ncgrContainer, int ncgrId, int tilesWidth, boolean scanFrontToBack);
 
     /**
      * Overwrite an NCGR's pixel indices in place (geometry / bit-depth / tiling preserved).
@@ -256,8 +255,7 @@ public interface NitroViewerService
      *
      * @return {"ok":true,"width","height"} | {"ok":false,"error":str}
      */
-    String setNcgrPixels(int romHandle, int ncgrContainer, int ncgrId,
-                         int tilesWidth, boolean scanFrontToBack, byte[] pixels);
+    String setNcgrPixels(int romHandle, int ncgrContainer, int ncgrId, int tilesWidth, boolean scanFrontToBack, byte[] pixels);
 
     /**
      * Import a background image over an NSCR "screen", decomposing it back into its NCGR tileset and NSCR
@@ -272,8 +270,8 @@ public interface NitroViewerService
      *         | {"ok":false,"error":str}
      */
     String importScreenPng(int romHandle, int nscrContainer, int nscrId, int ncgrContainer, int ncgrId,
-                           int nclrContainer, int nclrId, boolean dedupFlips, boolean rebuildPalette,
-                           int numSubPalettes, boolean dryRun, byte[] pngBytes);
+            int nclrContainer, int nclrId, boolean dedupFlips, boolean rebuildPalette,
+            int numSubPalettes, boolean dryRun, byte[] pngBytes);
 
     /**
      * Import an image over an NCER cell (its composed sprite), decomposing it back into the NCGR tiles the
@@ -282,8 +280,8 @@ public interface NitroViewerService
      * @return {"ok":true,"unmatched":int} | {"ok":false,"error":str}
      */
     String importCellPng(int romHandle, int ncerContainer, int ncerId, int ncgrContainer, int ncgrId,
-                         int nclrContainer, int nclrId, int cellIndex, boolean rebuildPalette,
-                         boolean dryRun, byte[] pngBytes);
+            int nclrContainer, int nclrId, int cellIndex, boolean rebuildPalette,
+            boolean dryRun, byte[] pngBytes);
 
     /**
      * Import an image over the NCER cell an NANR frame references (edits the animation's artwork). Image
@@ -291,8 +289,8 @@ public interface NitroViewerService
      * @return {"ok":true,"unmatched":int,"cellIndex":int} | {"ok":false,"error":str}
      */
     String importNanrPng(int romHandle, int nanrContainer, int nanrId, int ncerContainer, int ncerId,
-                         int ncgrContainer, int ncgrId, int nclrContainer, int nclrId,
-                         int animIndex, int frameIndex, boolean rebuildPalette, boolean dryRun, byte[] pngBytes);
+            int ncgrContainer, int ncgrId, int nclrContainer, int nclrId,
+            int animIndex, int frameIndex, boolean rebuildPalette, boolean dryRun, byte[] pngBytes);
 
     // --- 3D (static models) ---
     /** @return {"hasEmbeddedTextures":bool,"models":["name",...]} | {"error"} for an NSBMD */
@@ -320,7 +318,7 @@ public interface NitroViewerService
      *         a large document.
      */
     String exportModelGltf(int romHandle, int nsbmdContainer, int nsbmdId, int modelIndex,
-                           int nsbtxContainer, int nsbtxId, int nsbcaContainer, int nsbcaId);
+            int nsbtxContainer, int nsbtxId, int nsbcaContainer, int nsbcaId);
 
     // --- 3D animation tracks with no glTF path (driven in three.js from this per-frame data) ---
     /** @return {"frameCount","materials":[{"name","diffuse":["#rrggbb"/frame],"alpha":[0..1/frame]}]} (NSBMA) */
@@ -335,7 +333,7 @@ public interface NitroViewerService
      * embedded TEX0 at (nsbmdContainer,nsbmdId).
      */
     String getTexturePatternAnim(int romHandle, int nsbtpContainer, int nsbtpId, int animIndex,
-                                 int nsbmdContainer, int nsbmdId, int nsbtxContainer, int nsbtxId);
+            int nsbmdContainer, int nsbmdId, int nsbtxContainer, int nsbtxId);
 
     /**
      * Render an SPA particle effect to a sequence of frames (Nds4j's ParticleRenderer simulates the
@@ -505,9 +503,9 @@ public interface NitroViewerService
      * @return {"width","height","png"} | {"error"}
      */
     String decodeNmcr(int romHandle,
-                      int nmcrContainer, int nmcrId, int ncerContainer, int ncerId,
-                      int ncgrContainer, int ncgrId, int nclrContainer, int nclrId,
-                      int multiCellIndex, boolean transparent);
+            int nmcrContainer, int nmcrId, int ncerContainer, int ncerId,
+            int ncgrContainer, int ncgrId, int nclrContainer, int nclrId,
+            int multiCellIndex, boolean transparent);
 
     /** @return {"animations":[{"name":str,"frames":int}]} | {"error"} */
     String decodeNmarMeta(int romHandle, int nmarContainer, int nmarId);
@@ -518,7 +516,7 @@ public interface NitroViewerService
      * @return {"width","height","png"} | {"error"}
      */
     String decodeNmar(int romHandle,
-                      int nmarContainer, int nmarId, int nmcrContainer, int nmcrId,
-                      int ncerContainer, int ncerId, int ncgrContainer, int ncgrId,
-                      int nclrContainer, int nclrId, int animIndex, int frameIndex, boolean transparent);
+            int nmarContainer, int nmarId, int nmcrContainer, int nmcrId,
+            int ncerContainer, int ncerId, int ncgrContainer, int ncgrId,
+            int nclrContainer, int nclrId, int animIndex, int frameIndex, boolean transparent);
 }

@@ -18,10 +18,13 @@ mvn -q -f "$nds4j/pom.xml" -DskipTests install
 nds4j_version="$(mvn -q -f "$nds4j/pom.xml" help:evaluate -Dexpression=project.version -DforceStdout)"
 echo "==> Nds4j version: $nds4j_version"
 
+echo "==> Testing nitroviewer-core"
+mvn -f "$here/nitroviewer-core/pom.xml" -Dnds4j.version="$nds4j_version" test
+
 echo "==> Packaging nitroviewer-core"
 mvn -q -f "$here/nitroviewer-core/pom.xml" -DskipTests -Dnds4j.version="$nds4j_version" package
 
-core_jar="$(ls "$here"/nitroviewer-core/target/nitroviewer-core-*.jar | head -1)"
+core_jar="$(ls "$here"/nitroviewer-core/target/nitroviewer-core-*.jar | grep -v original | head -1)"
 nds4j_jar="$(ls "$nds4j"/target/Nds4j-*.jar | head -1)"
 
 for dest in "$here/spike/jars" "$here/web/public/jars"; do

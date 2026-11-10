@@ -52,6 +52,7 @@ import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Base64;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
@@ -70,6 +71,8 @@ public final class CheerpjFacade implements NitroViewerService
     // back up the chain. container < 0 = a ROM file; container >= 0 = a sub-file of that parent narc-handle
     // (a NARC-in-NARC). writeResource walks this recursively, so nested NARCs edit + save correctly.
     private final Map<Integer, int[]> narcParent = new ConcurrentHashMap<>(); // narcHandle -> {container, id}
+    // ROM file id -> FNT path, per open ROM
+    private final Map<Integer, Map<Integer, String>> filePathsByRom = new ConcurrentHashMap<>();
     private final AtomicInteger romSeq = new AtomicInteger(1);
     private final AtomicInteger narcSeq = new AtomicInteger(1);
     private volatile String lastError = "";
@@ -125,7 +128,8 @@ public final class CheerpjFacade implements NitroViewerService
         }
         finally
         {
-            if (scratch != null) deleteRecursively(scratch);
+            if (scratch != null)
+                deleteRecursively(scratch);
         }
     }
 
@@ -139,13 +143,17 @@ public final class CheerpjFacade implements NitroViewerService
                     + ",\"gameCode\":" + jstr(rom.getGameCode())
                     + ",\"numFiles\":" + rom.getNumFiles() + "}";
         }
-        catch (Throwable t) { return err(t); }
+        catch (Throwable t)
+        {
+            return err(t);
+        }
     }
 
     @Override
     public void closeRom(int romHandle)
     {
         roms.remove(romHandle);
+        filePathsByRom.remove(romHandle);
     }
 
     // --- icon / title banner -----------------------------------------------------------------
@@ -156,7 +164,8 @@ public final class CheerpjFacade implements NitroViewerService
         try
         {
             IconBanner banner = rom(romHandle).getBanner();
-            if (banner == null) return "{\"present\":false}";
+            if (banner == null)
+                return "{\"present\":false}";
             StringBuilder sb = new StringBuilder("{\"present\":true");
             sb.append(",\"version\":").append(banner.getVersion());
             sb.append(",\"languageCount\":").append(banner.getLanguageCount());
@@ -165,13 +174,17 @@ public final class CheerpjFacade implements NitroViewerService
             IconBanner.Language[] langs = IconBanner.Language.values();
             for (int i = 0; i < banner.getLanguageCount(); i++)
             {
-                if (i > 0) sb.append(',');
+                if (i > 0)
+                    sb.append(',');
                 sb.append("{\"language\":").append(jstr(langs[i].name()))
                         .append(",\"text\":").append(jstr(banner.getTitle(langs[i]))).append('}');
             }
             return sb.append("]}").toString();
         }
-        catch (Throwable t) { return err(t); }
+        catch (Throwable t)
+        {
+            return err(t);
+        }
     }
 
     @Override
@@ -181,16 +194,21 @@ public final class CheerpjFacade implements NitroViewerService
         {
             NintendoDsRom rom = rom(romHandle);
             IconBanner banner = rom.getBanner();
-            if (banner == null) return "{\"ok\":false,\"error\":" + jstr("this ROM has no icon/title banner") + "}";
+            if (banner == null)
+                return "{\"ok\":false,\"error\":" + jstr("this ROM has no icon/title banner") + "}";
             BufferedImage src = ImageIO.read(new java.io.ByteArrayInputStream(pngBytes));
-            if (src == null) return "{\"ok\":false,\"error\":" + jstr("Could not decode the imported file as an image.") + "}";
+            if (src == null)
+                return "{\"ok\":false,\"error\":" + jstr("Could not decode the imported file as an image.") + "}";
             // setIcon enforces the DS banner constraints (32x32, index 0 = transparent, <=15 opaque colors)
             // and throws IllegalArgumentException with a friendly message otherwise.
             banner.setIcon(src);
             rom.setBanner(banner);
             return "{\"ok\":true}";
         }
-        catch (Throwable t) { return "{\"ok\":false,\"error\":" + jstr(describe(t)) + "}"; }
+        catch (Throwable t)
+        {
+            return "{\"ok\":false,\"error\":" + jstr(describe(t)) + "}";
+        }
     }
 
     @Override
@@ -200,7 +218,8 @@ public final class CheerpjFacade implements NitroViewerService
         {
             NintendoDsRom rom = rom(romHandle);
             IconBanner banner = rom.getBanner();
-            if (banner == null) return "{\"ok\":false,\"error\":" + jstr("this ROM has no icon/title banner") + "}";
+            if (banner == null)
+                return "{\"ok\":false,\"error\":" + jstr("this ROM has no icon/title banner") + "}";
             IconBanner.Language[] langs = IconBanner.Language.values();
             if (languageOrdinal < 0 || languageOrdinal >= banner.getLanguageCount())
                 return "{\"ok\":false,\"error\":" + jstr("no such language in this banner: " + languageOrdinal) + "}";
@@ -209,7 +228,10 @@ public final class CheerpjFacade implements NitroViewerService
             rom.setBanner(banner);
             return "{\"ok\":true}";
         }
-        catch (Throwable t) { return "{\"ok\":false,\"error\":" + jstr(describe(t)) + "}"; }
+        catch (Throwable t)
+        {
+            return "{\"ok\":false,\"error\":" + jstr(describe(t)) + "}";
+        }
     }
 
     // --- filesystem --------------------------------------------------------------------------
@@ -224,7 +246,10 @@ public final class CheerpjFacade implements NitroViewerService
             writeFolder(sb, "/", root);
             return sb.toString();
         }
-        catch (Throwable t) { return err(t); }
+        catch (Throwable t)
+        {
+            return err(t);
+        }
     }
 
     private void writeFolder(StringBuilder sb, String name, Fnt.Folder folder)
@@ -233,7 +258,8 @@ public final class CheerpjFacade implements NitroViewerService
         boolean first = true;
         for (Map.Entry<String, Fnt.Folder> e : folder.getFolders().entrySet())
         {
-            if (!first) sb.append(',');
+            if (!first)
+                sb.append(',');
             first = false;
             writeFolder(sb, e.getKey(), e.getValue());
         }
@@ -242,7 +268,8 @@ public final class CheerpjFacade implements NitroViewerService
         first = true;
         for (String fileName : folder.getFiles())
         {
-            if (!first) sb.append(',');
+            if (!first)
+                sb.append(',');
             first = false;
             sb.append("{\"name\":").append(jstr(fileName)).append(",\"id\":").append(id).append('}');
             id++;
@@ -269,7 +296,10 @@ public final class CheerpjFacade implements NitroViewerService
                     + ",\"compressed\":" + compressed
                     + ",\"size\":" + raw.length + "}";
         }
-        catch (Throwable t) { return err(t); }
+        catch (Throwable t)
+        {
+            return err(t);
+        }
     }
 
     // --- NARC --------------------------------------------------------------------------------
@@ -292,10 +322,13 @@ public final class CheerpjFacade implements NitroViewerService
             Narc narc = new Narc(data);
             int handle = narcSeq.getAndIncrement();
             narcs.put(handle, narc);
-            narcParent.put(handle, new int[]{container, id});
+            narcParent.put(handle, new int[] { container, id });
             return "{\"narcHandle\":" + handle + ",\"numFiles\":" + narc.getNumFiles() + "}";
         }
-        catch (Throwable t) { return err(t); }
+        catch (Throwable t)
+        {
+            return err(t);
+        }
     }
 
     @Override
@@ -307,7 +340,8 @@ public final class CheerpjFacade implements NitroViewerService
             StringBuilder sb = new StringBuilder("{\"files\":[");
             for (int i = 0; i < narc.getNumFiles(); i++)
             {
-                if (i > 0) sb.append(',');
+                if (i > 0)
+                    sb.append(',');
                 byte[] raw = narc.getFile(i);
                 byte[] data = maybeDecompress(raw);
                 sb.append("{\"index\":").append(i)
@@ -316,15 +350,18 @@ public final class CheerpjFacade implements NitroViewerService
             }
             return sb.append("]}").toString();
         }
-        catch (Throwable t) { return err(t); }
+        catch (Throwable t)
+        {
+            return err(t);
+        }
     }
 
     // --- 2D decode ---------------------------------------------------------------------------
 
     @Override
     public String decodeNcgr(int romHandle, int ncgrContainer, int ncgrId,
-                             int nclrContainer, int nclrId, int tilesWidth,
-                             boolean transparent, int paletteIndex, boolean scanFrontToBack)
+            int nclrContainer, int nclrId, int tilesWidth,
+            boolean transparent, int paletteIndex, boolean scanFrontToBack)
     {
         try
         {
@@ -345,7 +382,10 @@ public final class CheerpjFacade implements NitroViewerService
             BufferedImage img = transparent ? ncgr.getTransparentImage() : ncgr.getImage();
             return imageJson(img, subPalettes);
         }
-        catch (Throwable t) { return err(t); }
+        catch (Throwable t)
+        {
+            return err(t);
+        }
     }
 
     @Override
@@ -359,18 +399,22 @@ public final class CheerpjFacade implements NitroViewerService
             StringBuilder sb = new StringBuilder("{\"count\":").append(colors.length).append(",\"colors\":[");
             for (int i = 0; i < colors.length; i++)
             {
-                if (i > 0) sb.append(',');
+                if (i > 0)
+                    sb.append(',');
                 sb.append(jstr(hex(colors[i])));
             }
             return sb.append("]}").toString();
         }
-        catch (Throwable t) { return err(t); }
+        catch (Throwable t)
+        {
+            return err(t);
+        }
     }
 
     @Override
     public String decodeNscr(int romHandle, int nscrContainer, int nscrId,
-                             int ncgrContainer, int ncgrId, int nclrContainer, int nclrId,
-                             boolean transparent)
+            int ncgrContainer, int ncgrId, int nclrContainer, int nclrId,
+            boolean transparent)
     {
         try
         {
@@ -379,9 +423,12 @@ public final class CheerpjFacade implements NitroViewerService
             IndexedImage ncgr = ncgr(rom, ncgrContainer, ncgrId, 0);
             Palette pal = new Palette(resolve(rom, nclrContainer, nclrId), 0);
             return imageJson(transparent ? screen.getTransparentImage(ncgr, pal)
-                                         : screen.getImage(ncgr, pal));
+                    : screen.getImage(ncgr, pal));
         }
-        catch (Throwable t) { return err(t); }
+        catch (Throwable t)
+        {
+            return err(t);
+        }
     }
 
     @Override
@@ -392,13 +439,16 @@ public final class CheerpjFacade implements NitroViewerService
             CellBank bank = new CellBank(resolve(rom(romHandle), ncerContainer, ncerId));
             return "{\"cellCount\":" + bank.getNumCells() + "}";
         }
-        catch (Throwable t) { return err(t); }
+        catch (Throwable t)
+        {
+            return err(t);
+        }
     }
 
     @Override
     public String decodeNcer(int romHandle, int ncerContainer, int ncerId,
-                             int ncgrContainer, int ncgrId, int nclrContainer, int nclrId,
-                             int cellIndex, boolean transparent)
+            int ncgrContainer, int ncgrId, int nclrContainer, int nclrId,
+            int cellIndex, boolean transparent)
     {
         try
         {
@@ -413,9 +463,12 @@ public final class CheerpjFacade implements NitroViewerService
             CellBank bank = new CellBank(resolve(rom, ncerContainer, ncerId));
             bank.setParentImage(ncgr);
             return imageJson(transparent ? bank.getTransparentNcerImage(cellIndex)
-                                         : bank.getNcerImage(cellIndex));
+                    : bank.getNcerImage(cellIndex));
         }
-        catch (Throwable t) { return err(t); }
+        catch (Throwable t)
+        {
+            return err(t);
+        }
     }
 
     @Override
@@ -428,19 +481,23 @@ public final class CheerpjFacade implements NitroViewerService
             StringBuilder sb = new StringBuilder("{\"animations\":[");
             for (int i = 0; i < animations.length; i++)
             {
-                if (i > 0) sb.append(',');
+                if (i > 0)
+                    sb.append(',');
                 sb.append("{\"frames\":").append(animations[i].getFrames().length).append('}');
             }
             return sb.append("]}").toString();
         }
-        catch (Throwable t) { return err(t); }
+        catch (Throwable t)
+        {
+            return err(t);
+        }
     }
 
     @Override
     public String decodeNanr(int romHandle, int nanrContainer, int nanrId,
-                             int ncerContainer, int ncerId, int ncgrContainer, int ncgrId,
-                             int nclrContainer, int nclrId, int animIndex, int frameIndex,
-                             boolean transparent)
+            int ncerContainer, int ncerId, int ncgrContainer, int ncgrId,
+            int nclrContainer, int nclrId, int animIndex, int frameIndex,
+            boolean transparent)
     {
         try
         {
@@ -456,7 +513,10 @@ public final class CheerpjFacade implements NitroViewerService
             CellAnimation.Animation.Frame frame = anim.getAnimations()[animIndex].getFrames()[frameIndex];
             return imageJson(anim.getFrameImage(frame));
         }
-        catch (Throwable t) { return err(t); }
+        catch (Throwable t)
+        {
+            return err(t);
+        }
     }
 
     // --- export ------------------------------------------------------------------------------
@@ -469,7 +529,10 @@ public final class CheerpjFacade implements NitroViewerService
             byte[] raw = resolveRaw(rom(romHandle), container, id);
             return "{\"size\":" + raw.length + ",\"base64\":" + jstr(base64(raw)) + "}";
         }
-        catch (Throwable t) { return err(t); }
+        catch (Throwable t)
+        {
+            return err(t);
+        }
     }
 
     @Override
@@ -486,7 +549,10 @@ public final class CheerpjFacade implements NitroViewerService
                     + ",\"compressed\":" + (data != raw)
                     + ",\"base64\":" + jstr(base64(data)) + "}";
         }
-        catch (Throwable t) { return err(t); }
+        catch (Throwable t)
+        {
+            return err(t);
+        }
     }
 
     @Override
@@ -500,7 +566,7 @@ public final class CheerpjFacade implements NitroViewerService
                 return "{\"ok\":false,\"error\":" + jstr("No folder at path " + folderPath) + "}";
             ByteArrayOutputStream baos = new ByteArrayOutputStream();
             java.util.zip.ZipOutputStream zip = new java.util.zip.ZipOutputStream(baos);
-            int[] count = {0};
+            int[] count = { 0 };
             zipFolder(zip, rom, folder, "", count); // recurse, mirroring the directory layout
             zip.close();
             return "{\"ok\":true,\"count\":" + count[0] + ",\"base64\":" + jstr(base64(baos.toByteArray())) + "}";
@@ -517,16 +583,18 @@ public final class CheerpjFacade implements NitroViewerService
         Fnt.Folder cur = root;
         for (String seg : path.split("/"))
         {
-            if (seg.isEmpty()) continue;
+            if (seg.isEmpty())
+                continue;
             cur = cur.getFolders().get(seg);
-            if (cur == null) return null;
+            if (cur == null)
+                return null;
         }
         return cur;
     }
 
     /** Zip every file under {@code folder} (decompressed) with paths relative to it, recursing subfolders. */
     private void zipFolder(java.util.zip.ZipOutputStream zip, NintendoDsRom rom, Fnt.Folder folder,
-                           String prefix, int[] count) throws java.io.IOException
+            String prefix, int[] count) throws java.io.IOException
     {
         int id = folder.getFirstId();
         for (String fileName : folder.getFiles())
@@ -571,7 +639,8 @@ public final class CheerpjFacade implements NitroViewerService
     {
         try
         {
-            if (zipBytes == null || zipBytes.length == 0) throw new IllegalArgumentException("no zip data");
+            if (zipBytes == null || zipBytes.length == 0)
+                throw new IllegalArgumentException("no zip data");
             Narc narc = new Narc(maybeDecompress(resolveRaw(rom(romHandle), container, id)));
 
             // Collect the zip's files, ordered by the leading integer in each name (so "0000.nscr",
@@ -583,15 +652,18 @@ public final class CheerpjFacade implements NitroViewerService
             byte[] chunk = new byte[8192];
             while ((e = zis.getNextEntry()) != null)
             {
-                if (e.isDirectory()) continue;
+                if (e.isDirectory())
+                    continue;
                 ByteArrayOutputStream buf = new ByteArrayOutputStream();
                 int r;
-                while ((r = zis.read(chunk)) > 0) buf.write(chunk, 0, r);
+                while ((r = zis.read(chunk)) > 0)
+                    buf.write(chunk, 0, r);
                 String base = e.getName().substring(e.getName().lastIndexOf('/') + 1);
-                got.add(new Object[]{leadingInt(base, order), order, buf.toByteArray()});
+                got.add(new Object[] { leadingInt(base, order), order, buf.toByteArray() });
                 order++;
             }
-            if (got.isEmpty()) throw new IllegalArgumentException("the zip contained no files");
+            if (got.isEmpty())
+                throw new IllegalArgumentException("the zip contained no files");
             got.sort((a, b) -> {
                 int c = Integer.compare((Integer) a[0], (Integer) b[0]);
                 return c != 0 ? c : Integer.compare((Integer) a[1], (Integer) b[1]);
@@ -619,8 +691,10 @@ public final class CheerpjFacade implements NitroViewerService
     private static File unpackedScratchDir(int handle)
     {
         File dir = new File(System.getProperty("java.io.tmpdir", "/tmp"), "nv-unpacked-" + handle);
-        if (dir.exists()) deleteRecursively(dir);
-        if (!dir.mkdirs()) throw new IllegalStateException("could not create " + dir.getAbsolutePath());
+        if (dir.exists())
+            deleteRecursively(dir);
+        if (!dir.mkdirs())
+            throw new IllegalStateException("could not create " + dir.getAbsolutePath());
         return dir;
     }
 
@@ -638,15 +712,19 @@ public final class CheerpjFacade implements NitroViewerService
             int files = 0;
             while ((e = zis.getNextEntry()) != null)
             {
-                if (e.isDirectory()) continue;
+                if (e.isDirectory())
+                    continue;
                 String rel = safeZipPath(e.getName());
-                if (rel == null) continue;
+                if (rel == null)
+                    continue;
                 ByteArrayOutputStream buf = new ByteArrayOutputStream();
                 int r;
-                while ((r = zis.read(chunk)) > 0) buf.write(chunk, 0, r);
+                while ((r = zis.read(chunk)) > 0)
+                    buf.write(chunk, 0, r);
                 File out = new File(dest, rel.replace('/', File.separatorChar));
                 String destCanon = dest.getCanonicalPath();
-                if (!destCanon.endsWith(File.separator)) destCanon = destCanon + File.separator;
+                if (!destCanon.endsWith(File.separator))
+                    destCanon = destCanon + File.separator;
                 String outCanon = out.getCanonicalPath();
                 if (!outCanon.startsWith(destCanon))
                     throw new IOException("illegal path in zip: " + e.getName());
@@ -654,11 +732,18 @@ public final class CheerpjFacade implements NitroViewerService
                 if (parent != null && !parent.exists() && !parent.mkdirs())
                     throw new IOException("could not create " + parent.getAbsolutePath());
                 FileOutputStream fos = new FileOutputStream(out);
-                try { fos.write(buf.toByteArray()); }
-                finally { fos.close(); }
+                try
+                {
+                    fos.write(buf.toByteArray());
+                }
+                finally
+                {
+                    fos.close();
+                }
                 files++;
             }
-            if (files == 0) throw new IllegalArgumentException("the zip contained no files");
+            if (files == 0)
+                throw new IllegalArgumentException("the zip contained no files");
         }
         finally
         {
@@ -672,15 +757,19 @@ public final class CheerpjFacade implements NitroViewerService
      */
     private static String safeZipPath(String name)
     {
-        if (name == null) return null;
+        if (name == null)
+            return null;
         String n = name.replace('\\', '/');
-        while (n.startsWith("./")) n = n.substring(2);
-        if (n.startsWith("/") || n.isEmpty() || n.endsWith("/")) return null;
+        while (n.startsWith("./"))
+            n = n.substring(2);
+        if (n.startsWith("/") || n.isEmpty() || n.endsWith("/"))
+            return null;
         String[] parts = n.split("/");
         for (int i = 0; i < parts.length; i++)
         {
             String p = parts[i];
-            if (p.isEmpty() || p.equals(".") || p.equals("..")) return null;
+            if (p.isEmpty() || p.equals(".") || p.equals(".."))
+                return null;
             if (p.equals("__MACOSX") || p.equals(".DS_Store") || p.equals("Thumbs.db") || p.startsWith("._"))
                 return null;
         }
@@ -694,18 +783,23 @@ public final class CheerpjFacade implements NitroViewerService
      */
     private static File findUnpackedRoot(File dir)
     {
-        if (NintendoDsRom.looksLikeUnpackedRom(dir)) return dir;
+        if (NintendoDsRom.looksLikeUnpackedRom(dir))
+            return dir;
         File projectRom = new File(dir, "rom");
-        if (NintendoDsRom.looksLikeUnpackedRom(projectRom)) return projectRom;
+        if (NintendoDsRom.looksLikeUnpackedRom(projectRom))
+            return projectRom;
         File[] kids = dir.listFiles();
         if (kids != null)
         {
             for (int i = 0; i < kids.length; i++)
             {
-                if (!kids[i].isDirectory() || kids[i].isHidden()) continue;
-                if (NintendoDsRom.looksLikeUnpackedRom(kids[i])) return kids[i];
+                if (!kids[i].isDirectory() || kids[i].isHidden())
+                    continue;
+                if (NintendoDsRom.looksLikeUnpackedRom(kids[i]))
+                    return kids[i];
                 File nested = new File(kids[i], "rom");
-                if (NintendoDsRom.looksLikeUnpackedRom(nested)) return nested;
+                if (NintendoDsRom.looksLikeUnpackedRom(nested))
+                    return nested;
             }
         }
         throw new IllegalArgumentException(
@@ -727,11 +821,13 @@ public final class CheerpjFacade implements NitroViewerService
 
     private static void deleteRecursively(File file)
     {
-        if (file == null || !file.exists()) return;
+        if (file == null || !file.exists())
+            return;
         File[] kids = file.listFiles();
         if (kids != null)
         {
-            for (int i = 0; i < kids.length; i++) deleteRecursively(kids[i]);
+            for (int i = 0; i < kids.length; i++)
+                deleteRecursively(kids[i]);
         }
         file.delete();
     }
@@ -740,10 +836,18 @@ public final class CheerpjFacade implements NitroViewerService
     private static int leadingInt(String name, int fallback)
     {
         int i = 0;
-        while (i < name.length() && Character.isDigit(name.charAt(i))) i++;
-        if (i == 0) return Integer.MAX_VALUE - 1_000_000 + Math.min(fallback, 999_999); // non-numeric names sort last
-        try { return Integer.parseInt(name.substring(0, i)); }
-        catch (NumberFormatException ex) { return fallback; }
+        while (i < name.length() && Character.isDigit(name.charAt(i)))
+            i++;
+        if (i == 0)
+            return Integer.MAX_VALUE - 1_000_000 + Math.min(fallback, 999_999); // non-numeric names sort last
+        try
+        {
+            return Integer.parseInt(name.substring(0, i));
+        }
+        catch (NumberFormatException ex)
+        {
+            return fallback;
+        }
     }
 
     /** A file extension for a Nitro format name (lower-cased), or "bin" for unknown/raw. */
@@ -759,7 +863,8 @@ public final class CheerpjFacade implements NitroViewerService
     {
         try
         {
-            if (bytes == null) throw new IllegalArgumentException("no bytes");
+            if (bytes == null)
+                throw new IllegalArgumentException("no bytes");
             rom(romHandle); // validate the handle before touching anything
             writeResource(romHandle, container, id, bytes);
             return "{\"ok\":true,\"size\":" + bytes.length + "}";
@@ -813,20 +918,30 @@ public final class CheerpjFacade implements NitroViewerService
         if (existing == null || newBytes == null || !NitroLz.isCompressed(existing))
             return newBytes;
         int type;
-        try { NitroLz.decompress(existing); type = existing[0] & 0xFF; } // real compressed file (not a false positive)
-        catch (Throwable t) { return newBytes; }                          // isCompressed lied — leave as-is
+        try
+        {
+            NitroLz.decompress(existing);
+            type = existing[0] & 0xFF;
+        } // real compressed file (not a false positive)
+        catch (Throwable t)
+        {
+            return newBytes;
+        } // isCompressed lied — leave as-is
         if (NitroLz.isCompressed(newBytes))
         {
-            try { NitroLz.decompress(newBytes); return newBytes; }        // already compressed — don't double-compress
-            catch (Throwable t) { /* false positive on the new bytes; compress below */ }
+            try
+            {
+                NitroLz.decompress(newBytes);
+                return newBytes;
+            } // already compressed — don't double-compress
+            catch (Throwable t)
+            { /* false positive on the new bytes; compress below */ }
         }
         return type == 0x11 ? NitroLz.compressLz11(newBytes) : NitroLz.compress(newBytes);
     }
 
     @Override
-    public String importPng(int romHandle, int ncgrContainer, int ncgrId, int nclrContainer, int nclrId,
-                            int paletteIndex, int tilesWidth, boolean rebuildPalette, boolean dryRun,
-                            byte[] pngBytes)
+    public String importPng(int romHandle, int ncgrContainer, int ncgrId, int nclrContainer, int nclrId, int paletteIndex, int tilesWidth, boolean rebuildPalette, boolean dryRun, boolean scanFrontToBack, byte[] pngBytes)
     {
         try
         {
@@ -834,7 +949,11 @@ public final class CheerpjFacade implements NitroViewerService
             // Load the EXISTING NCGR so its geometry (dimensions, bit depth, tiling) is preserved — the
             // imported pixels just overwrite it, then it re-encodes cleanly. (This is why we don't build
             // an IndexedImage from scratch: the header fields would be lost.)
-            IndexedImage ncgr = ncgr(rom, ncgrContainer, ncgrId, tilesWidth);
+            boolean front = effectiveFrontToBack(rom, ncgrContainer, ncgrId, scanFrontToBack);
+            IndexedImage ncgr = ncgr(rom, ncgrContainer, ncgrId, tilesWidth, scanFrontToBack);
+            String blocked = scanned8bppSaveError(ncgr);
+            if (blocked != null)
+                return "{\"ok\":false,\"error\":" + jstr(blocked) + "}";
             int bitDepth = ncgr.getBitDepth();
 
             BufferedImage src = ImageIO.read(new java.io.ByteArrayInputStream(pngBytes));
@@ -855,6 +974,7 @@ public final class CheerpjFacade implements NitroViewerService
                 Palette rebuilt = ncgr.applyImageQuantized(src, maxColors);
                 if (!dryRun)
                 {
+                    keepCipherSeed(ncgr, front);
                     writeResource(romHandle, ncgrContainer, ncgrId, ncgr.save());
                     // Splice the rebuilt colors into the NCLR: for 4bpp only the selected 16-color
                     // sub-palette block, for 8bpp the whole 256. Other sub-palettes are left intact.
@@ -886,7 +1006,10 @@ public final class CheerpjFacade implements NitroViewerService
                 ncgr.setPalette(use);
                 unmatched = ncgr.applyImageMatched(src);
                 if (!dryRun)
+                {
+                    keepCipherSeed(ncgr, front);
                     writeResource(romHandle, ncgrContainer, ncgrId, ncgr.save());
+                }
             }
 
             return "{\"ok\":true,\"width\":" + ncgr.getWidth() + ",\"height\":" + ncgr.getHeight()
@@ -904,7 +1027,8 @@ public final class CheerpjFacade implements NitroViewerService
     {
         try
         {
-            if (imageBytes == null) throw new IllegalArgumentException("no bytes");
+            if (imageBytes == null)
+                throw new IllegalArgumentException("no bytes");
             NintendoDsRom rom = rom(romHandle);
             Palette existing = new Palette(resolve(rom, nclrContainer, nclrId), 0);
             int count = existing.getColors().length;
@@ -916,20 +1040,26 @@ public final class CheerpjFacade implements NitroViewerService
             // Collect the image's colors in first-seen raster order (dedup on RGB). An indexed PNG's
             // IndexColorModel is honoured naturally: distinct entries appear as distinct pixel colors.
             java.util.LinkedHashSet<Integer> uniq = new java.util.LinkedHashSet<>();
-            outer:
-            for (int y = 0; y < src.getHeight(); y++)
+            outer: for (int y = 0; y < src.getHeight(); y++)
                 for (int x = 0; x < src.getWidth(); x++)
                 {
                     uniq.add(src.getRGB(x, y) & 0xFFFFFF);
-                    if (uniq.size() >= count) break outer;
+                    if (uniq.size() >= count)
+                        break outer;
                 }
 
             // Preserve the palette's length so the paired NCGR's indices stay valid: fill from the image,
             // pad the tail with black, truncate the excess.
             Color[] cols = new Color[count];
             int i = 0;
-            for (int rgb : uniq) { if (i >= count) break; cols[i++] = new Color(rgb); }
-            while (i < count) cols[i++] = Color.BLACK;
+            for (int rgb : uniq)
+            {
+                if (i >= count)
+                    break;
+                cols[i++] = new Color(rgb);
+            }
+            while (i < count)
+                cols[i++] = Color.BLACK;
 
             writeResource(romHandle, nclrContainer, nclrId, new Palette(cols).save());
             return "{\"ok\":true,\"colors\":" + count + ",\"unique\":" + uniq.size() + "}";
@@ -945,7 +1075,8 @@ public final class CheerpjFacade implements NitroViewerService
     {
         try
         {
-            if (rgbBytes == null) throw new IllegalArgumentException("no colors");
+            if (rgbBytes == null)
+                throw new IllegalArgumentException("no colors");
             NintendoDsRom rom = rom(romHandle);
             Palette pal = new Palette(resolve(rom, nclrContainer, nclrId), 0);
             Color[] existing = pal.getColors();
@@ -979,34 +1110,54 @@ public final class CheerpjFacade implements NitroViewerService
     }
 
     @Override
-    public String decodeNcgrIndexed(int romHandle, int ncgrContainer, int ncgrId,
-                                    int tilesWidth, boolean scanFrontToBack)
+    public String decodeNcgrIndexed(int romHandle, int ncgrContainer, int ncgrId, int tilesWidth, boolean scanFrontToBack)
     {
         try
         {
-            IndexedImage ncgr = ncgr(rom(romHandle), ncgrContainer, ncgrId, tilesWidth, scanFrontToBack);
+            NintendoDsRom rom = rom(romHandle);
+            boolean front = effectiveFrontToBack(rom, ncgrContainer, ncgrId, scanFrontToBack);
+            IndexedImage ncgr = ncgr(rom, ncgrContainer, ncgrId, tilesWidth, scanFrontToBack);
+
             int w = ncgr.getWidth();
             int h = ncgr.getHeight();
             byte[] pix = new byte[w * h];
             for (int y = 0; y < h; y++)
+            {
                 for (int x = 0; x < w; x++)
+                {
                     pix[y * w + x] = (byte) ncgr.getPixelValue(x, y);
+                }
+            }
+
+            boolean ciphered = hasCipherKey(ncgr);
+            boolean seedAtEnd = ciphered && !front; // key word is the last pixels
+
             return "{\"width\":" + w + ",\"height\":" + h
                     + ",\"bitDepth\":" + ncgr.getBitDepth()
                     + ",\"scanned\":" + ncgr.isScanned()
+                    + ",\"ciphered\":" + ciphered
+                    + ",\"seedAtEnd\":" + seedAtEnd
                     + ",\"pixels\":" + jstr(base64(pix)) + "}";
         }
-        catch (Throwable t) { return err(t); }
+        catch (Throwable t)
+        {
+            return err(t);
+        }
     }
 
     @Override
-    public String setNcgrPixels(int romHandle, int ncgrContainer, int ncgrId,
-                                int tilesWidth, boolean scanFrontToBack, byte[] pixels)
+    public String setNcgrPixels(int romHandle, int ncgrContainer, int ncgrId, int tilesWidth, boolean scanFrontToBack, byte[] pixels)
     {
         try
         {
-            if (pixels == null) throw new IllegalArgumentException("no pixels");
-            IndexedImage ncgr = ncgr(rom(romHandle), ncgrContainer, ncgrId, tilesWidth, scanFrontToBack);
+            if (pixels == null)
+                throw new IllegalArgumentException("no pixels");
+            NintendoDsRom rom = rom(romHandle);
+            boolean front = effectiveFrontToBack(rom, ncgrContainer, ncgrId, scanFrontToBack);
+            IndexedImage ncgr = ncgr(rom, ncgrContainer, ncgrId, tilesWidth, scanFrontToBack);
+            String blocked = scanned8bppSaveError(ncgr);
+            if (blocked != null)
+                return "{\"ok\":false,\"error\":" + jstr(blocked) + "}";
             int w = ncgr.getWidth();
             int h = ncgr.getHeight();
             if (pixels.length != w * h)
@@ -1014,21 +1165,17 @@ public final class CheerpjFacade implements NitroViewerService
                         "Expected " + (w * h) + " pixel bytes (" + w + "x" + h + "), got " + pixels.length + ".");
             int max = (1 << ncgr.getBitDepth()) - 1;
             for (int y = 0; y < h; y++)
+            {
                 for (int x = 0; x < w; x++)
                 {
                     int idx = pixels[y * w + x] & 0xFF;
-                    if (idx > max) idx = max;
+                    if (idx > max)
+                        idx = max;
                     ncgr.setPixelValue(x, y, idx);
                 }
-            // Scanned (bitmap) NCGRs store the XOR key in the first decrypted u16, which
-            // therefore always reads back as 0. If we write a non-zero there, the next load
-            // treats that word as a new key and the whole sprite garbles. Keep those pixels 0.
-            if (ncgr.isScanned() && w > 0 && h > 0)
-            {
-                int zero = ncgr.getBitDepth() == 4 ? 4 : 2;
-                for (int x = 0; x < zero && x < w; x++)
-                    ncgr.setPixelValue(x, 0, 0);
             }
+
+            keepCipherSeed(ncgr, front); // key word has to stay 0
             writeResource(romHandle, ncgrContainer, ncgrId, ncgr.save());
             return "{\"ok\":true,\"width\":" + w + ",\"height\":" + h + "}";
         }
@@ -1043,13 +1190,15 @@ public final class CheerpjFacade implements NitroViewerService
     {
         try
         {
-            if (objBytes == null || objBytes.length == 0) throw new IllegalArgumentException("no OBJ data");
+            if (objBytes == null || objBytes.length == 0)
+                throw new IllegalArgumentException("no OBJ data");
             rom(romHandle); // validate handle
             String objText = new String(objBytes, StandardCharsets.UTF_8);
             io.github.turtleisaac.nds4j.g3d.ObjImporter obj = io.github.turtleisaac.nds4j.g3d.ObjImporter.parse(objText);
             float[] pos = obj.getPositions();
             int[] tris = obj.getTriangles();
-            if (tris.length < 3) throw new IllegalArgumentException("OBJ has no triangles.");
+            if (tris.length < 3)
+                throw new IllegalArgumentException("OBJ has no triangles.");
 
             byte[] nsbmd = io.github.turtleisaac.nds4j.g3d.ModelBuilder.buildUntextured("model", pos, tris);
             writeResource(romHandle, container, id, nsbmd);
@@ -1068,9 +1217,11 @@ public final class CheerpjFacade implements NitroViewerService
         try
         {
             // One byte[] (the proven CheerpJ shape): [u32 LE objLen][obj UTF-8][texture image bytes].
-            if (payload == null || payload.length < 4) throw new IllegalArgumentException("no payload");
+            if (payload == null || payload.length < 4)
+                throw new IllegalArgumentException("no payload");
             int objLen = (payload[0] & 0xFF) | (payload[1] & 0xFF) << 8 | (payload[2] & 0xFF) << 16 | (payload[3] & 0xFF) << 24;
-            if (objLen < 0 || 4 + objLen > payload.length) throw new IllegalArgumentException("bad payload framing");
+            if (objLen < 0 || 4 + objLen > payload.length)
+                throw new IllegalArgumentException("bad payload framing");
             rom(romHandle);
 
             String objText = new String(payload, 4, objLen, StandardCharsets.UTF_8);
@@ -1078,11 +1229,14 @@ public final class CheerpjFacade implements NitroViewerService
             io.github.turtleisaac.nds4j.g3d.ObjImporter obj = io.github.turtleisaac.nds4j.g3d.ObjImporter.parse(objText);
             float[] pos = obj.getPositions();
             int[] tris = obj.getTriangles();
-            if (tris.length < 3) throw new IllegalArgumentException("OBJ has no triangles.");
-            if (!obj.hasTexcoords()) throw new IllegalArgumentException("The OBJ has no texture coordinates (vt) to map the texture.");
+            if (tris.length < 3)
+                throw new IllegalArgumentException("OBJ has no triangles.");
+            if (!obj.hasTexcoords())
+                throw new IllegalArgumentException("The OBJ has no texture coordinates (vt) to map the texture.");
 
             BufferedImage tex = ImageIO.read(new java.io.ByteArrayInputStream(texBytes));
-            if (tex == null) throw new IllegalArgumentException("Could not decode the texture image.");
+            if (tex == null)
+                throw new IllegalArgumentException("Could not decode the texture image.");
             float[] uv = obj.texcoordsInTexels(tex.getWidth(), tex.getHeight());
             byte[] nsbmd = io.github.turtleisaac.nds4j.g3d.ModelBuilder.buildTextured("model", pos, uv, tris, tex);
             writeResource(romHandle, container, id, nsbmd);
@@ -1097,8 +1251,8 @@ public final class CheerpjFacade implements NitroViewerService
 
     @Override
     public String importCellPng(int romHandle, int ncerContainer, int ncerId, int ncgrContainer, int ncgrId,
-                                int nclrContainer, int nclrId, int cellIndex, boolean rebuildPalette,
-                                boolean dryRun, byte[] pngBytes)
+            int nclrContainer, int nclrId, int cellIndex, boolean rebuildPalette,
+            boolean dryRun, byte[] pngBytes)
     {
         try
         {
@@ -1111,7 +1265,8 @@ public final class CheerpjFacade implements NitroViewerService
             CellBank bank = new CellBank(resolve(rom, ncerContainer, ncerId));
 
             BufferedImage src = ImageIO.read(new java.io.ByteArrayInputStream(pngBytes));
-            if (src == null) throw new IllegalArgumentException("Could not decode the imported file as an image.");
+            if (src == null)
+                throw new IllegalArgumentException("Could not decode the imported file as an image.");
 
             CellBank.ImportResult res = rebuildPalette
                     ? bank.applyImageRebuildingPalette(cellIndex, src, ncgr, pal)
@@ -1119,7 +1274,8 @@ public final class CheerpjFacade implements NitroViewerService
             if (!dryRun)
             {
                 writeResource(romHandle, ncgrContainer, ncgrId, ncgr.save());
-                if (rebuildPalette) writeResource(romHandle, nclrContainer, nclrId, res.palette.save());
+                if (rebuildPalette)
+                    writeResource(romHandle, nclrContainer, nclrId, res.palette.save());
             }
             return "{\"ok\":true,\"unmatched\":" + res.unmatchedPixels
                     + ",\"paletteRebuilt\":" + rebuildPalette + ",\"dryRun\":" + dryRun + "}";
@@ -1132,8 +1288,8 @@ public final class CheerpjFacade implements NitroViewerService
 
     @Override
     public String importNanrPng(int romHandle, int nanrContainer, int nanrId, int ncerContainer, int ncerId,
-                                int ncgrContainer, int ncgrId, int nclrContainer, int nclrId,
-                                int animIndex, int frameIndex, boolean rebuildPalette, boolean dryRun, byte[] pngBytes)
+            int ncgrContainer, int ncgrId, int nclrContainer, int nclrId,
+            int animIndex, int frameIndex, boolean rebuildPalette, boolean dryRun, byte[] pngBytes)
     {
         try
         {
@@ -1152,7 +1308,8 @@ public final class CheerpjFacade implements NitroViewerService
             int cellIndex = anim.getAnimations()[animIndex].getFrames()[frameIndex].getCellIndex();
 
             BufferedImage src = ImageIO.read(new java.io.ByteArrayInputStream(pngBytes));
-            if (src == null) throw new IllegalArgumentException("Could not decode the imported file as an image.");
+            if (src == null)
+                throw new IllegalArgumentException("Could not decode the imported file as an image.");
 
             CellBank.ImportResult res = rebuildPalette
                     ? bank.applyImageRebuildingPalette(cellIndex, src, ncgr, pal)
@@ -1160,7 +1317,8 @@ public final class CheerpjFacade implements NitroViewerService
             if (!dryRun)
             {
                 writeResource(romHandle, ncgrContainer, ncgrId, ncgr.save());
-                if (rebuildPalette) writeResource(romHandle, nclrContainer, nclrId, res.palette.save());
+                if (rebuildPalette)
+                    writeResource(romHandle, nclrContainer, nclrId, res.palette.save());
             }
             return "{\"ok\":true,\"unmatched\":" + res.unmatchedPixels + ",\"cellIndex\":" + cellIndex
                     + ",\"paletteRebuilt\":" + rebuildPalette + ",\"dryRun\":" + dryRun + "}";
@@ -1173,8 +1331,8 @@ public final class CheerpjFacade implements NitroViewerService
 
     @Override
     public String importScreenPng(int romHandle, int nscrContainer, int nscrId, int ncgrContainer, int ncgrId,
-                                  int nclrContainer, int nclrId, boolean dedupFlips, boolean rebuildPalette,
-                                  int numSubPalettes, boolean dryRun, byte[] pngBytes)
+            int nclrContainer, int nclrId, boolean dedupFlips, boolean rebuildPalette,
+            int numSubPalettes, boolean dryRun, byte[] pngBytes)
     {
         try
         {
@@ -1260,12 +1418,16 @@ public final class CheerpjFacade implements NitroViewerService
                     .append(ms.hasEmbeddedTextures()).append(",\"models\":[");
             for (int i = 0; i < models.size(); i++)
             {
-                if (i > 0) sb.append(',');
+                if (i > 0)
+                    sb.append(',');
                 sb.append(jstr(models.get(i).getName()));
             }
             return sb.append("]}").toString();
         }
-        catch (Throwable t) { return err(t); }
+        catch (Throwable t)
+        {
+            return err(t);
+        }
     }
 
     @Override
@@ -1278,18 +1440,22 @@ public final class CheerpjFacade implements NitroViewerService
             StringBuilder sb = new StringBuilder("{\"animations\":[");
             for (int i = 0; i < anims.size(); i++)
             {
-                if (i > 0) sb.append(',');
+                if (i > 0)
+                    sb.append(',');
                 sb.append("{\"name\":").append(jstr(anims.get(i).getName()))
                         .append(",\"frameCount\":").append(anims.get(i).getFrameCount()).append('}');
             }
             return sb.append("]}").toString();
         }
-        catch (Throwable t) { return err(t); }
+        catch (Throwable t)
+        {
+            return err(t);
+        }
     }
 
     @Override
     public String exportModelGltf(int romHandle, int nsbmdContainer, int nsbmdId, int modelIndex,
-                                  int nsbtxContainer, int nsbtxId, int nsbcaContainer, int nsbcaId)
+            int nsbtxContainer, int nsbtxId, int nsbcaContainer, int nsbcaId)
     {
         try
         {
@@ -1333,9 +1499,16 @@ public final class CheerpjFacade implements NitroViewerService
             for (TextureSet.Texture tex : ts.getTextures())
             {
                 String png;
-                try { png = pngDataUrl(ts.getImage(tex)); }
-                catch (Throwable e) { continue; } // skip textures that fail to decode
-                if (!first) sb.append(',');
+                try
+                {
+                    png = pngDataUrl(ts.getImage(tex));
+                }
+                catch (Throwable e)
+                {
+                    continue;
+                } // skip textures that fail to decode
+                if (!first)
+                    sb.append(',');
                 first = false;
                 sb.append("{\"name\":").append(jstr(tex.getName()))
                         .append(",\"width\":").append(tex.getWidth())
@@ -1345,7 +1518,10 @@ public final class CheerpjFacade implements NitroViewerService
             }
             return sb.append("]}").toString();
         }
-        catch (Throwable t) { return err(t); }
+        catch (Throwable t)
+        {
+            return err(t);
+        }
     }
 
     @Override
@@ -1358,14 +1534,18 @@ public final class CheerpjFacade implements NitroViewerService
             StringBuilder sb = new StringBuilder("{\"nodeCount\":").append(m.getNodeCount()).append(",\"meshes\":[");
             for (int i = 0; i < meshes.size(); i++)
             {
-                if (i > 0) sb.append(',');
+                if (i > 0)
+                    sb.append(',');
                 Model.Mesh mesh = meshes.get(i);
                 sb.append("{\"material\":").append(jstr(mesh.getMaterial().getName()))
                         .append(",\"node\":").append(mesh.getNodeIndex()).append('}');
             }
             return sb.append("]}").toString();
         }
-        catch (Throwable t) { return err(t); }
+        catch (Throwable t)
+        {
+            return err(t);
+        }
     }
 
     // --- 3D animation tracks with no glTF path (driven in three.js from this data) ------------
@@ -1382,25 +1562,31 @@ public final class CheerpjFacade implements NitroViewerService
             boolean first = true;
             for (MaterialColorAnimationSet.MaterialColor mc : anim.getMaterials())
             {
-                if (!first) sb.append(',');
+                if (!first)
+                    sb.append(',');
                 first = false;
                 sb.append("{\"name\":").append(jstr(mc.getName())).append(",\"diffuse\":[");
                 for (int f = 0; f < fc; f++)
                 {
-                    if (f > 0) sb.append(',');
+                    if (f > 0)
+                        sb.append(',');
                     sb.append(jstr(String.format("#%06x", mc.getDiffuse().rgbAt(f) & 0xFFFFFF)));
                 }
                 sb.append("],\"alpha\":[");
                 for (int f = 0; f < fc; f++)
                 {
-                    if (f > 0) sb.append(',');
+                    if (f > 0)
+                        sb.append(',');
                     sb.append(String.format("%.4f", mc.getAlpha().at(f) / 31.0));
                 }
                 sb.append("]}");
             }
             return sb.append("]}").toString();
         }
-        catch (Throwable t) { return err(t); }
+        catch (Throwable t)
+        {
+            return err(t);
+        }
     }
 
     @Override
@@ -1416,23 +1602,28 @@ public final class CheerpjFacade implements NitroViewerService
                     .append(",\"nodeCount\":").append(nc).append(",\"visible\":[");
             for (int n = 0; n < nc; n++)
             {
-                if (n > 0) sb.append(',');
+                if (n > 0)
+                    sb.append(',');
                 sb.append('[');
                 for (int f = 0; f < fc; f++)
                 {
-                    if (f > 0) sb.append(',');
+                    if (f > 0)
+                        sb.append(',');
                     sb.append(anim.isVisible(n, f) ? '1' : '0');
                 }
                 sb.append(']');
             }
             return sb.append("]}").toString();
         }
-        catch (Throwable t) { return err(t); }
+        catch (Throwable t)
+        {
+            return err(t);
+        }
     }
 
     @Override
     public String getTexturePatternAnim(int romHandle, int nsbtpContainer, int nsbtpId, int animIndex,
-                                        int nsbmdContainer, int nsbmdId, int nsbtxContainer, int nsbtxId)
+            int nsbmdContainer, int nsbmdId, int nsbtxContainer, int nsbtxId)
     {
         try
         {
@@ -1449,19 +1640,24 @@ public final class CheerpjFacade implements NitroViewerService
                 else if (nsbmdId >= 0)
                     tex = new ModelSet(resolve(rom, nsbmdContainer, nsbmdId)).getEmbeddedTextures();
             }
-            catch (Throwable e) { tex = null; } // no textures available — still return frame patterns
+            catch (Throwable e)
+            {
+                tex = null;
+            } // no textures available — still return frame patterns
 
             java.util.LinkedHashSet<String> texNames = new java.util.LinkedHashSet<>();
             StringBuilder mats = new StringBuilder("[");
             boolean first = true;
             for (TexturePatternAnimationSet.MaterialPattern mp : anim.getMaterials())
             {
-                if (!first) mats.append(',');
+                if (!first)
+                    mats.append(',');
                 first = false;
                 mats.append("{\"name\":").append(jstr(mp.getName())).append(",\"frames\":[");
                 for (int f = 0; f < fc; f++)
                 {
-                    if (f > 0) mats.append(',');
+                    if (f > 0)
+                        mats.append(',');
                     String tn = mp.at(f).getTexture();
                     texNames.add(tn);
                     mats.append(jstr(tn));
@@ -1475,9 +1671,16 @@ public final class CheerpjFacade implements NitroViewerService
             for (String tn : texNames)
             {
                 String dataUrl;
-                try { dataUrl = pngDataUrl(tex.getImage(tn)); }
-                catch (Throwable e) { continue; }
-                if (!tf) texs.append(',');
+                try
+                {
+                    dataUrl = pngDataUrl(tex.getImage(tn));
+                }
+                catch (Throwable e)
+                {
+                    continue;
+                }
+                if (!tf)
+                    texs.append(',');
                 tf = false;
                 texs.append(jstr(tn)).append(':').append(jstr(dataUrl));
             }
@@ -1485,7 +1688,10 @@ public final class CheerpjFacade implements NitroViewerService
 
             return "{\"frameCount\":" + fc + ",\"materials\":" + mats + ",\"textures\":" + texs + "}";
         }
-        catch (Throwable t) { return err(t); }
+        catch (Throwable t)
+        {
+            return err(t);
+        }
     }
 
     @Override
@@ -1499,12 +1705,16 @@ public final class CheerpjFacade implements NitroViewerService
                     .append(",\"frames\":[");
             for (int i = 0; i < frames.size(); i++)
             {
-                if (i > 0) sb.append(',');
+                if (i > 0)
+                    sb.append(',');
                 sb.append(jstr(pngDataUrl(frames.get(i))));
             }
             return sb.append("]}").toString();
         }
-        catch (Throwable t) { return err(t); }
+        catch (Throwable t)
+        {
+            return err(t);
+        }
     }
 
     // --- sound -------------------------------------------------------------------------------
@@ -1527,23 +1737,29 @@ public final class CheerpjFacade implements NitroViewerService
             writeSdatSection(sb, sdat, SoundArchive.RecordType.SEQUENCE_ARCHIVE, "sequenceArchives", false);
             return sb.append('}').toString();
         }
-        catch (Throwable t) { return err(t); }
+        catch (Throwable t)
+        {
+            return err(t);
+        }
     }
 
     private static void writeSdatSection(StringBuilder sb, SoundArchive sdat,
-                                         SoundArchive.RecordType type, String key, boolean withBank)
+            SoundArchive.RecordType type, String key, boolean withBank)
     {
         sb.append('"').append(key).append("\":[");
         boolean first = true;
         int n = sdat.getRecordCount(type);
         for (int i = 0; i < n; i++)
         {
-            if (sdat.getInfoRecord(type, i) == null) continue;
-            if (!first) sb.append(',');
+            if (sdat.getInfoRecord(type, i) == null)
+                continue;
+            if (!first)
+                sb.append(',');
             first = false;
             sb.append("{\"index\":").append(i)
                     .append(",\"name\":").append(jstr(sdat.getName(type, i)));
-            if (withBank) sb.append(",\"bankId\":").append(sdat.getSequenceBankId(i));
+            if (withBank)
+                sb.append(",\"bankId\":").append(sdat.getSequenceBankId(i));
             sb.append('}');
         }
         sb.append(']');
@@ -1557,8 +1773,10 @@ public final class CheerpjFacade implements NitroViewerService
         int n = sdat.getRecordCount(type);
         for (int i = 0; i < n; i++)
         {
-            if (sdat.getInfoRecord(type, i) == null) continue;
-            if (!first) sb.append(',');
+            if (sdat.getInfoRecord(type, i) == null)
+                continue;
+            if (!first)
+                sb.append(',');
             first = false;
             int waveCount = 0;
             byte[] f = sdat.getFileFor(type, i);
@@ -1585,7 +1803,8 @@ public final class CheerpjFacade implements NitroViewerService
             {
                 SoundArchive sdat = SoundArchive.fromBytes(data);
                 byte[] sseq = sdat.getFileFor(SoundArchive.RecordType.SEQUENCE, seqIndex);
-                if (sseq == null) throw new IllegalArgumentException("no sequence " + seqIndex);
+                if (sseq == null)
+                    throw new IllegalArgumentException("no sequence " + seqIndex);
                 seq = Sequence.fromBytes(sseq);
                 name = sdat.getName(SoundArchive.RecordType.SEQUENCE, seqIndex);
                 bankId = sdat.getSequenceBankId(seqIndex);
@@ -1606,7 +1825,8 @@ public final class CheerpjFacade implements NitroViewerService
                     .append(",\"notes\":[");
             for (int i = 0; i < r.notes.size(); i++)
             {
-                if (i > 0) sb.append(',');
+                if (i > 0)
+                    sb.append(',');
                 SequenceNotes.Note n = r.notes.get(i);
                 sb.append("{\"track\":").append(n.track)
                         .append(",\"tick\":").append(n.tick)
@@ -1617,7 +1837,10 @@ public final class CheerpjFacade implements NitroViewerService
             }
             return sb.append("]}").toString();
         }
-        catch (Throwable t) { return err(t); }
+        catch (Throwable t)
+        {
+            return err(t);
+        }
     }
 
     @Override
@@ -1629,13 +1852,16 @@ public final class CheerpjFacade implements NitroViewerService
             if (!magic(data).equals("SDAT"))
                 throw new IllegalArgumentException("sequence playback needs an SDAT (bank + samples)");
             SequencePlayer player = SequencePlayer.forSequence(SoundArchive.fromBytes(data), seqIndex);
-            if (player == null) throw new IllegalArgumentException("sequence " + seqIndex + " has no bank");
+            if (player == null)
+                throw new IllegalArgumentException("sequence " + seqIndex + " has no bank");
             for (int t = 0; t < 16; t++)
                 player.trackEnabled[t] = ((trackMuteMask >> t) & 1) == 0;
             player.stopAtLoop = true; // full playthrough up to the loop point, not a time slice
             int cap = maxSeconds <= 0 ? 600 : maxSeconds;
-            if (cap < 1) cap = 1;
-            if (cap > 600) cap = 600; // safety: a looping sequence that never jumps still has to stop
+            if (cap < 1)
+                cap = 1;
+            if (cap > 600)
+                cap = 600; // safety: a looping sequence that never jumps still has to stop
             int rate = 22050;
             byte[] wav = player.toWav(rate, cap);
             // seconds ≈ frames / rate; stereo 16-bit WAV data size is wav.length - 44
@@ -1648,7 +1874,10 @@ public final class CheerpjFacade implements NitroViewerService
                     + ",\"loopEndSec\":" + String.format(java.util.Locale.US, "%.4f", loopEnd)
                     + ",\"base64\":" + jstr(base64(wav)) + "}";
         }
-        catch (Throwable t) { return err(t); }
+        catch (Throwable t)
+        {
+            return err(t);
+        }
     }
 
     @Override
@@ -1678,18 +1907,21 @@ public final class CheerpjFacade implements NitroViewerService
             int instCount = bank.getInstrumentCount();
             for (int p = 0; p < instCount; p++)
             {
-                if (p > 0) sb.append(',');
+                if (p > 0)
+                    sb.append(',');
                 InstrumentBank.Instrument inst = bank.getInstrument(p);
                 sb.append("{\"type\":").append(inst.type)
                         .append(",\"lowNote\":").append(inst.lowNote)
                         .append(",\"splitPoints\":");
-                if (inst.splitPoints == null) sb.append("null");
+                if (inst.splitPoints == null)
+                    sb.append("null");
                 else
                 {
                     sb.append('[');
                     for (int i = 0; i < inst.splitPoints.length; i++)
                     {
-                        if (i > 0) sb.append(',');
+                        if (i > 0)
+                            sb.append(',');
                         sb.append(inst.splitPoints[i]);
                     }
                     sb.append(']');
@@ -1697,7 +1929,8 @@ public final class CheerpjFacade implements NitroViewerService
                 sb.append(",\"regions\":[");
                 for (int r = 0; r < inst.regions.size(); r++)
                 {
-                    if (r > 0) sb.append(',');
+                    if (r > 0)
+                        sb.append(',');
                     InstrumentBank.NoteRegion reg = inst.regions.get(r);
                     sb.append("{\"recordType\":").append(reg.recordType)
                             .append(",\"waveIndex\":").append(reg.waveIndex)
@@ -1714,19 +1947,26 @@ public final class CheerpjFacade implements NitroViewerService
             sb.append("],\"waveArchives\":[");
             for (int a = 0; a < 4; a++)
             {
-                if (a > 0) sb.append(',');
+                if (a > 0)
+                    sb.append(',');
                 int slot = a < slots.length ? slots[a] : 0xFFFF;
                 WaveArchive arc = null;
                 if (slot != 0xFFFF)
                 {
                     byte[] wf = sdat.getFileFor(SoundArchive.RecordType.WAVE_ARCHIVE, slot);
-                    if (wf != null) arc = WaveArchive.fromBytes(wf);
+                    if (wf != null)
+                        arc = WaveArchive.fromBytes(wf);
                 }
-                if (arc == null) { sb.append("null"); continue; }
+                if (arc == null)
+                {
+                    sb.append("null");
+                    continue;
+                }
                 sb.append("{\"waves\":[");
                 for (int w = 0; w < arc.getWaveCount(); w++)
                 {
-                    if (w > 0) sb.append(',');
+                    if (w > 0)
+                        sb.append(',');
                     Wave wave = arc.getWave(w);
                     short[] pcm = wave.decode();
                     sb.append("{\"sampleRate\":").append(wave.getSampleRate())
@@ -1742,7 +1982,10 @@ public final class CheerpjFacade implements NitroViewerService
             sb.append("]}");
             return sb.toString();
         }
-        catch (Throwable t) { return err(t); }
+        catch (Throwable t)
+        {
+            return err(t);
+        }
     }
 
     @Override
@@ -1754,7 +1997,8 @@ public final class CheerpjFacade implements NitroViewerService
             StringBuilder sb = new StringBuilder("{\"waves\":[");
             for (int i = 0; i < swar.getWaveCount(); i++)
             {
-                if (i > 0) sb.append(',');
+                if (i > 0)
+                    sb.append(',');
                 Wave w = swar.getWave(i);
                 sb.append("{\"index\":").append(i)
                         .append(",\"sampleRate\":").append(w.getSampleRate())
@@ -1764,7 +2008,10 @@ public final class CheerpjFacade implements NitroViewerService
             }
             return sb.append("]}").toString();
         }
-        catch (Throwable t) { return err(t); }
+        catch (Throwable t)
+        {
+            return err(t);
+        }
     }
 
     @Override
@@ -1787,7 +2034,10 @@ public final class CheerpjFacade implements NitroViewerService
                     + ",\"png\":" + jstr(pngDataUrl(img))
                     + ",\"wavBase64\":" + jstr(base64(w.toWav())) + "}";
         }
-        catch (Throwable t) { return err(t); }
+        catch (Throwable t)
+        {
+            return err(t);
+        }
     }
 
     @Override
@@ -1802,7 +2052,8 @@ public final class CheerpjFacade implements NitroViewerService
             else if (magic(data).equals("SDAT"))
             {
                 byte[] f = SoundArchive.fromBytes(data).getFileFor(SoundArchive.RecordType.STREAM, streamIndex);
-                if (f == null) throw new IllegalArgumentException("no stream " + streamIndex);
+                if (f == null)
+                    throw new IllegalArgumentException("no stream " + streamIndex);
                 strm = Stream.fromBytes(f);
             }
             else
@@ -1815,7 +2066,10 @@ public final class CheerpjFacade implements NitroViewerService
                     + ",\"png\":" + jstr(pngDataUrl(img))
                     + ",\"wavBase64\":" + jstr(base64(strm.toWav())) + "}";
         }
-        catch (Throwable t) { return err(t); }
+        catch (Throwable t)
+        {
+            return err(t);
+        }
     }
 
     @Override
@@ -1823,7 +2077,8 @@ public final class CheerpjFacade implements NitroViewerService
     {
         try
         {
-            if (wavBytes == null) throw new IllegalArgumentException("no WAV bytes");
+            if (wavBytes == null)
+                throw new IllegalArgumentException("no WAV bytes");
             NintendoDsRom rom = rom(romHandle);
             byte[] data = resolve(rom, container, id);
             String mag = magic(data);
@@ -1873,7 +2128,8 @@ public final class CheerpjFacade implements NitroViewerService
             if (magic(data).equals("SDAT"))
             {
                 byte[] sseq = SoundArchive.fromBytes(data).getFileFor(SoundArchive.RecordType.SEQUENCE, seqIndex);
-                if (sseq == null) throw new IllegalArgumentException("no sequence " + seqIndex);
+                if (sseq == null)
+                    throw new IllegalArgumentException("no sequence " + seqIndex);
                 seq = Sequence.fromBytes(sseq);
             }
             else if (magic(data).equals("SSEQ"))
@@ -1882,7 +2138,10 @@ public final class CheerpjFacade implements NitroViewerService
                 throw new IllegalArgumentException("not an SDAT or SSEQ");
             return "{\"base64\":" + jstr(base64(SequenceMidi.convertForDaw(seq))) + "}";
         }
-        catch (Throwable t) { return err(t); }
+        catch (Throwable t)
+        {
+            return err(t);
+        }
     }
 
     @Override
@@ -1895,11 +2154,15 @@ public final class CheerpjFacade implements NitroViewerService
                 throw new IllegalArgumentException("SoundFont export needs an SDAT");
             SoundArchive sdat = SoundArchive.fromBytes(data);
             String name = sdat.getName(SoundArchive.RecordType.BANK, bankIndex);
-            if (name == null) name = "bank" + bankIndex;
+            if (name == null)
+                name = "bank" + bankIndex;
             byte[] sf2 = SoundFontExporter.fromBank(sdat, bankIndex, name);
             return "{\"base64\":" + jstr(base64(sf2)) + "}";
         }
-        catch (Throwable t) { return err(t); }
+        catch (Throwable t)
+        {
+            return err(t);
+        }
     }
 
     // --- text (BMG) ----------------------------------------------------------------------------
@@ -1919,19 +2182,27 @@ public final class CheerpjFacade implements NitroViewerService
                     .append(",\"messages\":[");
             for (int i = 0; i < messages.size(); i++)
             {
-                if (i > 0) sb.append(',');
+                if (i > 0)
+                    sb.append(',');
                 BinaryMessage.Message m = messages.get(i);
                 boolean hasEscapes = false;
                 for (Object part : m.getParts())
-                    if (part instanceof BinaryMessage.Message.Escape) { hasEscapes = true; break; }
+                    if (part instanceof BinaryMessage.Message.Escape)
+                    {
+                        hasEscapes = true;
+                        break;
+                    }
                 sb.append("{\"text\":").append(jstr(m.toString()))
-                  .append(",\"isNull\":").append(m.isNull())
-                  .append(",\"hasEscapes\":").append(hasEscapes)
-                  .append('}');
+                        .append(",\"isNull\":").append(m.isNull())
+                        .append(",\"hasEscapes\":").append(hasEscapes)
+                        .append('}');
             }
             return sb.append("]}").toString();
         }
-        catch (Throwable t) { return err(t); }
+        catch (Throwable t)
+        {
+            return err(t);
+        }
     }
 
     @Override
@@ -1939,7 +2210,8 @@ public final class CheerpjFacade implements NitroViewerService
     {
         try
         {
-            if (utf8TextBytes == null) throw new IllegalArgumentException("no text");
+            if (utf8TextBytes == null)
+                throw new IllegalArgumentException("no text");
             NintendoDsRom rom = rom(romHandle);
             BinaryMessage bmg = new BinaryMessage(resolve(rom, container, id));
             List<BinaryMessage.Message> messages = bmg.getMessages();
@@ -1977,7 +2249,8 @@ public final class CheerpjFacade implements NitroViewerService
         int last = 0;
         while (m.find())
         {
-            if (m.start() > last) parts.add(text.substring(last, m.start()));
+            if (m.start() > last)
+                parts.add(text.substring(last, m.start()));
             int type = Integer.parseInt(m.group(1)) & 0xFF;
             String hex = m.group(2);
             byte[] data = new byte[hex.length() / 2];
@@ -2011,7 +2284,10 @@ public final class CheerpjFacade implements NitroViewerService
                     + ",\"defaultCharWidth\":" + info.getDefaultCharWidth()
                     + "}";
         }
-        catch (Throwable t) { return err(t); }
+        catch (Throwable t)
+        {
+            return err(t);
+        }
     }
 
     @Override
@@ -2030,7 +2306,10 @@ public final class CheerpjFacade implements NitroViewerService
                     + ",\"cellHeight\":" + (glyphs == null ? 0 : glyphs.getCellHeight())
                     + ",\"png\":" + jstr(pngDataUrl(img)) + "}";
         }
-        catch (Throwable t) { return err(t); }
+        catch (Throwable t)
+        {
+            return err(t);
+        }
     }
 
     @Override
@@ -2038,13 +2317,17 @@ public final class CheerpjFacade implements NitroViewerService
     {
         try
         {
-            if (utf8TextBytes == null) throw new IllegalArgumentException("no text");
+            if (utf8TextBytes == null)
+                throw new IllegalArgumentException("no text");
             NitroFont font = new NitroFont(resolve(rom(romHandle), container, id));
             String text = new String(utf8TextBytes, StandardCharsets.UTF_8);
             BufferedImage img = font.renderString(text, scale <= 0 ? 1 : scale);
             return imageJson(img);
         }
-        catch (Throwable t) { return err(t); }
+        catch (Throwable t)
+        {
+            return err(t);
+        }
     }
 
     @Override
@@ -2056,11 +2339,15 @@ public final class CheerpjFacade implements NitroViewerService
             NitroFont.GlyphData glyphs = font.getGlyphData();
             int[] px = glyphs.getGlyphPixels(glyphIndex);
             byte[] packed = new byte[px.length];
-            for (int i = 0; i < px.length; i++) packed[i] = (byte) px[i];
+            for (int i = 0; i < px.length; i++)
+                packed[i] = (byte) px[i];
             return "{\"width\":" + glyphs.getCellWidth() + ",\"height\":" + glyphs.getCellHeight()
                     + ",\"pixels\":" + jstr(base64(packed)) + "}";
         }
-        catch (Throwable t) { return err(t); }
+        catch (Throwable t)
+        {
+            return err(t);
+        }
     }
 
     @Override
@@ -2068,7 +2355,8 @@ public final class CheerpjFacade implements NitroViewerService
     {
         try
         {
-            if (intensityPixels == null) throw new IllegalArgumentException("no pixels");
+            if (intensityPixels == null)
+                throw new IllegalArgumentException("no pixels");
             NintendoDsRom rom = rom(romHandle);
             NitroFont font = new NitroFont(resolve(rom, container, id));
             NitroFont.GlyphData glyphs = font.getGlyphData();
@@ -2076,7 +2364,8 @@ public final class CheerpjFacade implements NitroViewerService
             if (intensityPixels.length != expected)
                 throw new IllegalArgumentException("expected " + expected + " pixels, got " + intensityPixels.length);
             int[] px = new int[intensityPixels.length];
-            for (int i = 0; i < px.length; i++) px[i] = intensityPixels[i] & 0xFF;
+            for (int i = 0; i < px.length; i++)
+                px[i] = intensityPixels[i] & 0xFF;
             glyphs.setGlyphPixels(glyphIndex, px);
             writeResource(romHandle, container, id, font.save());
             return "{\"ok\":true}";
@@ -2097,13 +2386,16 @@ public final class CheerpjFacade implements NitroViewerService
             MultiCellBank bank = new MultiCellBank(resolve(rom(romHandle), nmcrContainer, nmcrId));
             return "{\"multiCellCount\":" + bank.getNumMultiCells() + "}";
         }
-        catch (Throwable t) { return err(t); }
+        catch (Throwable t)
+        {
+            return err(t);
+        }
     }
 
     @Override
     public String decodeNmcr(int romHandle, int nmcrContainer, int nmcrId,
-                             int ncerContainer, int ncerId, int ncgrContainer, int ncgrId,
-                             int nclrContainer, int nclrId, int multiCellIndex, boolean transparent)
+            int ncerContainer, int ncerId, int ncgrContainer, int ncgrId,
+            int nclrContainer, int nclrId, int multiCellIndex, boolean transparent)
     {
         try
         {
@@ -2117,10 +2409,13 @@ public final class CheerpjFacade implements NitroViewerService
             MultiCellBank bank = new MultiCellBank(resolve(rom, nmcrContainer, nmcrId));
             bank.setCellBank(cellBank);
             BufferedImage img = transparent ? bank.getTransparentMultiCellImage(multiCellIndex)
-                                            : bank.getMultiCellImage(multiCellIndex);
+                    : bank.getMultiCellImage(multiCellIndex);
             return imageJson(img);
         }
-        catch (Throwable t) { return err(t); }
+        catch (Throwable t)
+        {
+            return err(t);
+        }
     }
 
     @Override
@@ -2133,21 +2428,25 @@ public final class CheerpjFacade implements NitroViewerService
             StringBuilder sb = new StringBuilder("{\"animations\":[");
             for (int i = 0; i < animations.length; i++)
             {
-                if (i > 0) sb.append(',');
+                if (i > 0)
+                    sb.append(',');
                 String name = animations[i].getName();
                 sb.append("{\"name\":").append(jstr(name == null ? "" : name))
-                  .append(",\"frames\":").append(animations[i].getFrames().length).append('}');
+                        .append(",\"frames\":").append(animations[i].getFrames().length).append('}');
             }
             return sb.append("]}").toString();
         }
-        catch (Throwable t) { return err(t); }
+        catch (Throwable t)
+        {
+            return err(t);
+        }
     }
 
     @Override
     public String decodeNmar(int romHandle, int nmarContainer, int nmarId,
-                             int nmcrContainer, int nmcrId, int ncerContainer, int ncerId,
-                             int ncgrContainer, int ncgrId, int nclrContainer, int nclrId,
-                             int animIndex, int frameIndex, boolean transparent)
+            int nmcrContainer, int nmcrId, int ncerContainer, int ncerId,
+            int ncgrContainer, int ncgrId, int nclrContainer, int nclrId,
+            int animIndex, int frameIndex, boolean transparent)
     {
         try
         {
@@ -2165,17 +2464,22 @@ public final class CheerpjFacade implements NitroViewerService
             MultiCellAnimation.Animation.Frame frame = anim.getAnimations()[animIndex].getFrames()[frameIndex];
             return imageJson(anim.getFrameImage(frame));
         }
-        catch (Throwable t) { return err(t); }
+        catch (Throwable t)
+        {
+            return err(t);
+        }
     }
 
     private WaveArchive waveArchiveOf(NintendoDsRom rom, int container, int id, int waveArcIndex)
     {
         byte[] data = resolve(rom, container, id);
-        if (magic(data).equals("SWAR")) return WaveArchive.fromBytes(data);
+        if (magic(data).equals("SWAR"))
+            return WaveArchive.fromBytes(data);
         if (magic(data).equals("SDAT"))
         {
             byte[] f = SoundArchive.fromBytes(data).getFileFor(SoundArchive.RecordType.WAVE_ARCHIVE, waveArcIndex);
-            if (f == null) throw new IllegalArgumentException("no wave archive " + waveArcIndex);
+            if (f == null)
+                throw new IllegalArgumentException("no wave archive " + waveArcIndex);
             return WaveArchive.fromBytes(f);
         }
         throw new IllegalArgumentException("not an SDAT or SWAR");
@@ -2185,10 +2489,14 @@ public final class CheerpjFacade implements NitroViewerService
     {
         switch (type)
         {
-            case Wave.PCM8: return "PCM8";
-            case Wave.PCM16: return "PCM16";
-            case Wave.ADPCM: return "ADPCM";
-            default: return "type" + type;
+            case Wave.PCM8:
+                return "PCM8";
+            case Wave.PCM16:
+                return "PCM16";
+            case Wave.ADPCM:
+                return "ADPCM";
+            default:
+                return "type" + type;
         }
     }
 
@@ -2197,14 +2505,16 @@ public final class CheerpjFacade implements NitroViewerService
     private NintendoDsRom rom(int handle)
     {
         NintendoDsRom rom = roms.get(handle);
-        if (rom == null) throw new IllegalArgumentException("no ROM for handle " + handle);
+        if (rom == null)
+            throw new IllegalArgumentException("no ROM for handle " + handle);
         return rom;
     }
 
     private Narc narc(int handle)
     {
         Narc narc = narcs.get(handle);
-        if (narc == null) throw new IllegalArgumentException("no NARC for handle " + handle);
+        if (narc == null)
+            throw new IllegalArgumentException("no NARC for handle " + handle);
         return narc;
     }
 
@@ -2215,7 +2525,8 @@ public final class CheerpjFacade implements NitroViewerService
         if (container == BANNER_CONTAINER)
         {
             byte[] banner = rom.getIconBanner();
-            if (banner == null) throw new IllegalStateException("this ROM has no icon/title banner");
+            if (banner == null)
+                throw new IllegalStateException("this ROM has no icon/title banner");
             return banner;
         }
         return container < 0 ? rom.getFile(id) : narc(container).getFile(id);
@@ -2254,13 +2565,173 @@ public final class CheerpjFacade implements NitroViewerService
     }
 
     /**
-     * As {@link #ncgr(NintendoDsRom, int, int, int)}, but with an explicit scan direction. Only matters for
-     * scanned (bitmap) NCGRs: Pt/HG/SS scan front-to-back, Diamond/Pearl back-to-front — decoding a D/P
-     * scanned sprite front-to-back yields garbled static. The game DB supplies the direction per NARC.
+     * As {@link #ncgr(NintendoDsRom, int, int, int)}, but with a caller-supplied scan direction. <p>
+     * A known ciphered sprite overrides it. See {@link Gen4SpriteCipher}.
      */
     private IndexedImage ncgr(NintendoDsRom rom, int container, int id, int tilesWidth, boolean scanFrontToBack)
     {
-        return new IndexedImage(resolve(rom, container, id), tilesWidth, 0, 1, 1, scanFrontToBack);
+        boolean front = effectiveFrontToBack(rom, container, id, scanFrontToBack);
+        return new IndexedImage(resolve(rom, container, id), tilesWidth, 0, 1, 1, front);
+    }
+
+
+    /**
+     * Returns the scan direction to use. A known ciphered sprite overrides <code>requested</code>.
+     * A missing path falls back to <code>requested</code>. A missing or unloadable game DB propagates
+     * instead of being treated as front-to-back.
+     * @param requested a <code>boolean</code> to use when the sprite is not a known ciphered one
+     * @return <code>true</code> for front-to-back
+     */
+    private boolean effectiveFrontToBack(NintendoDsRom rom, int container, int id, boolean requested)
+    {
+        Integer handle = handleOf(rom);
+        Integer fileId = topLevelFileId(container);
+        if (handle == null || fileId == null)
+            return requested;
+
+        Boolean detected = Gen4SpriteCipher.frontToBack(rom.getGameCode(), filePath(handle, rom, fileId), id);
+        return detected != null ? detected : requested;
+    }
+
+
+    /**
+     * Returns the handle for an open ROM
+     * @param rom a <code>NintendoDsRom</code>
+     * @return the handle, or <code>null</code> if this ROM is not open
+     */
+    private Integer handleOf(NintendoDsRom rom)
+    {
+        for (Map.Entry<Integer, NintendoDsRom> e : roms.entrySet())
+        {
+            if (e.getValue() == rom)
+                return e.getKey();
+        }
+
+        return null;
+    }
+
+
+    /** ROM file id of the NARC this container was opened from, or null. */
+    private Integer topLevelFileId(int container)
+    {
+        if (container < 0)
+            return null;
+
+        int cursor = container;
+        int fileId = -1;
+        while (cursor >= 0)
+        {
+            int[] parent = narcParent.get(cursor);
+            if (parent == null)
+                return null;
+            fileId = parent[1];
+            cursor = parent[0];
+        }
+
+        return cursor == -1 ? fileId : null;
+    }
+
+
+    /**
+     * Returns the FNT path for a ROM file id
+     * @param romHandle an <code>int</code> ROM handle
+     * @param fileId an <code>int</code> file id
+     * @return the path, or <code>null</code> if the id is unknown
+     */
+    private String filePath(int romHandle, NintendoDsRom rom, int fileId)
+    {
+        Map<Integer, String> paths = filePathsByRom.get(romHandle);
+        if (paths == null)
+        {
+            paths = indexFilePaths(rom);
+            filePathsByRom.put(romHandle, paths);
+        }
+        return paths.get(fileId);
+    }
+
+
+    /** Same FNT paths the frontend builds. */
+    private static Map<Integer, String> indexFilePaths(NintendoDsRom rom)
+    {
+        Map<Integer, String> out = new HashMap<Integer, String>();
+        walkPaths(Fnt.load(rom.getFnt()), "/", out);
+        return out;
+    }
+
+
+    /**
+     * Fills <code>out</code> with file id to FNT path
+     * @param prefix a <code>String</code> path prefix, ending in <code>/</code>
+     */
+    private static void walkPaths(Fnt.Folder folder, String prefix, Map<Integer, String> out)
+    {
+        int id = folder.getFirstId();
+        for (String name : folder.getFiles())
+        {
+            out.put(id, prefix + (name == null || name.isEmpty() ? Integer.toString(id) : name));
+            id++;
+        }
+
+        for (Map.Entry<String, Fnt.Folder> e : folder.getFolders().entrySet())
+        {
+            walkPaths(e.getValue(), prefix + e.getKey() + "/", out);
+        }
+    }
+
+
+    /**
+     * Returns why a scanned 8bpp NCGR cannot be saved, or <code>null</code> when saving is supported
+     * @param image an <code>IndexedImage</code>
+     * @return the error, or <code>null</code>
+     */
+    private static String scanned8bppSaveError(IndexedImage image)
+    {
+        if (image.getBitDepth() == 8 && image.isScanned())
+            return "Saving scanned 8bpp sprites is not supported yet.";
+        return null;
+    }
+
+
+    /**
+     * Forces the cipher key word back to 0. Back-to-front uses the last pixels, front-to-back the first.
+     * Plain scanned images, including Gen V line-buffer sheets, are left alone.
+     */
+    private static void keepCipherSeed(IndexedImage image, boolean frontToBack)
+    {
+        int w = image.getWidth();
+        int h = image.getHeight();
+        if (!image.isScanned() || w <= 0 || h <= 0 || !hasCipherKey(image))
+            return;
+
+        // back-to-front keeps the key in the last word
+        boolean seedAtEnd = !frontToBack;
+        int n = Gen4SpriteCipher.seedPixelCount(image.getBitDepth());
+        int total = w * h;
+        int start = seedAtEnd ? Math.max(0, total - n) : 0;
+        int end = seedAtEnd ? total : Math.min(n, total);
+        for (int i = start; i < end; i++)
+        {
+            image.setPixelValue(i % w, i / w, 0);
+        }
+    }
+
+
+    /**
+     * Returns whether this image was decoded with a cipher key
+     * @param image an <code>IndexedImage</code>
+     * @return <code>true</code> if a key was captured
+     */
+    private static boolean hasCipherKey(IndexedImage image)
+    {
+        try
+        {
+            image.getEncryptionKey();
+            return true;
+        }
+        catch (RuntimeException ex)
+        {
+            return false;
+        }
     }
 
     // --- encoding helpers --------------------------------------------------------------------
@@ -2335,32 +2806,59 @@ public final class CheerpjFacade implements NitroViewerService
     {
         switch (magic(d))
         {
-            case "NARC": return "NARC";
-            case "RGCN": return "NCGR";
-            case "RLCN": case "RPCN": return "NCLR";
-            case "RCSN": return "NSCR";
-            case "RECN": return "NCER";
-            case "RNAN": return "NANR";
-            case "RTFN": return "NFTR";
-            case "MESG": return "BMG";
-            case "RCMN": return "NMCR";
-            case "RAMN": return "NMAR";
-            case "BMD0": return "NSBMD";
-            case "BTX0": return "NSBTX";
-            case "BCA0": return "NSBCA";
-            case "BTP0": return "NSBTP";
-            case "BTA0": return "NSBTA";
-            case "BVA0": return "NSBVA";
-            case "BMA0": return "NSBMA";
-            case " APS": return "SPA";
-            case "SDAT": return "SDAT";
-            case "SSEQ": return "SSEQ";
-            case "SSAR": return "SSAR";
-            case "SBNK": return "SBNK";
-            case "SWAR": return "SWAR";
-            case "SWAV": return "SWAV";
-            case "STRM": return "STRM";
-            default: return "";
+            case "NARC":
+                return "NARC";
+            case "RGCN":
+                return "NCGR";
+            case "RLCN":
+            case "RPCN":
+                return "NCLR";
+            case "RCSN":
+                return "NSCR";
+            case "RECN":
+                return "NCER";
+            case "RNAN":
+                return "NANR";
+            case "RTFN":
+                return "NFTR";
+            case "MESG":
+                return "BMG";
+            case "RCMN":
+                return "NMCR";
+            case "RAMN":
+                return "NMAR";
+            case "BMD0":
+                return "NSBMD";
+            case "BTX0":
+                return "NSBTX";
+            case "BCA0":
+                return "NSBCA";
+            case "BTP0":
+                return "NSBTP";
+            case "BTA0":
+                return "NSBTA";
+            case "BVA0":
+                return "NSBVA";
+            case "BMA0":
+                return "NSBMA";
+            case " APS":
+                return "SPA";
+            case "SDAT":
+                return "SDAT";
+            case "SSEQ":
+                return "SSEQ";
+            case "SSAR":
+                return "SSAR";
+            case "SBNK":
+                return "SBNK";
+            case "SWAR":
+                return "SWAR";
+            case "SWAV":
+                return "SWAV";
+            case "STRM":
+                return "STRM";
+            default:
+                return "";
         }
     }
 
@@ -2378,21 +2876,34 @@ public final class CheerpjFacade implements NitroViewerService
     /** Encode a Java string as a JSON string literal (quotes + minimal escaping). null -&gt; "null". */
     private static String jstr(String s)
     {
-        if (s == null) return "null";
+        if (s == null)
+            return "null";
         StringBuilder sb = new StringBuilder(s.length() + 2).append('"');
         for (int i = 0; i < s.length(); i++)
         {
             char c = s.charAt(i);
             switch (c)
             {
-                case '"':  sb.append("\\\""); break;
-                case '\\': sb.append("\\\\"); break;
-                case '\n': sb.append("\\n");  break;
-                case '\r': sb.append("\\r");  break;
-                case '\t': sb.append("\\t");  break;
+                case '"':
+                    sb.append("\\\"");
+                    break;
+                case '\\':
+                    sb.append("\\\\");
+                    break;
+                case '\n':
+                    sb.append("\\n");
+                    break;
+                case '\r':
+                    sb.append("\\r");
+                    break;
+                case '\t':
+                    sb.append("\\t");
+                    break;
                 default:
-                    if (c < 0x20) sb.append(String.format("\\u%04x", (int) c));
-                    else sb.append(c);
+                    if (c < 0x20)
+                        sb.append(String.format("\\u%04x", (int) c));
+                    else
+                        sb.append(c);
             }
         }
         return sb.append('"').toString();
