@@ -27,7 +27,6 @@ import {
   sdatTabLabel,
   seqFileName,
   seqLoop,
-  sequenceHint,
   sequenceMatches,
   showSequencePane,
   showStreamPane,
@@ -182,10 +181,6 @@ describe("sound viewer logic", () => {
     expect(sdatTabLabel("waves", info)).toContain("Waves");
     expect(sdatTabLabel("streams", info)).toContain("Streams");
     expect(sdatTabLabel("banks", info)).toContain("Banks");
-    expect(sequenceHint(false, false, false)).toContain("parent SDAT");
-    expect(sequenceHint(true, true, true)).toContain("live mixing");
-    expect(sequenceHint(true, false, true)).toContain("large sequence");
-    expect(sequenceHint(true, false, false)).toBe("");
     expect(showSequencePane("SSEQ", "waves")).toBe(true);
     expect(showWavePane("SWAV", "sequences")).toBe(true);
     expect(showWavePane("STRM", "waves")).toBe(false);

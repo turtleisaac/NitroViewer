@@ -136,14 +136,6 @@ export function sdatTabLabel(tab: SoundTab, info: SdatInfo): string {
   return `Banks (${info.banks.length})`;
 }
 
-/** Hint under the sequence controls. */
-export function sequenceHint(canPlay: boolean, live: boolean, demanding: boolean): string {
-  if (!canPlay) return " · open the parent SDAT to play";
-  if (live) return " · live mixing engine";
-  if (demanding) return " · large sequence; play uses the live mixing engine";
-  return "";
-}
-
 /** One-line description of the open sequence. */
 export function sequenceTitle(notes: SequenceNotes): string {
   return `${notes.name || "SSEQ"} · ${notes.notes.length} notes · ${notes.tempo} BPM · ${notes.trackCount} tracks`;

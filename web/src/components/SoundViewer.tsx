@@ -24,7 +24,6 @@ import {
   bankExtra,
   canPlaySequence,
   computeTrackMask,
-  demandingSequence,
   ensureSequenceWav,
   errorMessage,
   estimateTiming,
@@ -50,7 +49,6 @@ import {
   sdatOpening,
   sdatTabLabel,
   seekWave,
-  sequenceHint,
   sequenceTitle,
   seqLoop,
   showSequencePane,
@@ -69,7 +67,7 @@ import {
   type SoundTab,
 } from "./soundViewerLogic";
 
-function wavToBuffer(ctx: AudioContext, wav: Uint8Array): AudioBuffer {
+export function wavToBuffer(ctx: AudioContext, wav: Uint8Array): AudioBuffer {
   const dv = new DataView(wav.buffer, wav.byteOffset, wav.byteLength);
   const channels = dv.getUint16(22, true);
   const rate = dv.getUint32(24, true);
@@ -646,8 +644,6 @@ export function SequenceControls(props: {
   canPlay: boolean;
   busy: string | null;
   isPlaying: boolean;
-  live: boolean;
-  demanding: boolean;
   onPlay: () => void;
   onStop: () => void;
   onExportWav: () => void;
@@ -673,10 +669,7 @@ export function SequenceControls(props: {
       <button className="btn btn--sm" disabled={props.busy != null} onClick={props.onExportMidi}>
         Export MIDI
       </button>
-      <span className="dim">
-        {sequenceTitle(props.notes)}
-        {sequenceHint(props.canPlay, props.live, props.demanding)}
-      </span>
+      <span className="dim">{sequenceTitle(props.notes)}</span>
     </div>
   );
 }
@@ -687,8 +680,6 @@ function SequenceBody(props: {
   busy: string | null;
   canPlay: boolean;
   isPlaying: boolean;
-  live: boolean;
-  demanding: boolean;
   playTick: number;
   muted: boolean[];
   solo: boolean[];
@@ -708,8 +699,6 @@ function SequenceBody(props: {
         canPlay={props.canPlay}
         busy={props.busy}
         isPlaying={props.isPlaying}
-        live={props.live}
-        demanding={props.demanding}
         onPlay={props.onPlay}
         onStop={props.onStop}
         onExportWav={props.onExportWav}
@@ -742,8 +731,6 @@ export function SequencePane(props: {
   busy: string | null;
   canPlay: boolean;
   isPlaying: boolean;
-  live: boolean;
-  demanding: boolean;
   playTick: number;
   muted: boolean[];
   solo: boolean[];
@@ -1057,7 +1044,6 @@ function useSoundSession() {
   const clock = playbackClock({ seqWav, seqIndex, live, notes });
   const canPlay = canPlaySequence(fmt, seqIndex);
   const isPlaying = soundIsPlaying(live, audio.playing);
-  const demanding = demandingSequence(notes);
   const playTick = sequencePlayTick(notes, rollTime(live, liveSeconds, clock.loop, audio.currentTime, sourceTime), clock.loop, clock.seconds);
 
   const ctx = (): SoundCtx => ({
@@ -1070,7 +1056,7 @@ function useSoundSession() {
 
   return {
     err, opening: sdatOpening(fmt, info), fmt, info, tab, setTab, filter, setFilter, seqs, seqIndex,
-    notes, busy, canPlay, isPlaying, live, demanding, playTick, muted, solo,
+    notes, busy, canPlay, isPlaying, playTick, muted, solo,
     onSelectSeq: (index: number) => { void loadSequence(index, ctx()); },
     onPlay: () => { void playSequence(ctx()); },
     onStop: () => { stopLive(); audio.stop(); },
@@ -1117,8 +1103,6 @@ export function SoundViewer() {
         busy={vm.busy}
         canPlay={vm.canPlay}
         isPlaying={vm.isPlaying}
-        live={vm.live}
-        demanding={vm.demanding}
         playTick={vm.playTick}
         muted={vm.muted}
         solo={vm.solo}

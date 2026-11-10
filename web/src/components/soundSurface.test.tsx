@@ -18,6 +18,7 @@ import {
   SoundBody,
   SoundViewer,
   StreamList,
+  wavToBuffer,
 } from "./SoundViewer";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
@@ -42,6 +43,28 @@ function mount(node: ReturnType<typeof createElement>) {
   return { host, root };
 }
 
+function le(bytes: number, value: number): Uint8Array {
+  const out = new Uint8Array(bytes);
+  const view = new DataView(out.buffer);
+  if (bytes === 2) view.setUint16(0, value, true);
+  else view.setUint32(0, value, true);
+  return out;
+}
+
+function join(parts: Uint8Array[]): Uint8Array {
+  const out = new Uint8Array(parts.reduce((n, part) => n + part.length, 0));
+  let offset = 0;
+  for (const part of parts) {
+    out.set(part, offset);
+    offset += part.length;
+  }
+  return out;
+}
+
+function text(value: string): Uint8Array {
+  return Uint8Array.from(value, (ch) => ch.charCodeAt(0));
+}
+
 describe("sound surfaces", () => {
   const roots: Root[] = [];
   it("renders each sound pane and play face", () => {
@@ -57,11 +80,11 @@ describe("sound surfaces", () => {
       createElement(PlayFace, { busy: null, isPlaying: true }),
       createElement(PlayFace, { busy: null, isPlaying: false }),
       createElement(SequenceControls, {
-        notes, canPlay: true, busy: "render", isPlaying: true, live: false, demanding: true,
+        notes, canPlay: true, busy: "render", isPlaying: true,
         onPlay: on, onStop: on, onExportWav: on, onExportMidi: on,
       }),
       createElement(SequenceControls, {
-        notes, canPlay: false, busy: null, isPlaying: false, live: true, demanding: false,
+        notes, canPlay: false, busy: null, isPlaying: false,
         onPlay: on, onStop: on, onExportWav: on, onExportMidi: on,
       }),
       createElement(ArchiveList, { fmt: "SDAT", info, arcIndex: 0, onSelect: on }),
@@ -138,6 +161,29 @@ describe("sound surfaces", () => {
     ctx.client.renderSequenceWav = vi.fn(async () => { throw new Error("no"); });
     await seekSequenceTick(1, ctx);
     expect(alerted).toHaveBeenCalled();
+  });
+
+  it("decodes a wav that has a chunk before the samples", () => {
+    const samples = new Uint8Array(4);
+    new DataView(samples.buffer).setInt16(2, 16384, true);
+    const fmt = join([text("fmt "), le(4, 16), le(2, 1), le(2, 1), le(4, 8000), le(4, 16000), le(2, 2), le(2, 16)]);
+    const junk = join([text("JUNK"), le(4, 1), new Uint8Array([0, 0])]);
+    const data = join([text("data"), le(4, samples.length), samples]);
+    const body = join([text("WAVE"), fmt, junk, data]);
+    const wav = join([text("RIFF"), le(4, body.length), body]);
+    const ctx = {
+      createBuffer: (channels: number, frames: number, rate: number) => {
+        const data = Array.from({ length: channels }, () => new Float32Array(frames));
+        return {
+          duration: frames / rate,
+          sampleRate: rate,
+          getChannelData: (channel: number) => data[channel],
+        };
+      },
+    } as unknown as AudioContext;
+    const buf = wavToBuffer(ctx, wav);
+    expect(buf.sampleRate).toBe(8000);
+    expect(buf.getChannelData(0)[1]).toBeCloseTo(0.5);
   });
 
   it("opens an SDAT and lists its sequences", async () => {
