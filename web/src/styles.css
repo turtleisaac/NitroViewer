@@ -702,3 +702,22 @@ button, input, select, textarea { font-family: inherit; }
   border-radius: 4px; width: max-content;
 }
 .font-glyph-px { cursor: pointer; user-select: none; }
+
+/* Donation notice for an unknown referrer. */
+.notice-scrim {
+  position: fixed; inset: 0; z-index: 100;
+  display: grid; place-items: center; padding: 24px;
+  background: rgba(0, 0, 0, 0.55);
+}
+.notice {
+  width: min(440px, 100%);
+  background: var(--bg-1); color: var(--text);
+  border: 1px solid var(--line); border-radius: 16px; padding: 24px;
+}
+.notice h2 { margin: 0 0 12px; font-size: 18px; font-weight: 500; }
+.notice p { margin: 0 0 12px; color: var(--text-dim); line-height: 1.5; }
+.notice-check {
+  display: flex; align-items: center; gap: 8px;
+  margin: 4px 0 16px; color: var(--text); cursor: pointer;
+}
+.notice-actions { display: flex; justify-content: flex-end; }
