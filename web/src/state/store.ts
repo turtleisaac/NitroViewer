@@ -549,7 +549,8 @@ export const useStore = create<AppState>((set, get) => ({
   toggleFolder: (path) =>
     set((s) => {
       const next = new Set(s.expanded);
-      next.has(path) ? next.delete(path) : next.add(path);
+      if (next.has(path)) next.delete(path);
+      else next.add(path);
       return { expanded: next };
     }),
 
@@ -579,7 +580,7 @@ export const useStore = create<AppState>((set, get) => ({
     let fmt = formats[key];
     if (!fmt) {
       fmt = await client.detectFormat(romHandle, ref);
-      set((s) => ({ formats: { ...s.formats, [key]: fmt! } }));
+      set((s) => ({ formats: { ...s.formats, [key]: fmt } }));
     }
     // Close the tree drawer on selection so the viewer is visible on small screens.
     set({ selection: { ref, name, format: fmt.format, compressed: fmt.compressed, size: fmt.size }, navOpen: false });

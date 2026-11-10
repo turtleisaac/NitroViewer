@@ -20,8 +20,10 @@ export function ColorPicker({
   const [hexField, setHexField] = useState(snapped.slice(1));
   const dragging = useRef(false);
   const hsvRef = useRef(hsv);
-  hsvRef.current = hsv;
   const kindRef = useRef<"sv" | "hue" | "val">("sv");
+  useEffect(() => {
+    hsvRef.current = hsv;
+  }, [hsv]);
 
   // External color change (another swatch selected) — don't clobber an in-progress drag.
   useEffect(() => {
@@ -52,7 +54,7 @@ export function ColorPicker({
     else emit({ ...cur, v: x }, false);
   };
 
-  const onDown = (kind: "sv" | "hue" | "val") => (e: React.PointerEvent<HTMLDivElement>) => {
+  const onDown = (kind: "sv" | "hue" | "val", e: React.PointerEvent<HTMLDivElement>) => {
     if (e.button !== 0) return;
     dragging.current = true;
     kindRef.current = kind;
@@ -97,7 +99,7 @@ export function ColorPicker({
           style={{
             background: `linear-gradient(to top, #000, transparent), linear-gradient(to right, #fff, ${hueColor})`,
           }}
-          onPointerDown={onDown("sv")}
+          onPointerDown={(e) => onDown("sv", e)}
           onPointerMove={onMove}
           onPointerUp={onUp}
           role="slider"
@@ -111,7 +113,7 @@ export function ColorPicker({
         <div className="color-sliders">
           <div
             className="hue-slider"
-            onPointerDown={onDown("hue")}
+            onPointerDown={(e) => onDown("hue", e)}
             onPointerMove={onMove}
             onPointerUp={onUp}
             role="slider"
@@ -122,7 +124,7 @@ export function ColorPicker({
           <div
             className="val-slider"
             style={{ background: `linear-gradient(to right, #000, ${valColor})` }}
-            onPointerDown={onDown("val")}
+            onPointerDown={(e) => onDown("val", e)}
             onPointerMove={onMove}
             onPointerUp={onUp}
             role="slider"

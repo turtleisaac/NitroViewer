@@ -9,7 +9,7 @@ const FORMAT_EXT: Record<string, string> = {
 
 /** A download filename for an extracted file: keeps a real FNT name (with extension), else `<base>.<ext>`. */
 export function exportFileName(name: string, format: string): string {
-  const base = ((name.split(/[/:]/).pop() || "file").trim().replace(/^#/, "").replace(/[^\w.\-]+/g, "_")) || "file";
+  const base = ((name.split(/[/:]/).pop() || "file").trim().replace(/^#/, "").replace(/[^\w.-]+/g, "_")) || "file";
   if (/\.[a-z0-9]{2,5}$/i.test(base)) return base; // already a real filename like "pl_pokegra.narc"
   return `${base}.${FORMAT_EXT[format] || "bin"}`;
 }

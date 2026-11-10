@@ -12,10 +12,14 @@ export function useDraftEditor(session: {
   discardMessage: string;
 } | null) {
   const bindEditor = useStore((s) => s.bindEditor);
-  const undoRef = useRef(session?.undo);
-  const redoRef = useRef(session?.redo);
-  undoRef.current = session?.undo;
-  redoRef.current = session?.redo;
+  const undo = session?.undo;
+  const redo = session?.redo;
+  const undoRef = useRef(undo);
+  const redoRef = useRef(redo);
+  useEffect(() => {
+    undoRef.current = undo;
+    redoRef.current = redo;
+  }, [undo, redo]);
 
   const dirty = session?.dirty ?? false;
   const canUndo = session?.canUndo ?? false;

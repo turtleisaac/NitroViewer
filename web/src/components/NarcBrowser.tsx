@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { useStore } from "../state/store";
+import { useChangedKey } from "../useChangedKey";
 import { refKey, type NarcEntry, type ResourceRef } from "../transport";
 import { base64ToBytes, download, exportFileName } from "../util";
 
@@ -23,10 +24,13 @@ export function NarcBrowser() {
   const importTarget = useRef<ResourceRef | null>(null);
 
   const selKey = refKey(selection.ref);
-  useEffect(() => {
-    let alive = true;
+  if (useChangedKey(`${selKey}:${editVersion}`)) {
     setState(null);
     setErr(undefined);
+  }
+
+  useEffect(() => {
+    let alive = true;
     // Open by the selection's own (container,id) — works for a ROM-file NARC and a NARC-in-NARC alike.
     // editVersion is a dep so a whole-NARC (folder/zip) import re-opens the archive fresh.
     ensureNarc(selection.ref)
@@ -88,7 +92,7 @@ export function NarcBrowser() {
     setZipBusy("export");
     try {
       const r = await client.exportNarcZip(romHandle, selection.ref);
-      const base = (selection.name.split(/[/:]/).pop() || "narc").replace(/\.[^.]+$/, "").replace(/[^\w.\-]+/g, "_");
+      const base = (selection.name.split(/[/:]/).pop() || "narc").replace(/\.[^.]+$/, "").replace(/[^\w.-]+/g, "_");
       download(`${base}.zip`, base64ToBytes(r.base64), "application/zip");
     } catch (err) {
       alert("Export folder failed: " + (err as Error).message);
@@ -102,7 +106,6 @@ export function NarcBrowser() {
     try {
       const bytes = new Uint8Array(await file.arrayBuffer());
       const res = await importNarcZip(selection.ref, bytes);
-      // eslint-disable-next-line no-console
       console.info(`NARC rebuilt from folder: ${res.count} files.`);
     } catch (err) {
       alert("Import folder failed: " + (err as Error).message);

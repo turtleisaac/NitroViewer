@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { useStore } from "../state/store";
+import { useChangedKey } from "../useChangedKey";
 
 interface Tex {
   name: string;
@@ -16,10 +17,13 @@ export function TextureViewer() {
   const [err, setErr] = useState<string>();
 
   const { container, id } = selection.ref;
-  useEffect(() => {
-    let alive = true;
+  if (useChangedKey(`${romHandle}:${container}:${id}`)) {
     setTextures(null);
     setErr(undefined);
+  }
+
+  useEffect(() => {
+    let alive = true;
     client
       .getTextureSet(romHandle, { container, id })
       .then((d) => alive && setTextures(d.textures))

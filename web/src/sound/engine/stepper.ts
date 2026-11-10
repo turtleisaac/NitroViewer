@@ -213,13 +213,13 @@ export class Stepper {
   readonly outRate: number;
   /** SSEQ track i is heard when true. A muted track still runs (keeps timing), matching
    *  SequencePlayer.trackEnabled — this is the live mute/solo control surface. */
-  readonly trackEnabled: boolean[] = new Array(MAX_TRACKS).fill(true);
+  readonly trackEnabled: boolean[] = Array.from({ length: MAX_TRACKS }, () => true);
   /** When true, a track's second 0x94 jump stops it instead of looping — one full playthrough. */
   stopAtLoop = false;
 
   private readonly seq: LoadedSequence;
   private readonly tracks: Track[] = [];
-  private readonly channels: (Voice | null)[] = new Array(MAX_VOICES).fill(null);
+  private readonly channels: (Voice | null)[] = Array.from({ length: MAX_VOICES }, () => null);
   private allocSerial = 0;
   private tempo = 120;
   private playerVolume = 127;

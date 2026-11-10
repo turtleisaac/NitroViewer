@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { useStore } from "../state/store";
+import { useChangedKey } from "../useChangedKey";
 import type { BannerInfo } from "../transport";
 import { base64ToBytes, download } from "../util";
 
@@ -37,9 +38,10 @@ export function BannerViewer() {
   const [drafts, setDrafts] = useState<string[]>([]);
   const iconInputRef = useRef<HTMLInputElement>(null);
 
+  if (useChangedKey(`${romHandle}:${editVersion}`)) setErr(undefined);
+
   useEffect(() => {
     let alive = true;
-    setErr(undefined);
     client
       .getBanner(romHandle)
       .then((b) => {

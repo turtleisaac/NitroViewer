@@ -21,6 +21,7 @@
     "build": "tsc --noEmit && npm run build-worklet && vite build",
     "preview": "vite preview",
     "test": "vitest run",
+    "lint": "eslint . --max-warnings 0",
     "electron": "electron .",
     "dist": "electron-builder --publish never"
   },
@@ -91,11 +92,15 @@
     "electron": "^38.8.6",
     "electron-builder": "24.13.3",
     "esbuild": "^0.21.5",
+    "eslint": "^9.39.5",
+    "eslint-plugin-react": "^7.37.5",
+    "eslint-plugin-react-hooks": "^7.1.1",
     "playwright-core": "^1.62.1",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
     "three": "^0.169.0",
     "typescript": "^5.6.3",
+    "typescript-eslint": "^8.72.2",
     "vite": "^5.4.11",
     "vitest": "^4.1.11",
     "zustand": "^4.5.5"

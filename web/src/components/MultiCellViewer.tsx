@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { useStore, type ResourceItem } from "../state/store";
+import { useChangedKey } from "../useChangedKey";
 import { pickSibling } from "../state/pairing";
 import { refKey, type DecodedImage, type ResourceRef } from "../transport";
 import { base64ToBytes, download } from "../util";
@@ -109,7 +110,8 @@ export function MultiCellViewer() {
 
   // Cascading auto-pair: NMAR -> NMCR -> NCER -> NCGR/NCLR, each hop reusing the same proportional
   // sibling heuristic SpriteViewer uses for NCER/NANR. Honours any manual override the user already made.
-  useEffect(() => {
+  const itemsKey = items.map((i) => `${i.ref.container}:${i.ref.id}:${i.format}`).join("|");
+  if (useChangedKey(`${selKey}:${itemsKey}`)) {
     const saved = useStore.getState().pairingOverrides[selKey] ?? {};
     let nmcr: ResourceRef | undefined;
     let ncerPeerId = selection.ref.id;
@@ -126,15 +128,14 @@ export function MultiCellViewer() {
     const ncgr = saved.ncgr ?? pickSibling(ncgrs, ncerPeers, ncgrPeerId);
     const nclr = saved.nclr ?? pickSibling(nclrs, ncerPeers, ncgrPeerId);
     setPair({ nmcr, ncer, ncgr, nclr });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selKey, items]);
+  }
 
-  useEffect(() => {
+  if (useChangedKey(selKey)) {
     setMultiCellIndex(0);
     setAnimIndex(0);
     setFrameIndex(0);
     setPlaying(false);
-  }, [selKey]);
+  }
 
   useEffect(() => {
     if (fmt !== "NMAR" || !playing) return;
@@ -188,7 +189,7 @@ export function MultiCellViewer() {
 
   useEffect(() => {
     let alive = true;
-    (async () => {
+    void (async () => {
       setBusy(true);
       setError(null);
       try {
@@ -225,7 +226,7 @@ export function MultiCellViewer() {
 
   const savePng = () => {
     if (!image) return;
-    const base = (selection.name.split(/[/:]/).pop() || "image").replace(/[^\w.\-]+/g, "_");
+    const base = (selection.name.split(/[/:]/).pop() || "image").replace(/[^\w.-]+/g, "_");
     download(`${base}.png`, base64ToBytes(image.png.split(",")[1]), "image/png");
   };
 

@@ -19,7 +19,7 @@ function FolderNode({ folder, path }: { folder: TreeFolder; path: string }) {
     setExtracting(true);
     try {
       const r = await st.client.exportFolderZip(st.romHandle, path);
-      const base = (path.replace(/\/$/, "").split("/").pop() || "filesystem").replace(/[^\w.\-]+/g, "_");
+      const base = (path.replace(/\/$/, "").split("/").pop() || "filesystem").replace(/[^\w.-]+/g, "_");
       download(`${base}.zip`, base64ToBytes(r.base64), "application/zip");
     } catch (err) {
       alert("Extract folder failed: " + (err as Error).message);
@@ -37,7 +37,7 @@ function FolderNode({ folder, path }: { folder: TreeFolder; path: string }) {
           className="icon-btn tree-extract"
           title="Extract this folder to a zip"
           disabled={extracting}
-          onClick={extractFolder}
+          onClick={(e) => { void extractFolder(e); }}
         >
           {extracting ? "…" : "↓"}
         </button>

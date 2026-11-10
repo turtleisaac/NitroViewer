@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useStore } from "../state/store";
+import { useChangedKey } from "../useChangedKey";
 import type { DecodedImage, FontGlyphSheet, FontMeta } from "../transport";
 import { base64ToBytes } from "../util";
 
@@ -32,13 +33,18 @@ export function FontViewer() {
   const refContainer = selection.ref.container;
   const ref = useMemo(() => ({ container: refContainer, id: refId }), [refContainer, refId]);
 
-  useEffect(() => {
-    let alive = true;
+  if (useChangedKey(`${romHandle}:${ref.container}:${ref.id}:${editVersion}`)) {
     setMeta(null);
     setSheet(null);
     setErr(undefined);
     setGlyphIndex(null);
     setPixels(null);
+  }
+  const previewEmpty = preview.length === 0;
+  if (useChangedKey(previewEmpty) && previewEmpty) setPreviewImg(null);
+
+  useEffect(() => {
+    let alive = true;
     Promise.all([client.decodeFontMeta(romHandle, ref), client.renderFontGlyphSheet(romHandle, ref, SHEET_COLUMNS, SHEET_SCALE)])
       .then(([m, s]) => {
         if (!alive) return;
@@ -70,10 +76,7 @@ export function FontViewer() {
 
   useEffect(() => {
     let alive = true;
-    if (!preview) {
-      setPreviewImg(null);
-      return;
-    }
+    if (!preview) return;
     const id = setTimeout(() => {
       client
         .renderFontString(romHandle, ref, 3, preview)

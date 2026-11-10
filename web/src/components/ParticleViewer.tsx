@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { useStore } from "../state/store";
+import { useChangedKey } from "../useChangedKey";
 
 // SPA effects are rendered to frames server-side (Nds4j ParticleRenderer); the viewer just cycles
 // the pre-rendered frames, so a simple interval is fine (no CheerpJ call during playback).
@@ -13,12 +14,15 @@ export function ParticleViewer() {
   const [playing, setPlaying] = useState(true);
 
   const { container, id } = selection.ref;
-  useEffect(() => {
-    let alive = true;
+  if (useChangedKey(`${romHandle}:${container}:${id}`)) {
     setData(null);
     setErr(undefined);
     setFrame(0);
     setPlaying(true);
+  }
+
+  useEffect(() => {
+    let alive = true;
     client
       .renderParticles(romHandle, { container, id }, 256, 256, 48)
       .then((d) => alive && setData(d))
