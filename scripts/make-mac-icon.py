@@ -46,9 +46,11 @@ def corner_params(radius, smoothing):
     arc = math.sin(math.radians(arc_measure / 2.0)) * radius * math.sqrt(2.0)
     angle_alpha = (90.0 - arc_measure) / 2.0
     angle_beta = 45.0 * smoothing
+
     handle = radius * math.tan(math.radians(angle_alpha / 2.0))
     c = handle * math.cos(math.radians(angle_beta))
     d = c * math.tan(math.radians(angle_beta))
+
     p = (1.0 + smoothing) * radius
     b = (p - arc - c - d) / 3.0
     a = 2.0 * b
@@ -94,11 +96,13 @@ def render_mask():
         '<svg xmlns="http://www.w3.org/2000/svg" width="%d" height="%d" viewBox="0 0 %d %d">'
         '<path d="%s" fill="#ffffff" transform="translate(%d %d)"/></svg>'
     ) % (CANVAS, CANVAS, CANVAS, CANVAS, path, MARGIN, MARGIN)
+
     png = cairosvg.svg2png(
         bytestring=svg.encode('utf-8'),
         output_width=CANVAS * MASK_SCALE,
         output_height=CANVAS * MASK_SCALE,
     )
+
     rendered = Image.open(io.BytesIO(png)).convert('L')
     return rendered.resize((CANVAS, CANVAS), Image.Resampling.LANCZOS)
 
@@ -126,6 +130,7 @@ def build_shadow(mask):
     """
     blurred = mask.filter(ImageFilter.GaussianBlur(SHADOW_BLUR))
     faded = blurred.point(lambda value: int(round(value * SHADOW_ALPHA)))
+
     shifted = Image.new('L', (CANVAS, CANVAS), 0)
     shifted.paste(faded, (0, SHADOW_DY))
 
