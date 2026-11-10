@@ -105,11 +105,26 @@ describe("WavePanel", () => {
       onSeek: () => undefined,
     });
     expect(host?.textContent).not.toContain("loops");
+    expect(host?.textContent).not.toContain("Select a wave.");
     const input = host?.querySelector("input") as HTMLInputElement;
     Object.defineProperty(input, "files", { value: [] });
     act(() => {
       input.dispatchEvent(new Event("change", { bubbles: true }));
       (host?.querySelectorAll(".btn")[1] as HTMLButtonElement).click();
     });
+    act(() => root?.unmount());
+    mount({
+      waves: [{ ...wave, loops: false }],
+      selected: null,
+      preview: null,
+      busy: false,
+      currentTime: 0,
+      onSelect: () => undefined,
+      onPlay: () => undefined,
+      onExport: () => undefined,
+      onImport: () => undefined,
+      onSeek: () => undefined,
+    });
+    expect(host?.textContent).toContain("Select a wave.");
   });
 });

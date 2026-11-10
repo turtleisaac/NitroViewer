@@ -1,6 +1,6 @@
-import { useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
+import { useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent, type PropsWithChildren } from "react";
 import { useStore } from "../state/store";
-import { useChangedKey } from "../useChangedKey";
+import { useApplyOnChange } from "./viewerShared";
 import {
   activeTracksAt,
   drawNoteTrack,
@@ -17,82 +17,57 @@ import type {
   WaveInfo,
   WavePreview,
 } from "../transport";
-import { base64ToBytes, download } from "../util";
 import { Icon } from "./icons";
-import { createEngine, type EngineHandle } from "../sound/engine/host";
+import { type EngineHandle } from "../sound/engine/host";
 import { LiveEngineSlot } from "../sound/engine/liveEngineSlot";
-
-type Tab = "sequences" | "waves" | "streams" | "banks";
-
-type LoopPts = { start: number; end: number };
-
-/** When any track is soloed, only soloed tracks are audible; otherwise every non-muted track is.
- *  Shared by the live engine's track mask and the note-roll's mute/solo dimming so the two can't
- *  drift out of sync with each other. */
-function trackAudible(t: number, muted: boolean[], solo: boolean[]): boolean {
-  return solo.some(Boolean) ? !!solo[t] : !muted[t];
-}
-
-function computeTrackMask(trackCount: number, muted: boolean[], solo: boolean[]): number {
-  let mask = 0;
-  for (let t = 0; t < trackCount; t++) if (trackAudible(t, muted, solo)) mask |= 1 << t;
-  return mask;
-}
-
-// Rendering a whole demanding sequence to WAV (the default playback path) pushes a large base64
-// blob through the CheerpJ bridge and expands it into an equally large AudioBuffer — fine on
-// desktop, but tight enough on iOS Safari's much smaller per-tab memory ceiling to crash the page.
-// The actual memory cost is driven by rendered duration (WAV bytes), not note count — note count is
-// only a cheap proxy available before any render happens. Two real crash reports plus two known-good
-// controls, sorted by note count:
-//   SEQ_CITY01_D  1193 notes,  89.7s render — safe
-//   SEQ_TOWN01_D   873 notes, 150.5s render — safe
-//   SEQ_D_MOUNT1  1699 notes, 167.9s render — CRASHED (note count alone would miss this: it's below
-//                                              a naive 2000 threshold despite crashing)
-//   SEQ_PL_BA_GIRA 3552 notes, 218.1s render — CRASHED
-// Note count alone can't separate MOUNT1 (crashed) from CITY01/TOWN01 (safe) with real margin, so
-// `isDemandingSequence` also checks estimateSeconds (below), which tracks actual render duration
-// much more closely for the common loop-doubled case. Either signal routes Play straight to the
-// live engine — built for exactly this (constant memory regardless of song length) — instead of the
-// rendered-WAV path, not just as a mute/solo escape hatch.
-const DEMANDING_NOTE_COUNT = 1500;
-const DEMANDING_SECONDS = 130;
-
-function isDemandingSequence(notes: SequenceNotes): boolean {
-  return notes.notes.length > DEMANDING_NOTE_COUNT || estimateSeconds(notes) > DEMANDING_SECONDS;
-}
-
-// Estimated playback timing from tick/tempo/loop metadata alone — no render required. Used both to
-// flag demanding sequences (above) before ever rendering, and as a fallback for the note-roll's
-// playhead/seek-to-tick math whenever a demanding sequence is live without the real WAV timing (see
-// goLive and the onSeekTick handler below) — which, deliberately, is any time a demanding sequence
-// plays at all, since the entire point is to never trigger that render.
-//
-// The engine's driver runs at 192 Hz and advances one tick every time its tempoStack — accumulated
-// at `tempo` per driver-frame — clears a 240 threshold (stepper.ts runDriverFrame), so ticks/sec =
-// tempo * 192 / 240 = tempo * 0.8, i.e. seconds = ticks * 1.25 / tempo. For a looping sequence,
-// renderSequenceWav's own convention (matched by playheadTick/tickToTime below) is the loop-end tick
-// once as the "intro" pass, then just the [loopStart, loopEnd) body again as the seamless repeat —
-// mirror that to get both a matching `seconds` total and a `loop` split in seconds, not just a flat
-// duration. Verified against real renders: within ~0.1% for a from-the-top loop (loopStart 0), ~6%
-// for a loop with a real intro (loopStart > 0) — the driver's per-tick integer rounding isn't
-// modeled here, only its average rate. Both are fine for a fallback; neither is exact, which is one
-// reason the note-count check above still exists as a backstop for e.g. mid-song tempo changes this
-// can't see (tempo/ticks reflect only the initial tempo).
-function estimateTiming(notes: SequenceNotes): { loop: LoopPts | null; seconds: number } {
-  if (notes.tempo <= 0) return { loop: null, seconds: 0 };
-  const secPerTick = 1.25 / notes.tempo;
-  if (notes.loopEnd > notes.loopStart && notes.loopStart >= 0) {
-    const loopStartSec = notes.loopEnd * secPerTick;
-    const bodySec = (notes.loopEnd - notes.loopStart) * secPerTick;
-    return { loop: { start: loopStartSec, end: loopStartSec + bodySec }, seconds: loopStartSec + bodySec };
-  }
-  return { loop: null, seconds: notes.ticks * secPerTick };
-}
-
-function estimateSeconds(notes: SequenceNotes): number {
-  return estimateTiming(notes).seconds;
-}
+import {
+  bankExtra,
+  canPlaySequence,
+  computeTrackMask,
+  demandingSequence,
+  ensureSequenceWav,
+  errorMessage,
+  estimateTiming,
+  exportBank,
+  exportSequenceMidi,
+  exportSequenceWav,
+  exportStreamPreview,
+  exportWaveFile,
+  goLive,
+  importWaveFile,
+  isDemandingSequence,
+  loadArchive,
+  loadSequence,
+  loadSoundDocument,
+  loadStream,
+  loadWave,
+  statusPlaceholder,
+  playbackClock,
+  playSequence,
+  playPreview,
+  previewBytes,
+  rollTime,
+  sdatOpening,
+  sdatTabLabel,
+  seekWave,
+  sequenceHint,
+  sequenceTitle,
+  seqLoop,
+  showSequencePane,
+  showStreamPane,
+  showWavePane,
+  soundIsPlaying,
+  stopLiveEngine,
+  toggleTrack,
+  trackAudible,
+  visibleSequences,
+  waveCountExtra,
+  waveList,
+  type LoopPts,
+  type SeqWav,
+  type SoundCtx,
+  type SoundTab,
+} from "./soundViewerLogic";
 
 function wavToBuffer(ctx: AudioContext, wav: Uint8Array): AudioBuffer {
   const dv = new DataView(wav.buffer, wav.byteOffset, wav.byteLength);
@@ -622,7 +597,375 @@ export function WavePanel({
   );
 }
 
-export function SoundViewer() {
+
+const TABS: SoundTab[] = ["sequences", "waves", "streams", "banks"];
+
+/** SDAT category chips. Hidden for a standalone file. */
+export function SdatTabBar({ fmt, info, tab, setTab }: { fmt: string; info: SdatInfo | null; tab: SoundTab; setTab: (tab: SoundTab) => void }) {
+  if (fmt !== "SDAT" || !info) return null;
+  return (
+    <div className="controls">
+      {TABS.map((item) => (
+        <button key={item} className={"chip" + (tab === item ? " chip--on" : "")} onClick={() => setTab(item)}>
+          {sdatTabLabel(item, info)}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+/** Play button face: rendering, starting, playing, or idle. */
+export function PlayFace({ busy, isPlaying }: { busy: string | null; isPlaying: boolean }) {
+  if (busy === "render") return <>Rendering…</>;
+  if (busy === "engine") return <>Starting…</>;
+  if (isPlaying) return <><Icon name="play" /> Playing</>;
+  return <><Icon name="play" /> Play</>;
+}
+
+/** Sequence list for an SDAT. A standalone SSEQ has no list. */
+function SequenceList({ fmt, filter, setFilter, seqs, seqIndex, onSelect }: {
+  fmt: string;
+  filter: string;
+  setFilter: (value: string) => void;
+  seqs: SdatNamed[];
+  seqIndex: number | null;
+  onSelect: (index: number) => void;
+}) {
+  if (fmt !== "SDAT") return null;
+  return (
+    <div className="sound-col">
+      <input className="sound-filter" placeholder="Filter sequences…" value={filter} onChange={(event) => setFilter(event.target.value)} />
+      <NamedList items={seqs} selected={seqIndex} onSelect={onSelect} extra={bankExtra} />
+    </div>
+  );
+}
+
+/** Transport buttons for the open sequence. */
+export function SequenceControls(props: {
+  notes: SequenceNotes;
+  canPlay: boolean;
+  busy: string | null;
+  isPlaying: boolean;
+  live: boolean;
+  demanding: boolean;
+  onPlay: () => void;
+  onStop: () => void;
+  onExportWav: () => void;
+  onExportMidi: () => void;
+}) {
+  return (
+    <div className="controls">
+      {props.canPlay && (
+        <button className="play-btn" disabled={props.busy != null || props.isPlaying} onClick={props.onPlay}>
+          <PlayFace busy={props.busy} isPlaying={props.isPlaying} />
+        </button>
+      )}
+      {props.isPlaying && (
+        <button className="play-btn" onClick={props.onStop}>
+          <Icon name="stop" /> Stop
+        </button>
+      )}
+      {props.canPlay && (
+        <button className="btn btn--sm" disabled={props.busy != null} onClick={props.onExportWav}>
+          {props.busy === "render" ? "Rendering…" : "Export WAV"}
+        </button>
+      )}
+      <button className="btn btn--sm" disabled={props.busy != null} onClick={props.onExportMidi}>
+        Export MIDI
+      </button>
+      <span className="dim">
+        {sequenceTitle(props.notes)}
+        {sequenceHint(props.canPlay, props.live, props.demanding)}
+      </span>
+    </div>
+  );
+}
+
+/** Note roll, or the empty-state line. */
+function SequenceBody(props: {
+  notes: SequenceNotes | null;
+  busy: string | null;
+  canPlay: boolean;
+  isPlaying: boolean;
+  live: boolean;
+  demanding: boolean;
+  playTick: number;
+  muted: boolean[];
+  solo: boolean[];
+  onPlay: () => void;
+  onStop: () => void;
+  onExportWav: () => void;
+  onExportMidi: () => void;
+  onMute: (track: number) => void;
+  onSolo: (track: number) => void;
+  onSeek: ((tick: number) => void) | undefined;
+}) {
+  if (!props.notes) return <div className="placeholder">{statusPlaceholder(props.busy, "notes", "Reading sequence…", "Select a sequence.")}</div>;
+  return (
+    <>
+      <SequenceControls
+        notes={props.notes}
+        canPlay={props.canPlay}
+        busy={props.busy}
+        isPlaying={props.isPlaying}
+        live={props.live}
+        demanding={props.demanding}
+        onPlay={props.onPlay}
+        onStop={props.onStop}
+        onExportWav={props.onExportWav}
+        onExportMidi={props.onExportMidi}
+      />
+      <NoteRoll
+        notes={props.notes}
+        playTick={props.playTick}
+        playing={props.isPlaying}
+        muted={props.muted}
+        solo={props.solo}
+        onMute={props.onMute}
+        onSolo={props.onSolo}
+        onSeekTick={props.onSeek}
+      />
+    </>
+  );
+}
+
+/** Sequence browser. */
+export function SequencePane(props: {
+  fmt: string;
+  tab: SoundTab;
+  filter: string;
+  setFilter: (value: string) => void;
+  seqs: SdatNamed[];
+  seqIndex: number | null;
+  onSelect: (index: number) => void;
+  notes: SequenceNotes | null;
+  busy: string | null;
+  canPlay: boolean;
+  isPlaying: boolean;
+  live: boolean;
+  demanding: boolean;
+  playTick: number;
+  muted: boolean[];
+  solo: boolean[];
+  onPlay: () => void;
+  onStop: () => void;
+  onExportWav: () => void;
+  onExportMidi: () => void;
+  onMute: (track: number) => void;
+  onSolo: (track: number) => void;
+  onSeek: ((tick: number) => void) | undefined;
+}) {
+  if (!showSequencePane(props.fmt, props.tab)) return null;
+  return (
+    <div className="sound-split">
+      <SequenceList fmt={props.fmt} filter={props.filter} setFilter={props.setFilter} seqs={props.seqs} seqIndex={props.seqIndex} onSelect={props.onSelect} />
+      <div className="sound-detail">
+        <SequenceBody {...props} />
+      </div>
+    </div>
+  );
+}
+
+/** Wave archive list for an SDAT. */
+export function ArchiveList({ fmt, info, arcIndex, onSelect }: { fmt: string; info: SdatInfo | null; arcIndex: number | null; onSelect: (index: number) => void }) {
+  if (fmt !== "SDAT" || !info) return null;
+  return (
+    <div className="sound-col">
+      <NamedList items={info.waveArchives} selected={arcIndex} onSelect={onSelect} extra={waveCountExtra} />
+    </div>
+  );
+}
+
+/** Wave archive browser plus the shared wave panel. */
+export function WaveArchivePane(props: {
+  fmt: string;
+  tab: SoundTab;
+  info: SdatInfo | null;
+  arcIndex: number | null;
+  onArchive: (index: number) => void;
+  waves: WaveInfo[];
+  waveIndex: number | null;
+  preview: WavePreview | null;
+  busy: boolean;
+  currentTime: number;
+  onSelect: (index: number) => void;
+  onPlay: () => void;
+  onSeek: (time: number) => void;
+  onExport: () => void;
+  onImport: (file: File) => void;
+}) {
+  if (!showWavePane(props.fmt, props.tab)) return null;
+  return (
+    <div className="sound-split">
+      <ArchiveList fmt={props.fmt} info={props.info} arcIndex={props.arcIndex} onSelect={props.onArchive} />
+      <WavePanel
+        waves={props.waves}
+        selected={props.waveIndex}
+        preview={props.preview}
+        busy={props.busy}
+        currentTime={props.currentTime}
+        onSelect={props.onSelect}
+        onPlay={props.onPlay}
+        onSeek={props.onSeek}
+        onExport={props.onExport}
+        onImport={props.onImport}
+      />
+    </div>
+  );
+}
+
+/** Stream list for an SDAT. */
+export function StreamList({ fmt, info, streamIndex, onSelect }: { fmt: string; info: SdatInfo | null; streamIndex: number | null; onSelect: (index: number) => void }) {
+  if (fmt !== "SDAT" || !info) return null;
+  return <NamedList items={info.streams} selected={streamIndex} onSelect={onSelect} />;
+}
+
+/** One stream's controls, or the empty state. */
+function StreamDetail(props: {
+  preview: StreamPreview | null;
+  busy: string | null;
+  info: SdatInfo | null;
+  streamIndex: number | null;
+  currentTime: number;
+  onPlay: () => void;
+  onExport: () => void;
+  onSeek: (time: number) => void;
+}) {
+  if (!props.preview) return <div className="placeholder">{statusPlaceholder(props.busy, "stream", "Decoding…", "Select a stream.")}</div>;
+  return (
+    <>
+      <div className="controls">
+        <button className="play-btn" onClick={props.onPlay}>
+          <Icon name="play" /> Play
+        </button>
+        <button className="btn btn--sm" onClick={props.onExport}>
+          Export WAV
+        </button>
+        <span className="dim">
+          {props.preview.channels} ch · {props.preview.sampleRate} Hz · {props.preview.samples.toLocaleString()} samples
+        </span>
+      </div>
+      <WaveformScrub
+        png={props.preview.png}
+        currentTime={props.currentTime}
+        duration={waveSeconds(props.preview.sampleRate, props.preview.samples)}
+        onSeek={props.onSeek}
+      />
+    </>
+  );
+}
+
+/** Stream browser. */
+export function StreamPane(props: {
+  fmt: string;
+  tab: SoundTab;
+  info: SdatInfo | null;
+  streamIndex: number | null;
+  onSelect: (index: number) => void;
+  preview: StreamPreview | null;
+  busy: string | null;
+  currentTime: number;
+  onPlay: () => void;
+  onExport: () => void;
+  onSeek: (time: number) => void;
+}) {
+  if (!showStreamPane(props.fmt, props.tab)) return null;
+  return (
+    <div className="sound-split">
+      <StreamList fmt={props.fmt} info={props.info} streamIndex={props.streamIndex} onSelect={props.onSelect} />
+      <div className="sound-detail">
+        <StreamDetail
+          preview={props.preview}
+          busy={props.busy}
+          info={props.info}
+          streamIndex={props.streamIndex}
+          currentTime={props.currentTime}
+          onPlay={props.onPlay}
+          onExport={props.onExport}
+          onSeek={props.onSeek}
+        />
+      </div>
+    </div>
+  );
+}
+
+/** Bank list. Choosing one downloads a SoundFont. */
+export function BankPane({ fmt, tab, info, onSelect }: { fmt: string; tab: SoundTab; info: SdatInfo | null; onSelect: (index: number) => void }) {
+  if (fmt !== "SDAT" || tab !== "banks" || !info) return null;
+  return (
+    <div className="sound-col">
+      <NamedList items={info.banks} selected={null} onSelect={onSelect} extra={sf2Extra} />
+      <p className="dim">Click a bank to download its SoundFont.</p>
+    </div>
+  );
+}
+
+/** Extra column on a bank row. */
+function sf2Extra(): string {
+  return "export .sf2";
+}
+
+/** Whole sound page once the document has opened. */
+export function SoundBody(props: PropsWithChildren<{ err: string | undefined; opening: boolean }>) {
+  if (props.err) return <div className="error">Could not open audio: {props.err}</div>;
+  if (props.opening) return <div className="placeholder">Opening SDAT…</div>;
+  return <div className="sound">{props.children}</div>;
+}
+
+/** Timing used when seeking, preferring a matching render over the tempo estimate. */
+export function seekTiming(ctx: SoundCtx, notes: SequenceNotes): { loop: LoopPts | null; seconds: number } {
+  const wavOk = ctx.seqWav != null && ctx.seqWav.index === ctx.seqIndex;
+  if (!wavOk || !ctx.seqWav) {
+    const estimated = estimateTiming(notes);
+    return { loop: estimated.loop, seconds: estimated.seconds };
+  }
+  return { loop: seqLoop(ctx.seqWav), seconds: ctx.seqWav.seconds };
+}
+
+/** Seek the live engine, or the rendered buffer when the song is small enough to render. */
+export async function seekLiveOrWav(tick: number, ctx: SoundCtx, notes: SequenceNotes): Promise<void> {
+  const engine = ctx.engineSlotRef.current.engine;
+  if (engine) {
+    const timing = seekTiming(ctx, notes);
+    const seconds = tickToTime(tick, notes, timing.loop, timing.seconds);
+    engine.seek(seconds);
+    ctx.setLiveSeconds(seconds);
+    return;
+  }
+  if (isDemandingSequence(notes)) return;
+  const wav = await ensureSequenceWav(ctx);
+  const loop = seqLoop(wav);
+  ctx.audio.seek(tickToTime(tick, notes, loop, wav.seconds), wav.bytes, loop);
+}
+
+/** True when a demanding sequence must go live before it can be seeked. */
+function needsLiveSeek(notes: SequenceNotes, ctx: SoundCtx): boolean {
+  return isDemandingSequence(notes) && !ctx.engineSlotRef.current.engine;
+}
+
+/** Drag the playhead. Demanding sequences never fall back to a full render. */
+export async function seekSequenceTick(tick: number, ctx: SoundCtx): Promise<void> {
+  const notes = ctx.notes;
+  if (!notes) return;
+  try {
+    if (needsLiveSeek(notes, ctx)) {
+      if (ctx.goingLiveRef.current) return;
+      await goLive(computeTrackMask(notes.trackCount, ctx.muted, ctx.solo), ctx);
+    }
+    await seekLiveOrWav(tick, ctx, notes);
+  } catch (err) {
+    alert("Render failed: " + errorMessage(err));
+  }
+}
+
+/** Note-roll playhead for the open sequence, or zero when none is open. */
+function sequencePlayTick(notes: SequenceNotes | null, time: number, loop: LoopPts | null, seconds: number): number {
+  if (!notes) return 0;
+  return playheadTick(time, notes, loop, seconds);
+}
+
+/** State and handlers for `SoundViewer`. */
+function useSoundSession() {
   const selection = useStore((s) => s.selection)!;
   const client = useStore((s) => s.client);
   const romHandle = useStore((s) => s.romHandle)!;
@@ -630,8 +973,7 @@ export function SoundViewer() {
   const editVersion = useStore((s) => s.editVersion);
   const fmt = selection.format;
   const audio = useAudio();
-
-  const [tab, setTab] = useState<Tab>("sequences");
+  const [tab, setTab] = useState<SoundTab>("sequences");
   const [info, setInfo] = useState<SdatInfo | null>(null);
   const [err, setErr] = useState<string>();
   const [filter, setFilter] = useState("");
@@ -646,65 +988,20 @@ export function SoundViewer() {
   const [busy, setBusy] = useState<string | null>(null);
   const [muted, setMuted] = useState<boolean[]>([]);
   const [solo, setSolo] = useState<boolean[]>([]);
-  const [seqWav, setSeqWav] = useState<{
-    index: number;
-    bytes: Uint8Array;
-    seconds: number;
-    loopStartSec: number;
-    loopEndSec: number;
-  } | null>(null);
-  const waveBytes = useMemo(
-    () => (wavePrev ? base64ToBytes(wavePrev.wavBase64) : null),
-    [wavePrev]
-  );
-  const streamBytes = useMemo(
-    () => (streamPrev ? base64ToBytes(streamPrev.wavBase64) : null),
-    [streamPrev]
-  );
-
-  // Live (AudioWorklet) engine: default playback stays on the rendered-WAV path above; the first
-  // mute/solo click spins this up, seeded to the current position. Tracked via refs, not state:
-  // every consumer that acts on the engine (seek/setTrackMask/disconnect) needs the CURRENT handle
-  // from effects and async callbacks where state would risk a stale closure — `live` (state) exists
-  // only to trigger a re-render when engine presence changes. `liveGeneration` is bumped by every
-  // teardown path (stop, sequence switch, tab switch, resource switch, unmount) so an in-flight
-  // goLive() can tell it was cancelled after its awaits resolve and discard the engine it just
-  // built instead of attaching a now-stale one; `goingLive` blocks goLive() from being re-entered
-  // while already in flight (its own awaits are the only gap where that's possible) — a mask that
-  // arrives during that gap is captured in `pendingMask` instead of being dropped, and applied the
-  // moment the in-flight engine attaches, so the engine never starts audible with a stale mute/solo
-  // mask that no longer matches what the UI is showing.
+  const [seqWav, setSeqWav] = useState<SeqWav | null>(null);
   const [live, setLive] = useState(false);
   const [liveSeconds, setLiveSeconds] = useState(0);
-  // AudioWorkletNode has no stop() — disconnect() only removes it from the audio graph, it does not
-  // guarantee the node stops running (or GCs) immediately, so its 'position' messages can keep
-  // arriving for a while after. LiveEngineSlot guarantees the previous engine's onPosition
-  // subscription is torn down whenever it stops being current, so a "zombie" engine's stale elapsed
-  // time can never clobber liveSeconds for whatever sequence is actually on screen — see that
-  // module for the regression this guards (the note-roll playhead teleporting to an unrelated
-  // position after switching sequences) and its unit tests.
   const engineSlotRef = useRef(new LiveEngineSlot<EngineHandle>());
   const liveGenerationRef = useRef(0);
   const goingLiveRef = useRef(false);
   const pendingMaskRef = useRef<number | null>(null);
-
-  const stopLive = () => {
-    liveGenerationRef.current++;
-    pendingMaskRef.current = null;
-    const e = engineSlotRef.current.engine;
-    engineSlotRef.current.clear();
-    if (!e) return;
-    e.node.disconnect();
-    setLive(false);
-    setLiveSeconds(0);
-  };
-
-  useEffect(() => () => stopLive(), []); // tear down on unmount too, not just on the lifecycle events below
-
   const { container, id } = selection.ref;
   const ref = selection.ref;
+  const stopLive = () => stopLiveEngine({ liveGenerationRef, pendingMaskRef, engineSlotRef, setLive, setLiveSeconds });
 
-  if (useChangedKey(`${container}:${id}:${fmt}`)) {
+  useEffect(() => () => stopLive(), []);
+
+  useApplyOnChange(`${container}:${id}:${fmt}`, () => {
     setTab("sequences");
     setSeqIndex(null);
     setNotes(null);
@@ -716,7 +1013,7 @@ export function SoundViewer() {
     setStreamPrev(null);
     setSeqWav(null);
     setFilter("");
-  }
+  });
 
   useEffect(() => {
     audio.stop();
@@ -724,12 +1021,11 @@ export function SoundViewer() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [container, id, fmt]);
 
-  if (useChangedKey(editVersion)) setSeqWav(null);
-
-  if (useChangedKey(notes)) {
+  useApplyOnChange(editVersion, () => setSeqWav(null));
+  useApplyOnChange(notes, () => {
     setMuted([]);
     setSolo([]);
-  }
+  });
 
   useEffect(() => {
     audio.stop();
@@ -737,555 +1033,134 @@ export function SoundViewer() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tab]);
 
-  if (useChangedKey(`${romHandle}:${container}:${id}:${fmt}:${editVersion}`)) setErr(undefined);
+  useApplyOnChange(`${romHandle}:${container}:${id}:${fmt}:${editVersion}`, () => setErr(undefined));
 
   useEffect(() => {
     let alive = true;
-    if (fmt === "SDAT") {
-      client
-        .getSdatInfo(romHandle, ref)
-        .then((d) => alive && setInfo(d))
-        .catch((e) => alive && setErr((e as Error).message));
-    } else if (fmt === "SSEQ") {
-      client
-        .getSequenceNotes(romHandle, ref, 0)
-        .then((d) => {
-          if (!alive) return;
-          setNotes(d);
-          setSeqIndex(0);
-        })
-        .catch((e) => alive && setErr((e as Error).message));
-    } else if (fmt === "SWAR") {
-      client
-        .getWaveArchiveInfo(romHandle, ref, 0)
-        .then((d) => alive && setWaves(d.waves))
-        .catch((e) => alive && setErr((e as Error).message));
-    } else if (fmt === "SWAV") {
-      client
-        .getWavePreview(romHandle, ref, 0, 0)
-        .then((d) => {
-          if (!alive) return;
-          setWavePrev(d);
-          setWaves([
-            {
-              index: 0,
-              sampleRate: d.sampleRate,
-              samples: d.samples,
-              type: d.type,
-              loops: d.loops,
-            },
-          ]);
-          setWaveIndex(0);
-        })
-        .catch((e) => alive && setErr((e as Error).message));
-    } else if (fmt === "STRM") {
-      client
-        .getStreamPreview(romHandle, ref, 0)
-        .then((d) => alive && setStreamPrev(d))
-        .catch((e) => alive && setErr((e as Error).message));
-    }
-    return () => {
-      alive = false;
-    };
+    loadSoundDocument(fmt, () => alive, { client, romHandle, ref }, {
+      info: setInfo,
+      notes: setNotes,
+      seqIndex: setSeqIndex,
+      waves: setWaves,
+      wavePrev: setWavePrev,
+      waveIndex: setWaveIndex,
+      stream: setStreamPrev,
+      err: setErr,
+    });
+    return () => { alive = false; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [client, romHandle, container, id, fmt, editVersion]);
 
-  const seqs = useMemo(() => {
-    if (!info) return [];
-    const q = filter.trim().toLowerCase();
-    if (!q) return info.sequences;
-    return info.sequences.filter((s) => (s.name || "").toLowerCase().includes(q) || String(s.index).includes(q));
-  }, [info, filter]);
+  const waveBytes = useMemo(() => previewBytes(wavePrev), [wavePrev]);
+  const streamBytes = useMemo(() => previewBytes(streamPrev), [streamPrev]);
+  const seqs = useMemo(() => visibleSequences(info, filter), [info, filter]);
+  const clock = playbackClock({ seqWav, seqIndex, live, notes });
+  const canPlay = canPlaySequence(fmt, seqIndex);
+  const isPlaying = soundIsPlaying(live, audio.playing);
+  const demanding = demandingSequence(notes);
+  const playTick = sequencePlayTick(notes, rollTime(live, liveSeconds, clock.loop, audio.currentTime, sourceTime), clock.loop, clock.seconds);
 
-  const loadSequence = async (index: number) => {
-    setSeqIndex(index);
-    setSeqWav(null);
-    setBusy("notes");
-    audio.stop();
-    stopLive();
-    try {
-      setNotes(await client.getSequenceNotes(romHandle, ref, index));
-    } catch (e) {
-      setErr((e as Error).message);
-    } finally {
-      setBusy(null);
-    }
+  const ctx = (): SoundCtx => ({
+    fmt, seqIndex, notes, seqWav, romHandle, ref, client, audio, muted, solo,
+    selectionName: selection.name, setBusy, setErr, setNotes, setSeqIndex, setSeqWav,
+    setLive, setLiveSeconds, engineSlotRef, liveGenerationRef, goingLiveRef, pendingMaskRef,
+    stopLive, arcIndex, waveIndex, setArcIndex, setWaveIndex, setWavePrev, setWaves,
+    setStreamIndex, setStreamPrev, importWav, info,
+  });
+
+  return {
+    err, opening: sdatOpening(fmt, info), fmt, info, tab, setTab, filter, setFilter, seqs, seqIndex,
+    notes, busy, canPlay, isPlaying, live, demanding, playTick, muted, solo,
+    onSelectSeq: (index: number) => { void loadSequence(index, ctx()); },
+    onPlay: () => { void playSequence(ctx()); },
+    onStop: () => { stopLive(); audio.stop(); },
+    onExportWav: () => { void exportSequenceWav(ctx()); },
+    onExportMidi: () => { void exportSequenceMidi(ctx()); },
+    onMute: (track: number) => toggleTrack("mute", track, ctx(), setMuted, setSolo),
+    onSolo: (track: number) => toggleTrack("solo", track, ctx(), setMuted, setSolo),
+    onSeekTick: (tick: number) => { void seekSequenceTick(tick, ctx()); },
+    arcIndex,
+    onArchive: (index: number) => { void loadArchive(index, ctx()); },
+    waves: waveList(waves),
+    waveIndex,
+    wavePrev,
+    onWave: (index: number) => { void loadWave(index, ctx()); },
+    onPlayWave: () => playPreview(wavePrev, audio),
+    onSeekWave: (time: number) => seekWave(time, waveBytes, audio),
+    onExportWave: () => exportWaveFile(wavePrev, info, arcIndex, waveIndex),
+    onImportWave: (file: File) => { void importWaveFile(file, ctx()); },
+    currentTime: audio.currentTime,
+    streamIndex,
+    streamPrev,
+    onStream: (index: number) => { void loadStream(index, ctx()); },
+    onPlayStream: () => playPreview(streamPrev, audio),
+    onExportStream: () => exportStreamPreview(streamPrev, info, streamIndex),
+    onSeekStream: (time: number) => seekWave(time, streamBytes, audio),
+    onBank: (index: number) => exportBank(index, ctx()),
   };
+}
 
-  const seqFileName = () =>
-    (notes?.name || selection.name || "sequence").replace(/[^\w.-]+/g, "_");
-
-  const ensureSequenceWav = async () => {
-    if (fmt !== "SDAT" || seqIndex == null) throw new Error("sequence playback needs an SDAT");
-    if (seqWav && seqWav.index === seqIndex) return seqWav;
-    const r = await client.renderSequenceWav(romHandle, ref, seqIndex, 0);
-    const cached = {
-      index: seqIndex,
-      bytes: base64ToBytes(r.base64),
-      seconds: r.seconds,
-      loopStartSec: r.loopStartSec,
-      loopEndSec: r.loopEndSec,
-    };
-    setSeqWav(cached);
-    return cached;
-  };
-
-  const seqLoop = (w: { loopStartSec: number; loopEndSec: number }): LoopPts | null =>
-    w.loopEndSec > w.loopStartSec + 0.02 ? { start: Math.max(0, w.loopStartSec), end: w.loopEndSec } : null;
-
-  const playSequence = async () => {
-    if (fmt !== "SDAT" || seqIndex == null || !notes) return;
-    if (isDemandingSequence(notes)) {
-      // Skip the rendered-WAV path entirely for a sequence big enough to risk it — straight to the
-      // live engine, same as a mute/solo click, just triggered by Play instead.
-      await goLive(computeTrackMask(notes.trackCount, muted, solo));
-      return;
-    }
-    setBusy("render");
-    try {
-      const w = await ensureSequenceWav();
-      audio.play(w.bytes, seqLoop(w));
-    } catch (e) {
-      alert("Render failed: " + (e as Error).message);
-    } finally {
-      setBusy(null);
-    }
-  };
-
-  /**
-   * Switch from the default rendered-WAV playback to the live AudioWorklet engine, seeded to the
-   * current position, so mute/solo actually change what's audible instead of only the note-roll
-   * highlight. Only reachable via the first mute/solo click (see toggleTrack below); once live,
-   * further mute/solo changes are just a message to the running engine, no reseed.
-   */
-  const goLive = async (mask: number) => {
-    if (fmt !== "SDAT" || seqIndex == null || engineSlotRef.current.engine || !notes) return;
-    if (goingLiveRef.current) {
-      // A goLive() is already in flight from an earlier click; record this newer mask rather than
-      // dropping it, so the engine attaches with the user's latest intent, not a stale one.
-      pendingMaskRef.current = mask;
-      return;
-    }
-    goingLiveRef.current = true;
-    const myGeneration = liveGenerationRef.current;
-    const seedSeconds = audio.currentTime;
-    setBusy("engine");
-    try {
-      // ensureSequenceWav supplies the loop-in-seconds timing the note-roll's playhead needs to
-      // wrap correctly across repeat loop cycles in live mode — worth having when it's free (cached
-      // from a previous Play) or cheap (a small sequence). But for a demanding sequence going live
-      // specifically to AVOID that render's memory cost, triggering it here just to draw a nicer
-      // playhead would defeat the entire point — skip it and let the playhead fall back to a rough
-      // tempo-based estimate (estimateSeconds) instead of an exact one.
-      const alreadyCached = seqWav != null && seqWav.index === seqIndex;
-      const wantWavTiming = alreadyCached || !isDemandingSequence(notes);
-      const engineData = wantWavTiming
-        ? (await Promise.all([ensureSequenceWav(), client.getSequenceEngineData(romHandle, ref, seqIndex)]))[1]
-        : await client.getSequenceEngineData(romHandle, ref, seqIndex);
-      const ctx = audio.ctx();
-      const e = await createEngine(ctx, engineData, { seedSeconds, trackMask: mask });
-      if (liveGenerationRef.current !== myGeneration) {
-        // Stopped, switched sequences, or unmounted while we were setting up — discard rather
-        // than attach a live engine nobody asked for anymore.
-        e.node.disconnect();
-        return;
-      }
-      e.node.connect(ctx.destination);
-      audio.stop();
-      setLiveSeconds(seedSeconds);
-      engineSlotRef.current.set(e, (s) => setLiveSeconds(s));
-      setLive(true);
-      // A newer mute/solo click arrived while we were setting up (captured above instead of
-      // dropped) — apply the user's latest intent now instead of leaving the engine on the mask
-      // from whichever click happened to be first.
-      if (pendingMaskRef.current != null) {
-        e.setTrackMask(pendingMaskRef.current);
-        pendingMaskRef.current = null;
-      }
-    } catch (e) {
-      alert("Live engine failed to start: " + (e as Error).message);
-    } finally {
-      goingLiveRef.current = false;
-      setBusy(null);
-      // A mask arrived (and was queued into pendingMaskRef) while this call was in flight, but
-      // this call ended up discarding its engine (stopped/switched away mid-setup) or erroring out
-      // before it could apply that mask itself — nothing else will ever consume it otherwise
-      // (pendingMaskRef is only read from inside an in-flight goLive()), so retry with it now.
-      const stillPending = pendingMaskRef.current;
-      if (stillPending != null && !engineSlotRef.current.engine) {
-        pendingMaskRef.current = null;
-        void goLive(stillPending);
-      }
-    }
-  };
-
-  const stopPlayback = () => {
-    stopLive();
-    audio.stop();
-  };
-
-  const toggleTrack = (kind: "mute" | "solo", t: number) => {
-    if (!notes) return;
-    const flags = kind === "mute" ? muted : solo;
-    const next = Array.from({ length: notes.trackCount }, (_, i) => flags[i] ?? false);
-    next[t] = !next[t];
-    const nextMuted = kind === "mute" ? next : muted;
-    const nextSolo = kind === "solo" ? next : solo;
-    if (kind === "mute") setMuted(next);
-    else setSolo(next);
-    const mask = computeTrackMask(notes.trackCount, nextMuted, nextSolo);
-    const engine = engineSlotRef.current.engine;
-    if (engine) engine.setTrackMask(mask);
-    else void goLive(mask);
-  };
-
-  const exportWav = async () => {
-    if (fmt !== "SDAT" || seqIndex == null) return;
-    if (
-      notes &&
-      isDemandingSequence(notes) &&
-      !window.confirm(
-        "This is a large sequence. Rendering the full WAV to export it can use a lot of memory and " +
-          "may crash the page on some devices (notably iOS Safari). Continue?"
-      )
-    ) {
-      return;
-    }
-    setBusy("render");
-    try {
-      download(`${seqFileName()}.wav`, (await ensureSequenceWav()).bytes, "audio/wav");
-    } catch (e) {
-      alert("WAV export failed: " + (e as Error).message);
-    } finally {
-      setBusy(null);
-    }
-  };
-
-  const exportMidi = async () => {
-    if (seqIndex == null && fmt !== "SSEQ") return;
-    setBusy("midi");
-    try {
-      const r = await client.exportSequenceMidi(romHandle, ref, seqIndex ?? 0);
-      download(`${seqFileName()}.mid`, base64ToBytes(r.base64), "audio/midi");
-    } catch (e) {
-      alert("MIDI export failed: " + (e as Error).message);
-    } finally {
-      setBusy(null);
-    }
-  };
-
-  const loadArchive = async (index: number) => {
-    setArcIndex(index);
-    setWaveIndex(null);
-    setWavePrev(null);
-    setBusy("waves");
-    try {
-      setWaves((await client.getWaveArchiveInfo(romHandle, ref, index)).waves);
-    } catch (e) {
-      setErr((e as Error).message);
-    } finally {
-      setBusy(null);
-    }
-  };
-
-  const loadWave = async (index: number) => {
-    setWaveIndex(index);
-    setBusy("wave");
-    audio.stop();
-    try {
-      setWavePrev(await client.getWavePreview(romHandle, ref, arcIndex ?? 0, index));
-    } catch (e) {
-      setErr((e as Error).message);
-    } finally {
-      setBusy(null);
-    }
-  };
-
-  const loadStream = async (index: number) => {
-    setStreamIndex(index);
-    setBusy("stream");
-    audio.stop();
-    try {
-      setStreamPrev(await client.getStreamPreview(romHandle, ref, index));
-    } catch (e) {
-      setErr((e as Error).message);
-    } finally {
-      setBusy(null);
-    }
-  };
-
-  const onImportWav = async (file: File) => {
-    if (waveIndex == null) return;
-    setBusy("import");
-    try {
-      const bytes = new Uint8Array(await file.arrayBuffer());
-      await importWav(ref, arcIndex ?? 0, waveIndex, bytes);
-      setWavePrev(await client.getWavePreview(romHandle, ref, arcIndex ?? 0, waveIndex));
-      if (fmt === "SDAT" || fmt === "SWAR") {
-        setWaves((await client.getWaveArchiveInfo(romHandle, ref, arcIndex ?? 0)).waves);
-      }
-    } catch (e) {
-      alert("WAV import failed: " + (e as Error).message);
-    } finally {
-      setBusy(null);
-    }
-  };
-
-  if (err) return <div className="error">Could not open audio: {err}</div>;
-  if (fmt === "SDAT" && !info) return <div className="placeholder">Opening SDAT…</div>;
-
-  const canPlaySeq = fmt === "SDAT" && seqIndex != null;
-  const isPlaying = live || audio.playing;
-  // Real WAV timing when it's been rendered and matches the sequence on screen; otherwise, while
-  // live, the tick/tempo-only estimate (see estimateTiming) — needed for both the playhead (so it
-  // wraps at the loop instead of running off the right edge once real elapsed time passes the
-  // estimate) and for seeking (see onSeekTick) without ever triggering the render a demanding
-  // sequence is live specifically to avoid.
-  const wavReady = seqWav != null && seqWav.index === seqIndex;
-  const playLoop = wavReady ? seqLoop(seqWav) : live && notes ? estimateTiming(notes).loop : null;
-  const playSeconds = wavReady ? seqWav.seconds : live && notes ? estimateTiming(notes).seconds : 0;
-
+export function SoundViewer() {
+  const vm = useSoundSession();
   return (
-    <div className="sound">
-      {fmt === "SDAT" && info && (
-        <div className="controls">
-          {(["sequences", "waves", "streams", "banks"] as Tab[]).map((t) => (
-            <button key={t} className={"chip" + (tab === t ? " chip--on" : "")} onClick={() => setTab(t)}>
-              {t === "sequences"
-                ? `Sequences (${info.sequences.length})`
-                : t === "waves"
-                  ? `Waves (${info.waveArchives.length})`
-                  : t === "streams"
-                    ? `Streams (${info.streams.length})`
-                    : `Banks (${info.banks.length})`}
-            </button>
-          ))}
-        </div>
-      )}
-
-      {((fmt === "SDAT" && tab === "sequences") || fmt === "SSEQ") && (
-        <div className="sound-split">
-          {fmt === "SDAT" && (
-            <div className="sound-col">
-              <input
-                className="sound-filter"
-                placeholder="Filter sequences…"
-                value={filter}
-                onChange={(e) => setFilter(e.target.value)}
-              />
-              <NamedList
-                items={seqs}
-                selected={seqIndex}
-                onSelect={(i) => void loadSequence(i)}
-                extra={(it) => "bank " + (it as { bankId?: number }).bankId}
-              />
-            </div>
-          )}
-          <div className="sound-detail">
-            {notes ? (
-              <>
-                <div className="controls">
-                  {canPlaySeq && (
-                    <button className="play-btn" disabled={busy != null || isPlaying} onClick={() => void playSequence()}>
-                      {busy === "render"
-                        ? "Rendering…"
-                        : busy === "engine"
-                          ? "Starting…"
-                          : isPlaying
-                            ? <><Icon name="play" /> Playing</>
-                            : <><Icon name="play" /> Play</>}
-                    </button>
-                  )}
-                  {isPlaying && (
-                    <button className="play-btn" onClick={stopPlayback}>
-                      <Icon name="stop" /> Stop
-                    </button>
-                  )}
-                  {canPlaySeq && (
-                    <button className="btn btn--sm" disabled={busy != null} onClick={() => void exportWav()}>
-                      {busy === "render" ? "Rendering…" : "Export WAV"}
-                    </button>
-                  )}
-                  <button className="btn btn--sm" disabled={busy != null} onClick={() => void exportMidi()}>
-                    Export MIDI
-                  </button>
-                  <span className="dim">
-                    {notes.name || "SSEQ"} · {notes.notes.length} notes · {notes.tempo} BPM · {notes.trackCount} tracks
-                    {canPlaySeq
-                      ? live
-                        ? " · live mixing engine"
-                        : isDemandingSequence(notes)
-                          ? " · large sequence; play uses the live mixing engine"
-                          : " · first play synthesizes the whole song; mute/solo switches to live mixing"
-                      : " · open the parent SDAT to play"}
-                  </span>
-                </div>
-                <NoteRoll
-                  notes={notes}
-                  playTick={playheadTick(
-                    live ? sourceTime(liveSeconds, playLoop) : audio.currentTime,
-                    notes,
-                    playLoop,
-                    playSeconds
-                  )}
-                  playing={isPlaying}
-                  muted={muted}
-                  solo={solo}
-                  onMute={(t) => toggleTrack("mute", t)}
-                  onSolo={(t) => toggleTrack("solo", t)}
-                  onSeekTick={
-                    canPlaySeq
-                      ? (tick) => {
-                          void (async () => {
-                            try {
-                              if (isDemandingSequence(notes) && !engineSlotRef.current.engine) {
-                                // Same reasoning as Play: never render the whole song just to seek
-                                // a demanding sequence — go live first (mirrors clicking Play),
-                                // then fall into the engine branch below to seek it to the dragged
-                                // tick. A drag gesture fires this on every pointermove, so if an
-                                // earlier event in the same gesture already kicked off goLive, just
-                                // skip this one rather than racing a second attempt.
-                                if (goingLiveRef.current) return;
-                                await goLive(computeTrackMask(notes.trackCount, muted, solo));
-                              }
-                              const engine = engineSlotRef.current.engine;
-                              if (engine) {
-                                // Use estimated timing here rather than the outer playLoop/
-                                // playSeconds — those close over this render's `live`, which is
-                                // still stale (false) immediately after the goLive() above, before
-                                // React has re-rendered with setLive(true).
-                                const wavOk = seqWav != null && seqWav.index === seqIndex;
-                                const est = estimateTiming(notes);
-                                const loop = wavOk ? seqLoop(seqWav) : est.loop;
-                                const seconds = tickToTime(tick, notes, loop, wavOk ? seqWav.seconds : est.seconds);
-                                engine.seek(seconds);
-                                setLiveSeconds(seconds);
-                                return;
-                              }
-                              if (isDemandingSequence(notes)) return; // goLive above failed/was discarded — never fall back to a full render for this
-                              const w = await ensureSequenceWav();
-                              const loop = seqLoop(w);
-                              const seconds = tickToTime(tick, notes, loop, w.seconds);
-                              audio.seek(seconds, w.bytes, loop);
-                            } catch (e) {
-                              alert("Render failed: " + (e as Error).message);
-                            }
-                          })();
-                        }
-                      : undefined
-                  }
-                />
-              </>
-            ) : (
-              <div className="placeholder">{busy === "notes" ? "Reading sequence…" : "Select a sequence."}</div>
-            )}
-          </div>
-        </div>
-      )}
-
-      {((fmt === "SDAT" && tab === "waves") || fmt === "SWAR" || fmt === "SWAV") && (
-        <div className="sound-split">
-          {fmt === "SDAT" && info && (
-            <div className="sound-col">
-              <NamedList
-                items={info.waveArchives}
-                selected={arcIndex}
-                onSelect={(i) => void loadArchive(i)}
-                extra={(it) => String((it as { waveCount?: number }).waveCount ?? "") + " waves"}
-              />
-            </div>
-          )}
-          <WavePanel
-            waves={waves ?? []}
-            selected={waveIndex}
-            preview={wavePrev}
-            busy={busy != null}
-            currentTime={audio.currentTime}
-            onSelect={(i) => void loadWave(i)}
-            onPlay={() => wavePrev && audio.play(base64ToBytes(wavePrev.wavBase64))}
-            onSeek={(t) => {
-              if (!waveBytes) return;
-              audio.seek(t, waveBytes);
-            }}
-            onExport={() =>
-              wavePrev &&
-              download(
-                `${(info?.waveArchives.find((a) => a.index === (arcIndex ?? 0))?.name || "wave")}_${waveIndex}.wav`.replace(
-                  /[^\w.-]+/g,
-                  "_"
-                ),
-                base64ToBytes(wavePrev.wavBase64),
-                "audio/wav"
-              )
-            }
-            onImport={(f) => void onImportWav(f)}
-          />
-        </div>
-      )}
-
-      {((fmt === "SDAT" && tab === "streams") || fmt === "STRM") && (
-        <div className="sound-split">
-          {fmt === "SDAT" && info && (
-            <NamedList items={info.streams} selected={streamIndex} onSelect={(i) => void loadStream(i)} />
-          )}
-          <div className="sound-detail">
-            {streamPrev ? (
-              <>
-                <div className="controls">
-                  <button className="play-btn" onClick={() => audio.play(base64ToBytes(streamPrev.wavBase64))}>
-                    <Icon name="play" /> Play
-                  </button>
-                  <button
-                    className="btn btn--sm"
-                    onClick={() =>
-                      download(
-                        `${(info?.streams.find((s) => s.index === streamIndex)?.name || "stream").replace(/[^\w.-]+/g, "_")}.wav`,
-                        base64ToBytes(streamPrev.wavBase64),
-                        "audio/wav"
-                      )
-                    }
-                  >
-                    Export WAV
-                  </button>
-                  <span className="dim">
-                    {streamPrev.channels} ch · {streamPrev.sampleRate} Hz · {streamPrev.samples.toLocaleString()} samples
-                  </span>
-                </div>
-                <WaveformScrub
-                  png={streamPrev.png}
-                  currentTime={audio.currentTime}
-                  duration={streamPrev.sampleRate > 0 ? streamPrev.samples / streamPrev.sampleRate : 0}
-                  onSeek={(t) => streamBytes && audio.seek(t, streamBytes)}
-                />
-              </>
-            ) : (
-              <div className="placeholder">{busy === "stream" ? "Decoding…" : "Select a stream."}</div>
-            )}
-          </div>
-        </div>
-      )}
-
-      {fmt === "SDAT" && tab === "banks" && info && (
-        <div className="sound-col">
-          <NamedList
-            items={info.banks}
-            selected={null}
-            onSelect={(i) => {
-              setBusy("sf2");
-              client
-                .exportBankSf2(romHandle, ref, i)
-                .then((r) => {
-                  const name = info.banks.find((b) => b.index === i)?.name || `bank${i}`;
-                  download(`${name.replace(/[^\w.-]+/g, "_")}.sf2`, base64ToBytes(r.base64));
-                })
-                .catch((e) => alert("SoundFont export failed: " + (e as Error).message))
-                .finally(() => setBusy(null));
-            }}
-            extra={() => "export .sf2"}
-          />
-          <p className="dim">Click a bank to download its SoundFont.</p>
-        </div>
-      )}
-    </div>
+    <SoundBody err={vm.err} opening={vm.opening}>
+      <SdatTabBar fmt={vm.fmt} info={vm.info} tab={vm.tab} setTab={vm.setTab} />
+      <SequencePane
+        fmt={vm.fmt}
+        tab={vm.tab}
+        filter={vm.filter}
+        setFilter={vm.setFilter}
+        seqs={vm.seqs}
+        seqIndex={vm.seqIndex}
+        onSelect={vm.onSelectSeq}
+        notes={vm.notes}
+        busy={vm.busy}
+        canPlay={vm.canPlay}
+        isPlaying={vm.isPlaying}
+        live={vm.live}
+        demanding={vm.demanding}
+        playTick={vm.playTick}
+        muted={vm.muted}
+        solo={vm.solo}
+        onPlay={vm.onPlay}
+        onStop={vm.onStop}
+        onExportWav={vm.onExportWav}
+        onExportMidi={vm.onExportMidi}
+        onMute={vm.onMute}
+        onSolo={vm.onSolo}
+        onSeek={vm.canPlay ? vm.onSeekTick : undefined}
+      />
+      <WaveArchivePane
+        fmt={vm.fmt}
+        tab={vm.tab}
+        info={vm.info}
+        arcIndex={vm.arcIndex}
+        onArchive={vm.onArchive}
+        waves={vm.waves}
+        waveIndex={vm.waveIndex}
+        preview={vm.wavePrev}
+        busy={vm.busy != null}
+        currentTime={vm.currentTime}
+        onSelect={vm.onWave}
+        onPlay={vm.onPlayWave}
+        onSeek={vm.onSeekWave}
+        onExport={vm.onExportWave}
+        onImport={vm.onImportWave}
+      />
+      <StreamPane
+        fmt={vm.fmt}
+        tab={vm.tab}
+        info={vm.info}
+        streamIndex={vm.streamIndex}
+        onSelect={vm.onStream}
+        preview={vm.streamPrev}
+        busy={vm.busy}
+        currentTime={vm.currentTime}
+        onPlay={vm.onPlayStream}
+        onExport={vm.onExportStream}
+        onSeek={vm.onSeekStream}
+      />
+      <BankPane fmt={vm.fmt} tab={vm.tab} info={vm.info} onSelect={vm.onBank} />
+    </SoundBody>
   );
 }
