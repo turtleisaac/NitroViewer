@@ -38,6 +38,8 @@ One blank line between functions. The docstring sits directly under `def`, and t
 
 Group the lines that do one step, and put one blank line between steps. A run of the same kind of statement stays together. A blank line is where that run stops and something else starts.
 
+A long run of assignments is not one step just because the lines look alike. Split where a new stage begins, when later lines are built from the results above.
+
 Leave one blank line after a substantial `if`, `for`, `while`, `with`, or `try` before the next step. `elif`, `else`, `except`, and `finally` stay attached. Nested blocks that end together share that one blank line. None when they end the function.
 
 After a guard (`if` whose body is a single `continue`, `break`, or `return`), leave a blank line before the next step. Skip it when the next line is another guard of the same kind, or when the whole body is a short loop: the guard plus one or two lines. An `if`/`else` pair stays together. A chain of `if`s that each return or transform stays together, and the fallback `return` after that chain gets a blank line.
