@@ -12,10 +12,12 @@ async function openRom(page: Page, romPath: string) {
   await page.goto("/");
   const open = page.getByRole("main").getByRole("button", { name: "Open ROM…" });
   await expect(open).toBeEnabled({ timeout: 180_000 });
+
   await open.click();
   const chooser = page.waitForEvent("filechooser");
   await page.getByRole("menuitem", { name: /ROM file/ }).click();
   await (await chooser).setFiles(romPath);
+
   await expect(page.getByRole("button", { name: "Toggle file list" })).toBeVisible({ timeout: 120_000 });
 }
 
@@ -24,6 +26,7 @@ async function openFile(page: Page, name: string) {
   await page.getByRole("button", { name: "Toggle file list" }).click();
   await page.getByPlaceholder("Search").fill(name);
   await page.getByRole("button", { name }).click();
+
   if (name.endsWith("NCGR")) {
     await expect(page.locator(".sprite-img")).toBeVisible({ timeout: 60_000 });
   } else if (name.endsWith("NSBTX")) {
@@ -49,10 +52,12 @@ test.describe("phone width", () => {
 
       for (const name of FILES) {
         await openFile(page, name);
+
         await expect(page.getByRole("button", { name: "Import…", exact: true })).toBeVisible();
         await expect(page.getByRole("button", { name: "Export", exact: true })).toBeVisible();
         await expect(page.getByRole("button", { name: "Save", exact: true })).toBeVisible();
         await expect(page.getByRole("button", { name: "Open", exact: true })).toBeVisible();
+
         const fits = await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth);
         expect(fits).toBe(true);
       }

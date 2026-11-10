@@ -39,6 +39,7 @@ function folderFlag(folderId) {
 /** Write a folder's directory id after its name. */
 function writeFolderId(out, nameLength, folderId) {
   if (folderId == null) return;
+
   u16(out, 1 + nameLength, folderId);
 }
 
@@ -49,6 +50,7 @@ function entry(name, folderId) {
   out[0] = body.length | folderFlag(folderId);
   body.copy(out, 1);
   writeFolderId(out, body.length, folderId);
+
   return out;
 }
 
@@ -57,6 +59,7 @@ async function nitroFiles(dir) {
   const jar = join(here, "../public/jars/Nds4j.jar");
   await exec("javac", ["--release", "17", "-cp", jar, "-d", dir, join(here, "TinyAssets.java")]);
   await exec("java", ["-cp", `${dir}${delimiter}${jar}`, "TinyAssets", dir]);
+
   const out = {};
   for (const [name, file] of FILES) out[name] = await readFile(join(dir, file));
   return out;
@@ -72,6 +75,7 @@ export async function writeTinyRom() {
   const names = Object.keys(files);
   const rootEntries = Buffer.concat([entry("graphics", 0xf001), Buffer.from([0])]);
   const subEntries = Buffer.concat([...names.map((name) => entry(name)), Buffer.from([0])]);
+
   const fnt = Buffer.alloc(16 + rootEntries.length + subEntries.length);
   u32(fnt, 0, 16);
   u16(fnt, 4, 0);
@@ -79,6 +83,7 @@ export async function writeTinyRom() {
   u32(fnt, 8, 16 + rootEntries.length);
   u16(fnt, 12, 0);
   u16(fnt, 14, 0xf000);
+
   rootEntries.copy(fnt, 16);
   subEntries.copy(fnt, 16 + rootEntries.length);
 
@@ -89,6 +94,7 @@ export async function writeTinyRom() {
   const fatOff = fntOff + fnt.length;
   const dataOff = fatOff + blobs.length * 8;
   const rom = Buffer.alloc(dataOff + blobs.reduce((n, file) => n + file.length, 0));
+
   rom.write("TINY", 0, "latin1");
   rom.write("TEST", 0x0c, "latin1");
   rom.write("01", 0x10, "latin1");
@@ -106,6 +112,7 @@ export async function writeTinyRom() {
   u32(rom, 0x4c, blobs.length * 8);
   u32(rom, 0x80, rom.length);
   u32(rom, 0x84, 0x200);
+
   fnt.copy(rom, fntOff);
   let cursor = dataOff;
   blobs.forEach((file, i) => {

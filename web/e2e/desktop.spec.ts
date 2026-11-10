@@ -6,10 +6,12 @@ async function openRom(page: Page, romPath: string) {
   await page.goto("/");
   const open = page.getByRole("main").getByRole("button", { name: "Open ROM…" });
   await expect(open).toBeEnabled({ timeout: 180_000 });
+
   await open.click();
   const chooser = page.waitForEvent("filechooser");
   await page.getByRole("menuitem", { name: /ROM file/ }).click();
   await (await chooser).setFiles(romPath);
+
   await expect(page.getByPlaceholder("Search")).toBeVisible({ timeout: 120_000 });
 }
 
@@ -26,11 +28,13 @@ async function inspectorFits(page: Page) {
   const exporting = head.getByRole("button", { name: "Export", exact: true });
   await expect(importing).toBeVisible();
   await expect(exporting).toBeVisible();
+
   const imported = await importing.boundingBox();
   const exported = await exporting.boundingBox();
   const inspector = await page.locator(".inspector").boundingBox();
   const width = page.viewportSize()?.width ?? 0;
   const scroll = await page.evaluate(() => document.documentElement.scrollWidth);
+
   expect(imported).not.toBeNull();
   expect(exported).not.toBeNull();
   expect(inspector).not.toBeNull();
