@@ -11,8 +11,7 @@ export type IconName =
   | "pause"
   | "stop"
   | "download"
-  | "upload"
-  | "cart";
+  | "upload";
 
 /** 16px line icon. Stroke follows currentColor so it takes the text role around it. */
 export function Icon({ name, size = 16 }: { name: IconName; size?: number }) {
@@ -59,14 +58,5 @@ function glyph(name: IconName): ReactNode {
       return <path d="M8 3v6.5M5.25 7.25 8 10l2.75-2.75M3.5 13h9" />;
     case "upload":
       return <path d="M8 10.5V4M5.25 6.75 8 4l2.75 2.75M3.5 13h9" />;
-    case "cart":
-      return (
-        <>
-          <rect x="3" y="1.5" width="10" height="8.5" rx="1.25" fill="currentColor" stroke="none" />
-          <rect x="4.5" y="11.25" width="1.5" height="2.75" rx="0.4" fill="currentColor" stroke="none" />
-          <rect x="7.25" y="11.25" width="1.5" height="2.75" rx="0.4" fill="currentColor" stroke="none" />
-          <rect x="10" y="11.25" width="1.5" height="2.75" rx="0.4" fill="currentColor" stroke="none" />
-        </>
-      );
   }
 }

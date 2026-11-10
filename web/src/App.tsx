@@ -169,7 +169,7 @@ export function App() {
           </button>
         )}
         <div className="brand">
-          <span className="logo"><Icon name="cart" /></span>
+          <span className="logo">◆</span>
           <span className="brand-name">NitroViewer</span>
           <span className="tagline">DS ROM viewer</span>
         </div>
@@ -295,7 +295,7 @@ export function App() {
         ) : romHandle == null ? (
           <div className="empty">
             <div className="empty-card">
-              <div className="empty-logo"><Icon name="cart" size={32} /></div>
+              <div className="empty-logo">◆</div>
               <h1>NitroViewer</h1>
               <p>
                 A replacement for Tinke. Open a Nintendo DS ROM file, or an unpacked ROM

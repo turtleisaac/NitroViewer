@@ -121,7 +121,7 @@ export function TreePane() {
           title="The DS home-menu icon and per-language game titles"
           onClick={() => void select(BANNER_REF, "Game icon")}
         >
-          <span className="twisty"><Icon name="cart" /></span>
+          <span className="twisty">◆</span>
           <span className="file-name">Game icon &amp; titles</span>
         </div>
         {q ? (
