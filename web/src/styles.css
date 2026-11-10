@@ -74,8 +74,8 @@ button, input, select, textarea { font-family: inherit; }
 .btn--ghost:disabled { background: transparent; color: var(--text-faint); border-color: var(--line); }
 
 /* Body */
-.body { flex: 1 1 auto; min-height: 0; }
-.split { display: grid; grid-template-columns: var(--tree-w, 340px) 1fr; height: 100%; position: relative; }
+.body { flex: 1 1 auto; min-height: 0; min-width: 0; }
+.split { display: grid; grid-template-columns: var(--tree-w, 340px) 1fr; height: 100%; position: relative; min-width: 0; }
 
 /* Drag divider between the file browser and the inspector (desktop only; hidden on narrow screens
    and when the browser is collapsed). Sits over the column boundary so it's easy to grab. */
@@ -167,7 +167,8 @@ button, input, select, textarea { font-family: inherit; }
 .tree-row.selected .file-name, .tree-row.selected .file-id, .tree-row.selected .folder-name { color: var(--text); }
 
 /* Inspector */
-.inspector { background: var(--bg); }
+/* 1fr is minmax(auto, 1fr). A wide canvas would otherwise set that auto minimum and widen the page. */
+.inspector { background: var(--bg); min-width: 0; }
 .inspector-head { font-size: 13px; color: var(--text); }
 .insp-name { font-weight: 500; overflow: hidden; text-overflow: ellipsis; max-width: 40ch; white-space: nowrap; }
 .insp-crumbs { display: inline-flex; align-items: center; gap: 8px; min-width: 0; max-width: 60%; }
@@ -198,7 +199,7 @@ button, input, select, textarea { font-family: inherit; }
 }
 .import-choice .link-btn { color: var(--text-dim); }
 
-.inspector-body { flex: 1 1 auto; min-height: 0; overflow: auto; padding: 16px; }
+.inspector-body { flex: 1 1 auto; min-height: 0; min-width: 0; overflow: auto; padding: 16px; }
 .placeholder { color: var(--text-faint); padding: 24px; }
 .error {
   color: var(--bad); background: color-mix(in srgb, var(--bad) 12%, var(--bg-1));
@@ -273,7 +274,7 @@ button, input, select, textarea { font-family: inherit; }
 .stepper span { min-width: 56px; text-align: center; font-variant-numeric: tabular-nums; color: var(--text); font-size: 13px; }
 
 .canvas-wrap {
-  display: grid; place-items: center; min-height: 256px; padding: 24px;
+  display: grid; place-items: center; min-height: 256px; padding: 24px; min-width: 0; max-width: 100%;
   background: var(--checker);
   border: 1px solid var(--line); border-radius: 12px;
 }
@@ -413,13 +414,13 @@ button, input, select, textarea { font-family: inherit; }
 .pframe { image-rendering: pixelated; width: 512px; max-width: 100%; max-height: 60vh; object-fit: contain; }
 
 /* 3D model viewer */
-.model { display: flex; flex-direction: column; }
+.model { display: flex; flex-direction: column; min-width: 0; max-width: 100%; }
 .viewport {
-  position: relative; margin-top: 16px; min-height: 62vh; width: 100%;
+  position: relative; margin-top: 16px; min-height: 62vh; width: 100%; min-width: 0; max-width: 100%;
   border: 1px solid var(--line); border-radius: 12px; overflow: hidden;
   background: var(--ink);
 }
-.viewport canvas { display: block; }
+.viewport canvas { display: block; max-width: 100%; }
 .viewport-msg {
   position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%);
   color: var(--text-dim); font-size: 13px; pointer-events: none; text-align: center;
@@ -431,15 +432,15 @@ button, input, select, textarea { font-family: inherit; }
 }
 
 /* SDAT / SSEQ / SWAR listener */
-.sound { display: flex; flex-direction: column; gap: 12px; min-height: 0; }
-.sound-split { display: flex; flex-direction: column; gap: 12px; min-height: 0; }
-.sound-col { display: flex; flex-direction: column; gap: 8px; min-height: 0; }
+.sound { display: flex; flex-direction: column; gap: 12px; min-height: 0; min-width: 0; max-width: 100%; }
+.sound-split { display: flex; flex-direction: column; gap: 12px; min-height: 0; min-width: 0; }
+.sound-col { display: flex; flex-direction: column; gap: 8px; min-height: 0; min-width: 0; }
 .sound-filter {
   background: var(--bg-2); color: var(--text); border: 1px solid var(--line-2);
   border-radius: var(--radius); padding: 8px 12px; font-size: 12px;
 }
 .sound-list {
-  overflow: auto; max-height: 28vh; border: 1px solid var(--line); border-radius: var(--radius);
+  overflow: auto; max-height: 28vh; min-width: 0; border: 1px solid var(--line); border-radius: var(--radius);
   background: var(--bg-1);
 }
 .sound-row {
@@ -450,15 +451,15 @@ button, input, select, textarea { font-family: inherit; }
 .sound-row:hover { background: var(--bg-2); }
 .sound-row--on { background: color-mix(in srgb, var(--accent) 16%, var(--bg-2)); }
 .sound-idx { font-family: ui-monospace, monospace; color: var(--text-faint); min-width: 3.5em; font-variant-numeric: tabular-nums; }
-.sound-name { flex: 1 1 auto; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sound-name { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .sound-extra { color: var(--text-faint); font-size: 12px; }
 .sound-detail { min-width: 0; display: flex; flex-direction: column; gap: 12px; }
 .note-roll {
-  position: relative;
+  position: relative; min-width: 0; max-width: 100%;
   border: 1px solid var(--line); border-radius: var(--radius); overflow: auto; background: #14161c;
   cursor: ew-resize; touch-action: none;
 }
-.note-roll canvas { display: block; }
+.note-roll canvas { display: block; max-width: 100%; }
 .note-gutter {
   position: absolute; left: 0; top: 0; z-index: 2;
   display: flex; flex-direction: column;
