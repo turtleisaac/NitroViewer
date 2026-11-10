@@ -53,6 +53,7 @@
     "artifactName": "${productName}-${version}-${os}-${arch}.${ext}",
     "icon": "electron/icon.png",
     "mac": {
+      "icon": "electron/icon-mac.png",
       "category": "public.app-category.developer-tools",
       "hardenedRuntime": true,
       "gatekeeperAssess": false,
