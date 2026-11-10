@@ -38,14 +38,15 @@ button, input, select, textarea { font-family: inherit; }
   background: var(--bg-1);
   border-bottom: 1px solid var(--line);
 }
-.brand { display: flex; align-items: center; gap: 8px; font-weight: 500; font-size: 15px; letter-spacing: 0; min-width: 0; }
-.brand-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.brand { display: flex; align-items: center; gap: 8px; font-weight: 500; font-size: 15px; letter-spacing: 0; min-width: 24px; }
+.brand-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
 .btn-label--narrow { display: none; }
-.logo { color: var(--accent); font-size: 16px; line-height: 1; }
+.logo { color: var(--accent); font-size: 16px; line-height: 1; flex: none; }
 .tagline { font-weight: 400; font-size: 12px; color: var(--text-faint); letter-spacing: 0; }
-.topbar-actions { display: flex; align-items: center; gap: 8px; flex: 1; justify-content: flex-end; min-width: 0; }
+/* The bar may shrink, but not below its buttons. The brand name and status give up the space. */
+.topbar-actions { display: flex; align-items: center; gap: 8px; flex: 1 1 auto; justify-content: flex-end; min-width: min-content; }
 .topbar-actions .btn { flex: 0 0 auto; }
-.status { font-size: 12px; color: var(--text-dim); max-width: 46ch; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.status { font-size: 12px; color: var(--text-dim); max-width: 46ch; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-variant-numeric: tabular-nums; }
 .status--busy { color: var(--warn); }
 
 .btn {
@@ -158,6 +159,8 @@ button, input, select, textarea { font-family: inherit; }
   width: 16px; height: 16px; display: inline-flex; align-items: center; justify-content: center;
   color: var(--text-faint); flex: none;
 }
+/* The pinned banner row uses the same diamond as the bar. Folder twisties stay faint. */
+.tree-pinned .twisty { color: var(--accent); }
 .folder-name { color: var(--text); }
 .file-name { color: var(--text-dim); }
 .file-id { margin-left: auto; color: var(--text-faint); font-size: 12px; padding-left: 8px; font-variant-numeric: tabular-nums; }
@@ -599,7 +602,8 @@ button, input, select, textarea { font-family: inherit; }
   .topbar .btn { position: relative; }
   .topbar .btn-label--wide { display: none; }
   .topbar .btn-label--narrow { display: inline; }
-  .topbar .badge--dirty { width: 8px; height: 8px; overflow: hidden; gap: 0; }
+  /* overflow:hidden lets a flex item shrink to nothing, which hid the dot on a crowded phone bar. */
+  .topbar .badge--dirty { width: 8px; height: 8px; overflow: hidden; gap: 0; flex: none; }
 }
 
 /* Phone: reclaim topbar space, tighten controls. */
@@ -615,6 +619,12 @@ button, input, select, textarea { font-family: inherit; }
   .swatches { grid-template-columns: repeat(16, 1fr); }
   .sv-square { width: 140px; height: 140px; flex-basis: 140px; }
   .color-picker { max-width: 100%; }
+}
+
+/* The full button row is a few pixels past a 320px screen. A 4px gap still sits on the grid.
+   This follows the 520px rule, which sets the gap back to 8px. */
+@media (max-width: 340px) {
+  .topbar-actions { gap: 4px; }
 }
 
 /* Very short landscape (phones on their side): trim vertical chrome. */
