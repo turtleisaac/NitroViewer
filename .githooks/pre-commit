@@ -1,0 +1,68 @@
+#!/usr/bin/env bash
+# Spotless, ESLint, crapper, and dryer on staged files. Mutation stays in CI.
+set -euo pipefail
+
+root="$(git rev-parse --show-toplevel)"
+cd "$root"
+
+staged=()
+while IFS= read -r file; do
+  [[ -z "$file" ]] && continue
+  staged+=("$file")
+done < <(git diff --cached --name-only --diff-filter=ACMR)
+
+if [[ ${#staged[@]} -eq 0 ]]; then
+  exit 0
+fi
+
+stashed=0
+cleanup() {
+  status=$?
+  if [[ "$stashed" -eq 1 ]]; then
+    git stash pop --quiet || echo "pre-commit: git stash pop failed; look in git stash" >&2
+  fi
+  exit "$status"
+}
+
+trap cleanup EXIT
+
+if ! git diff --quiet || [[ -n "$(git ls-files --others --exclude-standard)" ]]; then
+  git stash push --keep-index --include-untracked --quiet
+  stashed=1
+fi
+
+java=()
+web=()
+quality=()
+for file in "${staged[@]}"; do
+  case "$file" in
+    nitroviewer-core/*.java)
+      java+=("$file")
+      quality+=("$file")
+      ;;
+    web/*.ts|web/*.tsx)
+      web+=("$file")
+      quality+=("$file")
+      ;;
+    web/*.js|web/*.jsx|web/*.cjs|web/*.mjs)
+      quality+=("$file")
+      ;;
+  esac
+done
+
+if [[ ${#java[@]} -gt 0 ]]; then
+  mvn -B -ntp -f nitroviewer-core/pom.xml spotless:check
+fi
+
+if [[ ${#web[@]} -gt 0 ]]; then
+  rel=()
+  for file in "${web[@]}"; do
+    rel+=("${file#web/}")
+  done
+
+  (cd web && npx eslint --max-warnings 0 -- "${rel[@]}")
+fi
+
+if [[ ${#quality[@]} -gt 0 ]]; then
+  scripts/quality/check-quality.sh --staged
+fi

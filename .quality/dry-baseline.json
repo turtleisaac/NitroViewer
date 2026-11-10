@@ -1,0 +1,147 @@
+{
+  "version": 1,
+  "dryer": "66ff6d21a42c04afcad89c78a80066176d1294b0",
+  "threshold": 0.82,
+  "pairs": [
+    {
+      "language": "java",
+      "score": 1.0,
+      "left": {
+        "path": "nitroviewer-core/src/main/java/com/nitroviewer/core/CheerpjFacade.java",
+        "namespace": "com.nitroviewer.core.CheerpjFacade",
+        "name": "rom",
+        "body": "6f4f41c2d221227e",
+        "start": 2505,
+        "end": 2511
+      },
+      "right": {
+        "path": "nitroviewer-core/src/main/java/com/nitroviewer/core/CheerpjFacade.java",
+        "namespace": "com.nitroviewer.core.CheerpjFacade",
+        "name": "narc",
+        "body": "e622b8e317640123",
+        "start": 2513,
+        "end": 2519
+      }
+    },
+    {
+      "language": "java",
+      "score": 1.0,
+      "left": {
+        "path": "nitroviewer-core/src/main/java/com/nitroviewer/core/CheerpjFacade.java",
+        "namespace": "com.nitroviewer.core.CheerpjFacade",
+        "name": "rom",
+        "body": "6f4f41c2d221227e",
+        "start": 2505,
+        "end": 2511
+      },
+      "right": {
+        "path": "nitroviewer-core/src/main/java/com/nitroviewer/core/SpikeFacade.java",
+        "namespace": "com.nitroviewer.core.SpikeFacade",
+        "name": "require",
+        "body": "65c1120610eba983",
+        "start": 219,
+        "end": 225
+      }
+    },
+    {
+      "language": "java",
+      "score": 1.0,
+      "left": {
+        "path": "nitroviewer-core/src/main/java/com/nitroviewer/core/CheerpjFacade.java",
+        "namespace": "com.nitroviewer.core.CheerpjFacade",
+        "name": "narc",
+        "body": "e622b8e317640123",
+        "start": 2513,
+        "end": 2519
+      },
+      "right": {
+        "path": "nitroviewer-core/src/main/java/com/nitroviewer/core/SpikeFacade.java",
+        "namespace": "com.nitroviewer.core.SpikeFacade",
+        "name": "require",
+        "body": "65c1120610eba983",
+        "start": 219,
+        "end": 225
+      }
+    },
+    {
+      "language": "java",
+      "score": 1.0,
+      "left": {
+        "path": "nitroviewer-core/src/main/java/com/nitroviewer/core/CheerpjFacade.java",
+        "namespace": "com.nitroviewer.core.CheerpjFacade",
+        "name": "magic",
+        "body": "5cad732e7e4a415d",
+        "start": 2799,
+        "end": 2802
+      },
+      "right": {
+        "path": "nitroviewer-core/src/main/java/com/nitroviewer/core/SpikeFacade.java",
+        "namespace": "com.nitroviewer.core.SpikeFacade",
+        "name": "magic",
+        "body": "5cad732e7e4a415d",
+        "start": 228,
+        "end": 231
+      }
+    },
+    {
+      "language": "typescript",
+      "score": 1.0,
+      "left": {
+        "path": "web/src/components/MultiCellViewer.tsx",
+        "namespace": "components.MultiCellViewer",
+        "name": "RefSelect",
+        "body": "ab786a93cc12f42e",
+        "start": 8,
+        "end": 41
+      },
+      "right": {
+        "path": "web/src/components/SpriteViewer.tsx",
+        "namespace": "components.SpriteViewer",
+        "name": "RefSelect",
+        "body": "ab786a93cc12f42e",
+        "start": 10,
+        "end": 43
+      }
+    },
+    {
+      "language": "typescript",
+      "score": 1.0,
+      "left": {
+        "path": "web/src/components/MultiCellViewer.tsx",
+        "namespace": "components.MultiCellViewer",
+        "name": "Stepper",
+        "body": "683892cf3fc88b0c",
+        "start": 43,
+        "end": 61
+      },
+      "right": {
+        "path": "web/src/components/SpriteViewer.tsx",
+        "namespace": "components.SpriteViewer",
+        "name": "Stepper",
+        "body": "439a78a127bf648c",
+        "start": 45,
+        "end": 73
+      }
+    },
+    {
+      "language": "typescript",
+      "score": 0.842105,
+      "left": {
+        "path": "web/src/sound/engine/stepper.ts",
+        "namespace": "sound.engine.stepper.Stepper",
+        "name": "readU16",
+        "body": "5e4c20b49d094d14",
+        "start": 943,
+        "end": 948
+      },
+      "right": {
+        "path": "web/src/sound/engine/stepper.ts",
+        "namespace": "sound.engine.stepper.Stepper",
+        "name": "readU24",
+        "body": "d33587b8e85f8839",
+        "start": 952,
+        "end": 957
+      }
+    }
+  ]
+}
