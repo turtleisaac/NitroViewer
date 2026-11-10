@@ -275,8 +275,12 @@ export default function ModelViewer() {
   // Load the model set's metadata whenever the selected NSBMD changes.
   useEffect(() => {
     let alive = true;
+    // container and id, not the ref object: select() stores a fresh { container, id } on every
+    // click, including a re-click of the file already open. Object identity would rerun this and
+    // drop a picked external NSBTX back to embedded.
+    const ref = { container: selection.ref.container, id: selection.ref.id };
     client
-      .getModelSetInfo(romHandle, selection.ref)
+      .getModelSetInfo(romHandle, ref)
       .then((i) => {
         if (!alive) return;
         setInfo(i);
@@ -287,7 +291,7 @@ export default function ModelViewer() {
     return () => {
       alive = false;
     };
-  }, [client, romHandle, selection.ref, selKey, editVersion]); // editVersion → refresh the model list after an import
+  }, [client, romHandle, selection.ref.container, selection.ref.id, editVersion]); // editVersion → refresh the model list after an import
 
   // Fetch each candidate NSBCA's clip names so pairing can match by name (and the picker can label
   // them). One serial pass per candidate set; results are cached by refKey across re-selects.
