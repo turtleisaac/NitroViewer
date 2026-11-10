@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { useStore } from "../state/store";
+import { useChangedKey } from "../useChangedKey";
 import { base64ToBytes, hexDump } from "../util";
 
 const PREVIEW_BYTES = 8192; // enough to identify a file; the whole file is one click away via Export
@@ -13,10 +14,13 @@ export function InfoViewer() {
   const [err, setErr] = useState<string>();
 
   const { container, id } = selection.ref;
-  useEffect(() => {
-    let alive = true;
+  if (useChangedKey(`${romHandle}:${container}:${id}:${editVersion}`)) {
     setInfo(null);
     setErr(undefined);
+  }
+
+  useEffect(() => {
+    let alive = true;
     // exportFile gives the DECOMPRESSED bytes — the real content — so the hex reflects the file itself,
     // not its LZ container.
     client

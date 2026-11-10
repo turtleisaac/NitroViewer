@@ -100,7 +100,6 @@ describe.skipIf(!fixturesPresent)("Stepper vs. Nds4j SequencePlayer (real Platin
       }
       const rmse = Math.sqrt(sumSqErr / n);
       const exactPct = (100 * exact) / n;
-      // eslint-disable-next-line no-console
       console.log(
         `${name}: ${n} samples compared, ${exactPct.toFixed(2)}% bit-exact, RMSE=${rmse.toFixed(3)}, maxErr=${maxErr}`
       );

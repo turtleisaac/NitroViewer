@@ -1,0 +1,29 @@
+---
+description: TypeScript and TSX lint standard for the web app
+globs:
+  - "**/*.ts"
+  - "**/*.tsx"
+alwaysApply: false
+---
+
+# TypeScript style
+
+`web/` is linted with ESLint (flat config): `eslint:recommended`, `typescript-eslint` recommended type-checked, `eslint-plugin-react` recommended with the automatic JSX runtime, and `eslint-plugin-react-hooks` recommended. `npm run lint` in `web/` is the gate. It runs in CI on pushes and pull requests, and again before the Pages build.
+
+There is no formatter. Do not run Prettier, and do not reformat a file you are not already changing. Write new code to the layout below so a later formatter is not required.
+
+## Layout
+
+Two-space indent, double quotes, semicolons, LF, a final newline, no tabs. `{` stays on the same line as the function, hook, or control statement (`function f() {`, `if (x) {`). A one-line `if (x) return;` is fine. Space after `if`, `for`, `while`, `switch`, and `catch`.
+
+## Types and promises
+
+Do not use `any`. CheerpJ's facade is typed in `cheerpj.ts`; JSON from it goes through `parseJson` / `unwrap`. Do not leave a promise floating: await it, or mark a deliberate fire-and-forget with `void`. Event handlers return void. An async click or change handler is wrapped so the attribute itself does not return a promise (`onClick={() => { void save(); }}`).
+
+## React
+
+Hooks stay unconditional. Resetting state because an id or other input changed is done during render with `useChangedKey`, not with a synchronous `setState` in an effect. Effects fetch, subscribe, or talk to something outside React, and call `setState` from the callback that receives the result.
+
+Do not read or write a ref during render. Copy the latest value into a ref from an effect, or write the ref inside the event handler that needs it. `react-hooks/exhaustive-deps` is an error. A dependency that is intentionally omitted keeps the existing `eslint-disable-next-line react-hooks/exhaustive-deps` comment on that effect; do not add a new one without the same reason.
+
+`directory` on a file input is the folder-picker attribute. It is allowed by the lint config and declared in `vite-env.d.ts`.

@@ -3,6 +3,8 @@
 import "react";
 
 declare module "react" {
+  // T is unused here. The parameter name has to match React's interface so the augmentation merges.
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   interface InputHTMLAttributes<T> {
     webkitdirectory?: string | boolean;
     directory?: string | boolean;

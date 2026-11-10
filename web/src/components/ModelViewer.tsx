@@ -1,4 +1,5 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useChangedKey } from "../useChangedKey";
 import * as THREE from "three";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
@@ -11,6 +12,14 @@ import {
   type TexturePatternAnim,
   type VisibilityAnim,
 } from "../transport";
+
+function describeError(err: unknown): string {
+  if (typeof err === "string") return err;
+  if (typeof err === "number" || typeof err === "boolean" || typeof err === "bigint" || err == null) return String(err);
+  if (err instanceof Error) return err.message;
+  if (typeof err === "object" && "message" in err && typeof err.message === "string") return err.message;
+  return "unknown error";
+}
 
 interface TexPat {
   anim: TexturePatternAnim;
@@ -102,9 +111,10 @@ function makeUnlit(obj: THREE.Object3D) {
     return basic;
   };
   obj.traverse((o) => {
-    if (o instanceof THREE.Mesh) {
-      o.material = Array.isArray(o.material) ? o.material.map(convert) : convert(o.material);
-    }
+    if (!(o instanceof THREE.Mesh)) return;
+    const mesh = o as THREE.Mesh<THREE.BufferGeometry, THREE.Material | THREE.Material[]>;
+    const material = mesh.material;
+    mesh.material = Array.isArray(material) ? material.map(convert) : convert(material);
   });
 }
 
@@ -173,19 +183,19 @@ export default function ModelViewer() {
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
-  const siblingsOfFormat = (fmt: string) => {
+  const siblingsOfFormat = useCallback((fmt: string) => {
     const container = selection.ref.container;
     const items =
       container >= 0
         ? (narcs[container]?.entries ?? []).map((e) => ({ ref: { container, id: e.index }, format: e.format, label: `#${e.index}` }))
         : romSiblings;
     return items.filter((i) => i.format === fmt);
-  };
-  const nsbtxItems = useMemo(() => siblingsOfFormat("NSBTX"), [selection.ref.container, narcs, romSiblings]);
-  const nsbcaItems = useMemo(() => siblingsOfFormat("NSBCA"), [selection.ref.container, narcs, romSiblings]);
-  const nsbmaItems = useMemo(() => siblingsOfFormat("NSBMA"), [selection.ref.container, narcs, romSiblings]);
-  const nsbvaItems = useMemo(() => siblingsOfFormat("NSBVA"), [selection.ref.container, narcs, romSiblings]);
-  const nsbtpItems = useMemo(() => siblingsOfFormat("NSBTP"), [selection.ref.container, narcs, romSiblings]);
+  }, [selection.ref.container, narcs, romSiblings]);
+  const nsbtxItems = useMemo(() => siblingsOfFormat("NSBTX"), [siblingsOfFormat]);
+  const nsbcaItems = useMemo(() => siblingsOfFormat("NSBCA"), [siblingsOfFormat]);
+  const nsbmaItems = useMemo(() => siblingsOfFormat("NSBMA"), [siblingsOfFormat]);
+  const nsbvaItems = useMemo(() => siblingsOfFormat("NSBVA"), [siblingsOfFormat]);
+  const nsbtpItems = useMemo(() => siblingsOfFormat("NSBTP"), [siblingsOfFormat]);
 
   // Initialise the three.js scene once. Render ON DEMAND (interaction / resize / load / anim frame),
   // never a perpetual RAF loop — that starves CheerpJ's cooperative Java execution and hangs exports.
@@ -256,14 +266,21 @@ export default function ModelViewer() {
     };
   }, []);
 
-  // Load the model set's metadata whenever the selected NSBMD changes.
-  useEffect(() => {
-    let alive = true;
+  if (useChangedKey(`${romHandle}:${selKey}:${editVersion}`)) {
     setInfo(null);
     setError(null);
     setModelIndex(0);
+  }
+
+  // Load the model set's metadata whenever the selected NSBMD changes.
+  useEffect(() => {
+    let alive = true;
+    // container and id, not the ref object: select() stores a fresh { container, id } on every
+    // click, including a re-click of the file already open. Object identity would rerun this and
+    // drop a picked external NSBTX back to embedded.
+    const ref = { container: selection.ref.container, id: selection.ref.id };
     client
-      .getModelSetInfo(romHandle, selection.ref)
+      .getModelSetInfo(romHandle, ref)
       .then((i) => {
         if (!alive) return;
         setInfo(i);
@@ -274,13 +291,13 @@ export default function ModelViewer() {
     return () => {
       alive = false;
     };
-  }, [client, romHandle, selKey, editVersion]); // editVersion → refresh the model list after an import
+  }, [client, romHandle, selection.ref.container, selection.ref.id, editVersion]); // editVersion → refresh the model list after an import
 
   // Fetch each candidate NSBCA's clip names so pairing can match by name (and the picker can label
   // them). One serial pass per candidate set; results are cached by refKey across re-selects.
   useEffect(() => {
     let alive = true;
-    (async () => {
+    void (async () => {
       for (const it of nsbcaItems) {
         const key = refKey(it.ref);
         if (nsbcaNames[key]) continue;
@@ -301,24 +318,33 @@ export default function ModelViewer() {
   // ("manene" ↔ "manene_aruku"), so a model gets its own animations and never a neighbour's. Falls back
   // to nearest-index when names aren't loaded yet / no match. Re-runs as names arrive and per model.
   const modelName = info?.models[modelIndex] ?? "";
-  useEffect(() => {
+  const nsbcaPairKey = [
+    selKey,
+    modelIndex,
+    modelName,
+    nsbcaItems.map((i) => refKey(i.ref)).join(","),
+    Object.entries(nsbcaNames).map(([k, names]) => `${k}=${names.join(",")}`).join(";"),
+  ].join("\0");
+  if (useChangedKey(nsbcaPairKey)) {
     setNsbca(pickAnimByName(nsbcaItems, nsbcaNames, modelName, selection.ref.id) ?? null);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selKey, modelIndex, nsbcaItems, nsbcaNames, modelName]);
+  }
 
   // Reset the non-skeletal tracks whenever the selected model changes.
-  useEffect(() => {
+  if (useChangedKey(selKey)) {
     setNsbma(null);
     setNsbva(null);
     setNsbtp(null);
-  }, [selKey]);
+  }
 
   // Export the chosen model (+ optional NSBCA) to glTF and load it into the scene.
   useEffect(() => {
     if (!info || !three.current) return;
     let alive = true;
-    setBusy(true);
-    setError(null);
+    queueMicrotask(() => {
+      if (!alive) return;
+      setBusy(true);
+      setError(null);
+    });
     client
       .exportModelGltf(romHandle, selection.ref, modelIndex, useEmbedded ? null : nsbtx, nsbca)
       .then((gltfStr) => {
@@ -354,16 +380,16 @@ export default function ModelViewer() {
             t.visNodeByMaterial = new Map();
             t.trackTime = 0;
             gltf.scene.traverse((o) => {
-              if (o instanceof THREE.Mesh) {
-                t.meshes.push(o);
-                const mats = Array.isArray(o.material) ? o.material : [o.material];
-                for (const mat of mats) {
-                  const name = (mat as THREE.MeshBasicMaterial).name;
-                  if (!name) continue;
-                  const arr = t.materialsByName.get(name) ?? [];
-                  arr.push(mat as THREE.MeshBasicMaterial);
-                  t.materialsByName.set(name, arr);
-                }
+              if (!(o instanceof THREE.Mesh)) return;
+              const mesh = o as THREE.Mesh<THREE.BufferGeometry, THREE.Material | THREE.Material[]>;
+              t.meshes.push(mesh);
+              const mats = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
+              for (const mat of mats) {
+                const basic = mat as THREE.MeshBasicMaterial;
+                if (!basic.name) continue;
+                const arr = t.materialsByName.get(basic.name) ?? [];
+                arr.push(basic);
+                t.materialsByName.set(basic.name, arr);
               }
             });
 
@@ -382,7 +408,7 @@ export default function ModelViewer() {
           },
           (err) => {
             if (alive) {
-              setError("glTF parse failed: " + String((err as { message?: string })?.message ?? err));
+              setError("glTF parse failed: " + describeError(err));
               setBusy(false);
             }
           }
@@ -431,7 +457,11 @@ export default function ModelViewer() {
   useEffect(() => {
     const t = three.current;
     if (!t) return;
-    if (!nsbma) { t.matColor = null; setTracksTick((n) => n + 1); return; }
+    if (!nsbma) {
+      t.matColor = null;
+      queueMicrotask(() => setTracksTick((n) => n + 1));
+      return;
+    }
     let alive = true;
     client
       .getMaterialColorAnim(romHandle, nsbma, 0)
@@ -445,7 +475,11 @@ export default function ModelViewer() {
   useEffect(() => {
     const t = three.current;
     if (!t) return;
-    if (!nsbva) { t.vis = null; setTracksTick((n) => n + 1); return; }
+    if (!nsbva) {
+      t.vis = null;
+      queueMicrotask(() => setTracksTick((n) => n + 1));
+      return;
+    }
     let alive = true;
     Promise.all([
       client.getVisibilityAnim(romHandle, nsbva, 0),
@@ -468,7 +502,11 @@ export default function ModelViewer() {
   useEffect(() => {
     const t = three.current;
     if (!t) return;
-    if (!nsbtp) { t.texPat = null; setTracksTick((n) => n + 1); return; }
+    if (!nsbtp) {
+      t.texPat = null;
+      queueMicrotask(() => setTracksTick((n) => n + 1));
+      return;
+    }
     let alive = true;
     client
       .getTexturePatternAnim(romHandle, nsbtp, 0, selection.ref, useEmbedded ? null : nsbtx)
@@ -548,7 +586,6 @@ export default function ModelViewer() {
       }
       setModelIndex(0);
       setError(null);
-      // eslint-disable-next-line no-console
       console.info(`OBJ import: ${res.vertices} verts, ${res.triangles} tris (textured=${res.textured}).`);
     } catch (e) {
       alert("OBJ import failed: " + (e as Error).message);
@@ -562,7 +599,7 @@ export default function ModelViewer() {
     if (!t) return;
     t.render(); // draw the current frame, then read it back synchronously (buffer still intact)
     const url = t.renderer.domElement.toDataURL("image/png");
-    const base = (selection.name.split(/[/:]/).pop() || "model").replace(/[^\w.\-]+/g, "_");
+    const base = (selection.name.split(/[/:]/).pop() || "model").replace(/[^\w.-]+/g, "_");
     const a = document.createElement("a");
     a.href = url;
     a.download = `${base}.png`;
@@ -573,7 +610,7 @@ export default function ModelViewer() {
 
   const saveGltf = () => {
     if (!gltfStrRef.current) return;
-    const base = (selection.name.split(/[/:]/).pop() || "model").replace(/[^\w.\-]+/g, "_");
+    const base = (selection.name.split(/[/:]/).pop() || "model").replace(/[^\w.-]+/g, "_");
     const blob = new Blob([gltfStrRef.current], { type: "model/gltf+json" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");

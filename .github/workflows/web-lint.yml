@@ -1,0 +1,31 @@
+name: Web lint
+
+# TypeScript/TSX lint for the web app. The Pages deploy also runs this script;
+# this workflow is what covers pull requests and pushes that do not deploy.
+on:
+  push:
+    branches: ['**']
+  pull_request:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  lint:
+    name: ESLint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+
+      - name: Lint
+        working-directory: web
+        run: |
+          npm ci
+          npm run lint

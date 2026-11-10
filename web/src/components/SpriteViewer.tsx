@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useStore, type ResourceItem } from "../state/store";
+import { useChangedKey } from "../useChangedKey";
 import { pickSibling } from "../state/pairing";
 import { resolveNarcInfo, resolveRenderHints, resolveSpriteUnit } from "../state/grouping";
 import { refKey, type DecodedImage, type ResourceRef } from "../transport";
@@ -152,7 +153,8 @@ export function SpriteViewer() {
 
   // Auto-pair when the selection (or its container's contents) changes — but honour any manual
   // pairing the user previously chose for this resource (read without subscribing to avoid re-runs).
-  useEffect(() => {
+  const itemsKey = items.map((i) => `${i.ref.container}:${i.ref.id}:${i.format}`).join("|");
+  if (useChangedKey(`${selKey}:${itemsKey}`)) {
     const pick = (cands: ResourceItem[]) => pickSibling(cands, selfPeers, selection.ref.id);
     const saved = useStore.getState().pairingOverrides[selKey] ?? {};
     // Manifest-first (§8): a declared grouping resolves the exact sibling unit; else the heuristic.
@@ -163,13 +165,12 @@ export function SpriteViewer() {
       nclr: saved.nclr ?? unit?.nclr ?? pick(nclrs),
       ncer: saved.ncer ?? unit?.ncer ?? pick(ncers),
     });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selKey, items]);
+  }
 
   // Reset the view controls only when a DIFFERENT file is selected — not when the current file's bytes
   // are edited in place (an import bumps editVersion but keeps selKey), so the tile width / palette /
   // zoom the user dialed in survive the edit.
-  useEffect(() => {
+  if (useChangedKey(selKey)) {
     // Seed the view controls from the game-DB render hints when the NARC is listed (manifest-first),
     // else the neutral defaults. tileWidth is declared in pixels; the control works in 8px tiles.
     const st = useStore.getState();
@@ -184,8 +185,7 @@ export function SpriteViewer() {
     setScanFrontToBack(hints?.scanDirection !== "back-to-front"); // D/P battle sprites scan back-to-front
     setPlaying(false);
     setEditing(false);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selKey]);
+  }
 
   // NANR playback: advance the frame on a timer while playing.
   useEffect(() => {
@@ -246,7 +246,7 @@ export function SpriteViewer() {
 
   useEffect(() => {
     let alive = true;
-    (async () => {
+    void (async () => {
       setBusy(true);
       setError(null);
       try {
@@ -292,7 +292,7 @@ export function SpriteViewer() {
 
   const savePng = () => {
     if (!image) return;
-    const base = (selection.name.split(/[/:]/).pop() || "image").replace(/[^\w.\-]+/g, "_");
+    const base = (selection.name.split(/[/:]/).pop() || "image").replace(/[^\w.-]+/g, "_");
     download(`${base}.png`, base64ToBytes(image.png.split(",")[1]), "image/png");
   };
 
@@ -589,8 +589,8 @@ export function SpriteViewer() {
           {image?.scanned && (fmt === "NCER" || fmt === "NANR") && (
             <div className="import-choice">
               <span>
-                This tileset is a scanned (bitmap) NCGR — its pixels are the full sprite, so it's shown
-                directly (cells/frames can't be composed over a bitmap).
+                This tileset is a scanned (bitmap) NCGR — its pixels are the full sprite, so it&apos;s shown
+                directly (cells/frames can&apos;t be composed over a bitmap).
               </span>
             </div>
           )}

@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
 import { useStore } from "../state/store";
+import { useChangedKey } from "../useChangedKey";
 import {
   activeTracksAt,
   drawNoteTrack,
@@ -691,13 +692,12 @@ export function SoundViewer() {
     setLiveSeconds(0);
   };
 
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => () => stopLive(), []); // tear down on unmount too, not just on the lifecycle events below
 
   const { container, id } = selection.ref;
   const ref = selection.ref;
 
-  useEffect(() => {
+  if (useChangedKey(`${container}:${id}:${fmt}`)) {
     setTab("sequences");
     setSeqIndex(null);
     setNotes(null);
@@ -709,19 +709,20 @@ export function SoundViewer() {
     setStreamPrev(null);
     setSeqWav(null);
     setFilter("");
+  }
+
+  useEffect(() => {
     audio.stop();
     stopLive();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [container, id, fmt]);
 
-  useEffect(() => {
-    setSeqWav(null);
-  }, [editVersion]);
+  if (useChangedKey(editVersion)) setSeqWav(null);
 
-  useEffect(() => {
+  if (useChangedKey(notes)) {
     setMuted([]);
     setSolo([]);
-  }, [notes]);
+  }
 
   useEffect(() => {
     audio.stop();
@@ -729,9 +730,10 @@ export function SoundViewer() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tab]);
 
+  if (useChangedKey(`${romHandle}:${container}:${id}:${fmt}:${editVersion}`)) setErr(undefined);
+
   useEffect(() => {
     let alive = true;
-    setErr(undefined);
     if (fmt === "SDAT") {
       client
         .getSdatInfo(romHandle, ref)
@@ -804,7 +806,7 @@ export function SoundViewer() {
   };
 
   const seqFileName = () =>
-    (notes?.name || selection.name || "sequence").replace(/[^\w.\-]+/g, "_");
+    (notes?.name || selection.name || "sequence").replace(/[^\w.-]+/g, "_");
 
   const ensureSequenceWav = async () => {
     if (fmt !== "SDAT" || seqIndex == null) throw new Error("sequence playback needs an SDAT");
@@ -1202,7 +1204,7 @@ export function SoundViewer() {
               wavePrev &&
               download(
                 `${(info?.waveArchives.find((a) => a.index === (arcIndex ?? 0))?.name || "wave")}_${waveIndex}.wav`.replace(
-                  /[^\w.\-]+/g,
+                  /[^\w.-]+/g,
                   "_"
                 ),
                 base64ToBytes(wavePrev.wavBase64),
@@ -1230,7 +1232,7 @@ export function SoundViewer() {
                     className="btn btn--sm"
                     onClick={() =>
                       download(
-                        `${(info?.streams.find((s) => s.index === streamIndex)?.name || "stream").replace(/[^\w.\-]+/g, "_")}.wav`,
+                        `${(info?.streams.find((s) => s.index === streamIndex)?.name || "stream").replace(/[^\w.-]+/g, "_")}.wav`,
                         base64ToBytes(streamPrev.wavBase64),
                         "audio/wav"
                       )
@@ -1267,7 +1269,7 @@ export function SoundViewer() {
                 .exportBankSf2(romHandle, ref, i)
                 .then((r) => {
                   const name = info.banks.find((b) => b.index === i)?.name || `bank${i}`;
-                  download(`${name.replace(/[^\w.\-]+/g, "_")}.sf2`, base64ToBytes(r.base64));
+                  download(`${name.replace(/[^\w.-]+/g, "_")}.sf2`, base64ToBytes(r.base64));
                 })
                 .catch((e) => alert("SoundFont export failed: " + (e as Error).message))
                 .finally(() => setBusy(null));

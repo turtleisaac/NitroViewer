@@ -27,16 +27,18 @@ function ExportButton() {
       className="btn btn--sm"
       disabled={busy}
       title="Extract this file (decompressed) to disk"
-      onClick={async () => {
-        setBusy(true);
-        try {
-          const r = await client.exportFile(romHandle, selection.ref);
-          download(exportFileName(selection.name, r.format || selection.format), base64ToBytes(r.base64));
-        } catch (e) {
-          alert("Export failed: " + (e as Error).message);
-        } finally {
-          setBusy(false);
-        }
+      onClick={() => {
+        void (async () => {
+          setBusy(true);
+          try {
+            const r = await client.exportFile(romHandle, selection.ref);
+            download(exportFileName(selection.name, r.format || selection.format), base64ToBytes(r.base64));
+          } catch (e) {
+            alert("Export failed: " + (e as Error).message);
+          } finally {
+            setBusy(false);
+          }
+        })();
       }}
     >
       {busy ? "…" : "Export"}
@@ -63,19 +65,21 @@ function ImportButton() {
         ref={fileRef}
         type="file"
         hidden
-        onChange={async (e) => {
+        onChange={(e) => {
           const f = e.target.files?.[0];
           e.target.value = "";
           if (!f) return;
-          setBusy(true);
-          try {
-            const bytes = new Uint8Array(await f.arrayBuffer());
-            await importFile(selection.ref, bytes);
-          } catch (err) {
-            alert("Import failed: " + (err as Error).message);
-          } finally {
-            setBusy(false);
-          }
+          void (async () => {
+            setBusy(true);
+            try {
+              const bytes = new Uint8Array(await f.arrayBuffer());
+              await importFile(selection.ref, bytes);
+            } catch (err) {
+              alert("Import failed: " + (err as Error).message);
+            } finally {
+              setBusy(false);
+            }
+          })();
         }}
       />
     </>

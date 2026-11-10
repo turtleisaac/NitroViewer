@@ -32,12 +32,278 @@ import type {
   WavePreview,
 } from "./types";
 
+// The Java facade returns JSON text (or, for two calls, raw bytes / a raw string).
+// CheerpJ has no generated types; this is the boundary the rest of the file calls.
+type JavaBytes = Int8Array;
+
+interface CheerpjFacade {
+  openRom(bytes: JavaBytes): Promise<string>;
+  openUnpackedRom(bytes: JavaBytes): Promise<string>;
+  getRomInfo(handle: number): Promise<string>;
+  getBanner(handle: number): Promise<string>;
+  setBannerIcon(handle: number, png: JavaBytes): Promise<string>;
+  setBannerTitle(handle: number, languageOrdinal: number, text: JavaBytes): Promise<string>;
+  listTree(handle: number): Promise<string>;
+  detectFormat(handle: number, container: number, id: number): Promise<string>;
+  openNarc(handle: number, romFileId: number): Promise<string>;
+  openNarcAt(handle: number, container: number, id: number): Promise<string>;
+  listNarc(narcHandle: number): Promise<string>;
+  exportFolderZip(handle: number, folderPath: string): Promise<string>;
+  exportNarcZip(handle: number, container: number, id: number): Promise<string>;
+  importNarcZip(handle: number, container: number, id: number, zip: JavaBytes): Promise<string>;
+  decodeNcgr(
+    handle: number,
+    ncgrContainer: number,
+    ncgrId: number,
+    nclrContainer: number,
+    nclrId: number,
+    tilesWidth: number,
+    transparent: boolean,
+    paletteIndex: number,
+    scanFrontToBack: boolean,
+  ): Promise<string>;
+  decodePalette(handle: number, container: number, id: number): Promise<string>;
+  decodeNcgrIndexed(
+    handle: number,
+    container: number,
+    id: number,
+    tilesWidth: number,
+    scanFrontToBack: boolean,
+  ): Promise<string>;
+  setPaletteColors(handle: number, container: number, id: number, rgb: JavaBytes): Promise<string>;
+  setNcgrPixels(
+    handle: number,
+    container: number,
+    id: number,
+    tilesWidth: number,
+    scanFrontToBack: boolean,
+    pixels: JavaBytes,
+  ): Promise<string>;
+  decodeNscr(
+    handle: number,
+    nscrContainer: number,
+    nscrId: number,
+    ncgrContainer: number,
+    ncgrId: number,
+    nclrContainer: number,
+    nclrId: number,
+    transparent: boolean,
+  ): Promise<string>;
+  decodeNcerMeta(handle: number, container: number, id: number): Promise<string>;
+  decodeNcer(
+    handle: number,
+    ncerContainer: number,
+    ncerId: number,
+    ncgrContainer: number,
+    ncgrId: number,
+    nclrContainer: number,
+    nclrId: number,
+    cellIndex: number,
+    transparent: boolean,
+  ): Promise<string>;
+  decodeNanrMeta(handle: number, container: number, id: number): Promise<string>;
+  decodeNanr(
+    handle: number,
+    nanrContainer: number,
+    nanrId: number,
+    ncerContainer: number,
+    ncerId: number,
+    ncgrContainer: number,
+    ncgrId: number,
+    nclrContainer: number,
+    nclrId: number,
+    animIndex: number,
+    frameIndex: number,
+    transparent: boolean,
+  ): Promise<string>;
+  exportRaw(handle: number, container: number, id: number): Promise<string>;
+  exportFile(handle: number, container: number, id: number): Promise<string>;
+  importRaw(handle: number, container: number, id: number, bytes: JavaBytes): Promise<string>;
+  importPng(
+    handle: number,
+    ncgrContainer: number,
+    ncgrId: number,
+    nclrContainer: number,
+    nclrId: number,
+    paletteIndex: number,
+    tilesWidth: number,
+    rebuildPalette: boolean,
+    dryRun: boolean,
+    png: JavaBytes,
+  ): Promise<string>;
+  importScreenPng(
+    handle: number,
+    nscrContainer: number,
+    nscrId: number,
+    ncgrContainer: number,
+    ncgrId: number,
+    nclrContainer: number,
+    nclrId: number,
+    dedupFlips: boolean,
+    rebuildPalette: boolean,
+    numSubPalettes: number,
+    dryRun: boolean,
+    png: JavaBytes,
+  ): Promise<string>;
+  importCellPng(
+    handle: number,
+    ncerContainer: number,
+    ncerId: number,
+    ncgrContainer: number,
+    ncgrId: number,
+    nclrContainer: number,
+    nclrId: number,
+    cellIndex: number,
+    rebuildPalette: boolean,
+    dryRun: boolean,
+    png: JavaBytes,
+  ): Promise<string>;
+  importNanrPng(
+    handle: number,
+    nanrContainer: number,
+    nanrId: number,
+    ncerContainer: number,
+    ncerId: number,
+    ncgrContainer: number,
+    ncgrId: number,
+    nclrContainer: number,
+    nclrId: number,
+    animIndex: number,
+    frameIndex: number,
+    rebuildPalette: boolean,
+    dryRun: boolean,
+    png: JavaBytes,
+  ): Promise<string>;
+  importPalette(handle: number, container: number, id: number, image: JavaBytes): Promise<string>;
+  importObj(handle: number, container: number, id: number, obj: JavaBytes): Promise<string>;
+  importObjTextured(handle: number, container: number, id: number, payload: JavaBytes): Promise<string>;
+  saveRom(handle: number): Promise<Int8Array>;
+  lastError(): Promise<string>;
+  getModelSetInfo(handle: number, container: number, id: number): Promise<string>;
+  getAnimationSetInfo(handle: number, container: number, id: number): Promise<string>;
+  decodeTextureSet(handle: number, container: number, id: number): Promise<string>;
+  getModelRig(handle: number, container: number, id: number, modelIndex: number): Promise<string>;
+  getMaterialColorAnim(handle: number, container: number, id: number, animIndex: number): Promise<string>;
+  getVisibilityAnim(handle: number, container: number, id: number, animIndex: number): Promise<string>;
+  getTexturePatternAnim(
+    handle: number,
+    nsbtpContainer: number,
+    nsbtpId: number,
+    animIndex: number,
+    nsbmdContainer: number,
+    nsbmdId: number,
+    nsbtxContainer: number,
+    nsbtxId: number,
+  ): Promise<string>;
+  renderParticles(
+    handle: number,
+    container: number,
+    id: number,
+    width: number,
+    height: number,
+    frameCount: number,
+  ): Promise<string>;
+  getSdatInfo(handle: number, container: number, id: number): Promise<string>;
+  getSequenceNotes(handle: number, container: number, id: number, seqIndex: number): Promise<string>;
+  renderSequenceWav(
+    handle: number,
+    container: number,
+    id: number,
+    seqIndex: number,
+    maxSeconds: number,
+    trackMuteMask: number,
+  ): Promise<string>;
+  getSequenceEngineData(handle: number, container: number, id: number, seqIndex: number): Promise<string>;
+  getWaveArchiveInfo(handle: number, container: number, id: number, waveArcIndex: number): Promise<string>;
+  getWavePreview(
+    handle: number,
+    container: number,
+    id: number,
+    waveArcIndex: number,
+    waveIndex: number,
+  ): Promise<string>;
+  getStreamPreview(handle: number, container: number, id: number, streamIndex: number): Promise<string>;
+  importWav(
+    handle: number,
+    container: number,
+    id: number,
+    waveArcIndex: number,
+    waveIndex: number,
+    wav: JavaBytes,
+  ): Promise<string>;
+  exportSequenceMidi(handle: number, container: number, id: number, seqIndex: number): Promise<string>;
+  exportBankSf2(handle: number, container: number, id: number, bankIndex: number): Promise<string>;
+  exportModelGltf(
+    handle: number,
+    container: number,
+    id: number,
+    modelIndex: number,
+    nsbtxContainer: number,
+    nsbtxId: number,
+    nsbcaContainer: number,
+    nsbcaId: number,
+  ): Promise<string>;
+  decodeBmg(handle: number, container: number, id: number): Promise<string>;
+  setBmgMessage(handle: number, container: number, id: number, msgIndex: number, text: JavaBytes): Promise<string>;
+  decodeFontMeta(handle: number, container: number, id: number): Promise<string>;
+  renderFontGlyphSheet(handle: number, container: number, id: number, columns: number, scale: number): Promise<string>;
+  renderFontString(handle: number, container: number, id: number, scale: number, text: JavaBytes): Promise<string>;
+  decodeFontGlyphPixels(handle: number, container: number, id: number, glyphIndex: number): Promise<string>;
+  setFontGlyphPixels(
+    handle: number,
+    container: number,
+    id: number,
+    glyphIndex: number,
+    pixels: JavaBytes,
+  ): Promise<string>;
+  decodeNmcrMeta(handle: number, container: number, id: number): Promise<string>;
+  decodeNmcr(
+    handle: number,
+    nmcrContainer: number,
+    nmcrId: number,
+    ncerContainer: number,
+    ncerId: number,
+    ncgrContainer: number,
+    ncgrId: number,
+    nclrContainer: number,
+    nclrId: number,
+    multiCellIndex: number,
+    transparent: boolean,
+  ): Promise<string>;
+  decodeNmarMeta(handle: number, container: number, id: number): Promise<string>;
+  decodeNmar(
+    handle: number,
+    nmarContainer: number,
+    nmarId: number,
+    nmcrContainer: number,
+    nmcrId: number,
+    ncerContainer: number,
+    ncerId: number,
+    ncgrContainer: number,
+    ncgrId: number,
+    nclrContainer: number,
+    nclrId: number,
+    animIndex: number,
+    frameIndex: number,
+    transparent: boolean,
+  ): Promise<string>;
+}
+
+interface CheerpjLibrary {
+  com: {
+    nitroviewer: {
+      core: {
+        // CheerpJ resolves a Java class asynchronously, so the property itself is a promise.
+        CheerpjFacade: Promise<new () => Promise<CheerpjFacade>>;
+      };
+    };
+  };
+}
+
 // Globals defined by the CheerpJ loader.js script tag in index.html.
 declare global {
-  // eslint-disable-next-line no-var
   function cheerpjInit(options?: Record<string, unknown>): Promise<void>;
-  // eslint-disable-next-line no-var
-  function cheerpjRunLibrary(classpath: string): Promise<any>;
+  function cheerpjRunLibrary(classpath: string): Promise<CheerpjLibrary>;
 }
 
 // CheerpJ's /app mount maps to the site origin root, so the jar paths must include whatever
@@ -51,17 +317,30 @@ const JAR_VERSION = import.meta.env.DEV ? String(Date.now()) : "7";
 const jar = (name: string) => `/app${APP_DIR}jars/${name}?v=${JAR_VERSION}`;
 const CLASSPATH = `${jar("nitroviewer-core.jar")}:${jar("Nds4j.jar")}`;
 
+/** JSON.parse is typed as any. This is the one cast off that any. */
+function parseJson(json: string): unknown {
+  return JSON.parse(json) as unknown;
+}
+
+function errorText(value: unknown): string {
+  if (typeof value === "string") return value;
+  if (typeof value === "number" || typeof value === "boolean" || typeof value === "bigint" || value == null) {
+    return String(value);
+  }
+  return "Java call failed";
+}
+
 /** Java exceptions never cross the boundary; the facade returns {"error":...} instead. */
 function unwrap<T>(json: string): T {
-  const obj = JSON.parse(json);
+  const obj = parseJson(json);
   if (obj && typeof obj === "object" && "error" in obj) {
-    throw new Error(String(obj.error));
+    throw new Error(errorText(obj.error));
   }
   return obj as T;
 }
 
 export class CheerpjTransport implements NitroViewerClient {
-  private facade: any = null;
+  private facade: CheerpjFacade | null = null;
   private booting: Promise<void> | null = null;
   // CheerpJ Library Mode allows only ONE Java call in flight at a time (a second concurrent call
   // throws "Java code still running"). React effects, Promise.all, and rapid clicks would all violate
@@ -97,7 +376,7 @@ export class CheerpjTransport implements NitroViewerClient {
     onProgress?.("Ready");
   }
 
-  private get f(): any {
+  private get f(): CheerpjFacade {
     if (!this.facade) throw new Error("transport not initialised");
     return this.facade;
   }
@@ -107,18 +386,28 @@ export class CheerpjTransport implements NitroViewerClient {
     // resolution the moment it holds a value > 127 (which every ROM does).
     const signed = new Int8Array(bytes.buffer, bytes.byteOffset, bytes.byteLength);
     return this.enqueue(async () => {
-      const res = JSON.parse(await this.f.openRom(signed));
+      const res = parseJson(await this.f.openRom(signed)) as {
+        ok?: boolean;
+        error?: string;
+        handle: number;
+        len: number;
+      };
       if (!res.ok) throw new Error(res.error || "openRom failed");
-      return { handle: res.handle as number, len: res.len as number };
+      return { handle: res.handle, len: res.len };
     });
   }
 
   openUnpackedRom(zipBytes: Uint8Array): Promise<{ handle: number; len: number }> {
     const signed = new Int8Array(zipBytes.buffer, zipBytes.byteOffset, zipBytes.byteLength);
     return this.enqueue(async () => {
-      const res = JSON.parse(await this.f.openUnpackedRom(signed));
+      const res = parseJson(await this.f.openUnpackedRom(signed)) as {
+        ok?: boolean;
+        error?: string;
+        handle: number;
+        len: number;
+      };
       if (!res.ok) throw new Error(res.error || "openUnpackedRom failed");
-      return { handle: res.handle as number, len: res.len as number };
+      return { handle: res.handle, len: res.len };
     });
   }
 

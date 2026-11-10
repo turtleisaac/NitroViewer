@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { useStore } from "../state/store";
+import { useChangedKey } from "../useChangedKey";
 import type { BmgData } from "../transport";
 
 const ENCODING_NAMES: Record<number, string> = { 1: "Windows-1252", 2: "UTF-16", 3: "Shift-JIS", 4: "UTF-8" };
@@ -20,11 +21,14 @@ export function BmgViewer() {
 
   const refId = selection.ref.id;
   const refContainer = selection.ref.container;
-  useEffect(() => {
-    let alive = true;
+  if (useChangedKey(`${romHandle}:${refContainer}:${refId}:${editVersion}`)) {
     setBmg(null);
     setErr(undefined);
     setSelected(null);
+  }
+
+  useEffect(() => {
+    let alive = true;
     client
       .decodeBmg(romHandle, { container: refContainer, id: refId })
       .then((d) => alive && setBmg(d))
@@ -101,7 +105,7 @@ export function BmgViewer() {
                 <span className="dim">
                   This message contains formatting/escape codes, shown as [type:hexdata] tokens (e.g. a
                   player-name insert or an icon glyph) — keep them intact when editing the surrounding text,
-                  or edit a token's hex data directly. Saving parses them back into real escape sequences.
+                  or edit a token&apos;s hex data directly. Saving parses them back into real escape sequences.
                 </span>
               )}
             </div>

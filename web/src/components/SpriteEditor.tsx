@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { useChangedKey } from "../useChangedKey";
 import { useStore } from "../state/store";
 import { base64ToBytes } from "../util";
 import { sameHex, snapHex } from "../color";
@@ -64,9 +65,11 @@ export function SpriteEditor({
 
   const committedRef = useRef<Frame | null>(null);
   const frameRef = useRef<Frame | null>(null);
-  frameRef.current = frame;
   const hoverRef = useRef(hover);
-  hoverRef.current = hover;
+  useEffect(() => {
+    frameRef.current = frame;
+    hoverRef.current = hover;
+  }, [frame, hover]);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const painting = useRef(false);
   const strokeStart = useRef<Frame | null>(null);
@@ -75,10 +78,13 @@ export function SpriteEditor({
   const blockLen = bitDepth === 8 ? 256 : 16;
   const blockStart = bitDepth === 8 ? 0 : Math.max(0, paletteIndex) * 16;
 
-  useEffect(() => {
-    let alive = true;
+  if (useChangedKey(`${romHandle}:${ncgr.container}:${ncgr.id}:${nclr.container}:${nclr.id}:${tilesWidth}:${scanFrontToBack}`)) {
     setErr(undefined);
     setBusy(true);
+  }
+
+  useEffect(() => {
+    let alive = true;
     (async () => {
       const [raster, pal] = await Promise.all([
         client.decodeNcgrIndexed(romHandle, ncgr, tilesWidth, scanFrontToBack),

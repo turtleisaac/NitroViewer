@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { useStore } from "../state/store";
+import { useChangedKey } from "../useChangedKey";
 import type { PaletteData } from "../transport";
 import { download } from "../util";
 import { sameHex, snapHex } from "../color";
@@ -18,9 +19,13 @@ function paletteToPng(colors: string[], block = 16, cols = 16): Promise<Uint8Arr
     cx.fillStyle = c;
     cx.fillRect((i % cols) * block, Math.floor(i / cols) * block, block, block);
   });
-  return new Promise((resolve) =>
-    cv.toBlob(async (b) => resolve(new Uint8Array(await b!.arrayBuffer())), "image/png")
-  );
+  return new Promise((resolve) => {
+    cv.toBlob((b) => {
+      void (async () => {
+        resolve(new Uint8Array(await b!.arrayBuffer()));
+      })();
+    }, "image/png");
+  });
 }
 
 function cloneColors(c: string[]): string[] {
@@ -52,15 +57,19 @@ export function PaletteViewer() {
   const [selected, setSelected] = useState<number | null>(null);
   const committedRef = useRef<string[] | null>(null);
   const colorsRef = useRef<string[] | null>(null);
-  colorsRef.current = colors;
+  useEffect(() => {
+    colorsRef.current = colors;
+  }, [colors]);
 
   const refId = selection.ref.id;
   const refContainer = selection.ref.container;
-  useEffect(() => {
-    let alive = true;
+  if (useChangedKey(`${romHandle}:${refContainer}:${refId}:${editVersion}`)) {
     setPal(null);
     setErr(undefined);
     setSelected(null);
+  }
+  useEffect(() => {
+    let alive = true;
     client
       .decodePalette(romHandle, { container: refContainer, id: refId })
       .then((p) => {
@@ -148,7 +157,7 @@ export function PaletteViewer() {
   const onExport = async () => {
     const src = colors ?? pal?.colors;
     if (!src) return;
-    const base = (selection.name.split(/[/:]/).pop() || "palette").replace(/[^\w.\-]+/g, "_");
+    const base = (selection.name.split(/[/:]/).pop() || "palette").replace(/[^\w.-]+/g, "_");
     download(`${base}.png`, await paletteToPng(src), "image/png");
   };
 
@@ -195,7 +204,7 @@ export function PaletteViewer() {
               </button>
             </>
           )}
-          <button className="link-btn" onClick={onExport}>
+          <button className="link-btn" onClick={() => { void onExport(); }}>
             Export PNG ↓
           </button>
           <button className="play-btn" disabled={busy} onClick={() => fileRef.current?.click()}>
