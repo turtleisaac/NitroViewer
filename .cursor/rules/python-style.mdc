@@ -1,0 +1,102 @@
+---
+description: Python style taken from turtleisaac's own scripts
+globs: "**/*.py"
+alwaysApply: false
+---
+
+# Python style
+
+Taken from the scripts he wrote himself: `NSCR-Palette-Restorer`, `Repair-Tool`, `Pacha`, `showdownConv`, `BLE-ADSB`, and `ntrWavTool`. The PointCrow warp randomizer snapshot could not be line-blamed to him (see the note at the bottom), so it is not a style source except where a comment is the same one he already wrote in `Buffer.py`.
+
+The repos do not all agree. The rules below are the habit that shows up in more than one of his own files. The disagreements are called out where they matter.
+
+## Comments
+
+A comment is `#` plus a space. It sits on the line above a step, or at the end of the line it explains. It is a short label or one sentence. A docstring is separate, and every function has one.
+
+```python
+# Don't need to increment self.pos because it is handled by read_u8()
+return ret
+```
+
+```python
+if tile < transparency_tile:  # transparency tile is the first tile in the source image
+    transparency_tile = tile
+```
+
+`NSCR-Palette-Restorer/Buffer.py` and `Main.py`. The same buffer comment is in `Repair-Tool/Buffer.py` and in `XLuma/Warp_Randomizer_Public/nds/buffer.py`.
+
+`# open button` in `Repair-Tool/Main.py` and `# Add Service` in `BLE-ADSB/BluetoothAdsbServer.py` are labels, not sentences. Capitalization is not strict. Do not write a paragraph where a label will do.
+
+Every function gets a docstring. The repos that leave functions undocumented are not the model for this. Follow `ntrWavTool.py`: triple double quotes, the opening and closing quotes on their own lines, and the text indented with the body. One short line saying what the function does. No paragraph, in a docstring or in a `#` comment. Do not leave a blank line between the closing quotes and the code.
+
+```python
+def split_stereo_wav(in_wav, left_out_wav, right_out_wav):
+    """
+    Use ffmpeg to split a stereo wav to two mono wavs
+    """
+    subprocess.run([...])
+```
+
+`ntrWavTool.py`. Its longer notes, such as the ADPCM explanation on `do_wav_mangling`, are the exception. New comments stay one short line.
+
+A file-level note, when there is one, is a triple-quoted block. `showdownConv.py` and `ntrWavTool.py` put it above the imports. `BLE-ADSB/Main.py` puts it below them. Most files have neither (`Buffer.py`, `Repairer.py`).
+
+## Blank lines
+
+One blank line between functions. The docstring sits directly under `def`, and the code follows the closing quotes with no blank line. Do not stack blank lines.
+
+Leave one blank line after a substantial `if`, `for`, `while`, `with`, or `try` before the next statement. `elif`, `else`, `except`, and `finally` stay attached. Nested blocks that end together share that one blank line. None when they end the function.
+
+No blank line after a tiny guard whose body is a single `continue`, `break`, or `return`. Back-to-back short guards, and `if`s that read like an `if`/`else`, stay together.
+
+A `return` stays with the one or two short statements above it in the same block, such as a `print` or a call. In a very short block it can also follow a small loop. Put a blank line before `return` only when a longer run of code sits above it. No blank line when the `return` is the only line in its block.
+
+```python
+for row in rows:
+    if not row.ok:
+        continue
+    if row.skip:
+        continue
+    kept.append(row)
+
+print(len(kept))
+return kept
+```
+
+## Layout
+
+Four spaces, no tabs. A space after `if`, `for`, `while`, and `except` when it takes an expression: `if rom_in is not None:`. `BLE-ADSB/Main.py` has `except(ValueError):` with no space. That is a one-off, not the habit. `else` starts its own line.
+
+Long calls put each argument on its own line, indented one level:
+
+```python
+create_button = ttk.Button(
+    top_frame,
+    text='Repair ROM',
+    command=create,
+    width=30,
+)
+```
+
+`Repair-Tool/Main.py`. Long messages break with `+` at the end of the line (`Pacha/Main.py`, `Repair-Tool/Main.py`) or inside parentheses (`NSCR-Palette-Restorer/Main.py` wraps the `print` of the usage text). `ntrWavTool.py` also leaves a few f-strings past 100 characters. There is no hard column.
+
+Slices and calls stay tight: `self.data[self.pos:self.pos + read_length]`, `read_u8()`. Not `data[start - 1 : end]`.
+
+## Names, quotes, imports
+
+Functions and locals are `snake_case` (`read_u16`, `seek_local`, `create`). Classes are `CapWords` (`Buffer`, `Repairer`, `PatchCreator`). Newer files use `UPPER_SNAKE` for real constants (`DEFAULT_LOOKAHEAD` in `ntrWavTool.py`, `IRREGULAR_SPECIES_NAMES` in `showdownConv.py`). Older files just assign a name (`engine_format`, `stats`).
+
+Single quotes are the ROM-tool default: every string in `NSCR-Palette-Restorer`, and nearly all of `Pacha` and `Repair-Tool`. `BLE-ADSB` and `ntrWavTool.py` mix in double quotes and f-strings. `showdownConv.py` is mostly single quotes and also has f-strings. Prefer single quotes. An f-string is fine when the line would otherwise be a chain of `+`.
+
+Imports are one name per statement. A local module comes after a blank line (`from BluetoothAdsbServer import ...` in `BLE-ADSB/Main.py`, `from Buffer import Buffer` in `Repairer.py`). Order is not strict: `Pacha/Patch.py` mixes `crcmod`, `ndspy`, `hashlib`, and `pickle`. `from tkinter import *` shows up in `Repair-Tool/Main.py` and `Pacha/Main.py`. Do not introduce that in a new file.
+
+## Types and `main`
+
+`Buffer`, `Repairer`, `Patch`, and the NSCR `Main.py` have no annotations. `showdownConv.py` annotates some functions (`def upper_snake_case(s: str) -> str`) and still has no docstrings. `ntrWavTool.py` annotates everything, again alongside the Roadrunner credit. New code in this repo skips annotations unless the file it is joining already has them.
+
+A CLI ends in `if __name__ == '__main__':`. NSCR calls `run()`. `ntrWavTool.py` and `showdownConv.py` call `main()`. `Repair-Tool/Main.py` and `Pacha/Main.py` have no `main` at all: the tkinter setup is the script. `Repairer.py` uses double quotes in `if __name__ == "__main__":`; the others use single quotes. Use single quotes.
+
+## PointCrow warp randomizer
+
+`XLuma/Warp_Randomizer_Public` is the public snapshot (warprandomizer.com's `randomizer_py`). Both commits are XLuma's "Add files via upload", so `git log --author=turtleisaac` is empty and `git blame` names XLuma on every line. The buffer comment quoted above is his, copied forward from `NSCR-Palette-Restorer/Buffer.py`. The rest of that tree (gen 3, gen 5, the tk UI) was not used to set these rules.

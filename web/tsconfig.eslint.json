@@ -1,6 +1,6 @@
 {
   "extends": "./tsconfig.json",
-  "include": ["src", "vite.config.ts", "vitest.config.ts"],
+  "include": ["src", "vite.config.ts", "vitest.config.ts", "vitest.coverage.config.ts"],
   "compilerOptions": {
     "noEmit": true
   }

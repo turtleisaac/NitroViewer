@@ -29,6 +29,14 @@ web/vendor/cheerpj/
 # (see CheerpjFacadeTest#dumpSoundEngineFixtures); never commit ROM-derived assets.
 web/src/sound/engine/__fixtures__/
 
+# Quality-gate tools and reports. Baselines under .quality/ are committed.
+.quality/py/
+__pycache__/
+*.pyc
+.metrics/
+.stryker-tmp/
+web/.stryker-tmp/
+
 # OS / editor
 .DS_Store
 .idea/
