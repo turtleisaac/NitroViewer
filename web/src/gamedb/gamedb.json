@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "_source": "Layouts/paths verified against PokEditor-Core (formats/pokemon_sprites/PokemonSpriteParser + gamedata/GameFiles) and the retail ROMs.",
+  "_source": "Layouts/paths verified against PokEditor-Core (formats/pokemon_sprites/PokemonSpriteParser + gamedata/GameFiles) and the retail ROMs. Cipher directions follow DSPRE SpriteScrambling.",
   "games": {
     "CPU*": {
       "title": "Pokémon Platinum",
@@ -11,6 +11,22 @@
           "grouping": { "strategy": "interleaved", "order": ["NCGR", "NCGR", "NCGR", "NCGR", "NCLR", "NCLR"] },
           "render": { "scanDirection": "front-to-back" }
         },
+        "/poketool/pokegra/pl_otherpoke.narc": {
+          "role": "pokemon-alt-sprites",
+          "comment": "Cipher walks front-to-back.",
+          "render": { "scanDirection": "front-to-back" }
+        },
+        "/poketool/pokegra/pokegra.narc": {
+          "role": "pokemon-battle-sprites-dp-copy",
+          "comment": "Diamond copy. Cipher walks back-to-front.",
+          "grouping": { "strategy": "interleaved", "order": ["NCGR", "NCGR", "NCGR", "NCGR", "NCLR", "NCLR"] },
+          "render": { "scanDirection": "back-to-front" }
+        },
+        "/poketool/pokegra/otherpoke.narc": {
+          "role": "pokemon-alt-sprites-dp-copy",
+          "comment": "Diamond copy. Cipher walks back-to-front.",
+          "render": { "scanDirection": "back-to-front" }
+        },
         "/poketool/icongra/pl_poke_icon.narc": {
           "role": "party-icons",
           "comment": "7 leading files, then one 32×32 4bpp icon per species; palettes shared via an arm9 table.",
@@ -18,11 +34,17 @@
         },
         "/poketool/trgra/trfgra.narc": {
           "role": "trainer-front-sprites",
-          "render": { "transparent": true }
+          "comment": "Five files per class. File 4, the scan, is ciphered front-to-back.",
+          "grouping": { "strategy": "interleaved", "order": ["NCGR", "NCLR", "NCER", "NANR", "NCGR"] },
+          "render": { "transparent": true },
+          "cipher": { "indexMod": 5, "indexRem": 4, "scanDirection": "front-to-back" }
         },
         "/poketool/trgra/trbgra.narc": {
           "role": "trainer-back-sprites",
-          "render": { "transparent": true, "scanned": true }
+          "comment": "Five files per class. File 4, the scan, is ciphered front-to-back.",
+          "grouping": { "strategy": "interleaved", "order": ["NCGR", "NCLR", "NCER", "NANR", "NCGR"] },
+          "render": { "transparent": true },
+          "cipher": { "indexMod": 5, "indexRem": 4, "scanDirection": "front-to-back" }
         },
         "/arc/manene.narc": {
           "role": "field-model-set",
@@ -48,8 +70,36 @@
           "grouping": { "strategy": "interleaved", "order": ["NCGR", "NCGR", "NCGR", "NCGR", "NCLR", "NCLR"] },
           "render": { "scanned": true, "scanDirection": "front-to-back" }
         },
+        "/a/1/1/4": {
+          "role": "pokemon-alt-sprites",
+          "comment": "Cipher walks front-to-back.",
+          "render": { "scanDirection": "front-to-back" }
+        },
+        "/pbr/pokegra.narc": {
+          "role": "pokemon-battle-sprites-dp-copy",
+          "comment": "Diamond copy. Cipher walks back-to-front.",
+          "render": { "scanDirection": "back-to-front" }
+        },
+        "/pbr/otherpoke.narc": {
+          "role": "pokemon-alt-sprites-dp-copy",
+          "comment": "Diamond copy. Cipher walks back-to-front.",
+          "render": { "scanDirection": "back-to-front" }
+        },
         "/a/0/2/0": { "role": "party-icons", "render": { "tileWidth": 32, "bitDepth": 4 } },
-        "/a/0/5/8": { "role": "trainer-sprites" }
+        "/a/0/5/8": {
+          "role": "trainer-front-sprites",
+          "comment": "trfgra. File 4 is ciphered back-to-front.",
+          "grouping": { "strategy": "interleaved", "order": ["NCGR", "NCLR", "NCER", "NANR", "NCGR"] },
+          "render": { "transparent": true },
+          "cipher": { "indexMod": 5, "indexRem": 4, "scanDirection": "back-to-front" }
+        },
+        "/a/0/0/6": {
+          "role": "trainer-back-sprites",
+          "comment": "trbgra. File 4 is ciphered back-to-front.",
+          "grouping": { "strategy": "interleaved", "order": ["NCGR", "NCLR", "NCER", "NANR", "NCGR"] },
+          "render": { "transparent": true },
+          "cipher": { "indexMod": 5, "indexRem": 4, "scanDirection": "back-to-front" }
+        }
       }
     },
     "IPG*": {
@@ -60,8 +110,31 @@
           "grouping": { "strategy": "interleaved", "order": ["NCGR", "NCGR", "NCGR", "NCGR", "NCLR", "NCLR"] },
           "render": { "scanned": true, "scanDirection": "front-to-back" }
         },
+        "/a/1/1/4": {
+          "role": "pokemon-alt-sprites",
+          "render": { "scanDirection": "front-to-back" }
+        },
+        "/pbr/pokegra.narc": {
+          "role": "pokemon-battle-sprites-dp-copy",
+          "render": { "scanDirection": "back-to-front" }
+        },
+        "/pbr/otherpoke.narc": {
+          "role": "pokemon-alt-sprites-dp-copy",
+          "render": { "scanDirection": "back-to-front" }
+        },
         "/a/0/2/0": { "role": "party-icons", "render": { "tileWidth": 32, "bitDepth": 4 } },
-        "/a/0/5/8": { "role": "trainer-sprites" }
+        "/a/0/5/8": {
+          "role": "trainer-front-sprites",
+          "grouping": { "strategy": "interleaved", "order": ["NCGR", "NCLR", "NCER", "NANR", "NCGR"] },
+          "render": { "transparent": true },
+          "cipher": { "indexMod": 5, "indexRem": 4, "scanDirection": "back-to-front" }
+        },
+        "/a/0/0/6": {
+          "role": "trainer-back-sprites",
+          "grouping": { "strategy": "interleaved", "order": ["NCGR", "NCLR", "NCER", "NANR", "NCGR"] },
+          "render": { "transparent": true },
+          "cipher": { "indexMod": 5, "indexRem": 4, "scanDirection": "back-to-front" }
+        }
       }
     },
     "ADA*": {
@@ -69,9 +142,27 @@
       "narcs": {
         "/poketool/pokegra/pokegra.narc": {
           "role": "pokemon-battle-sprites",
-          "comment": "Same 6-file layout as Platinum (file 337, 494 species). D/P scan BACK-to-front; the decoder hardcodes front-to-back, so these currently decode as garbled static until scanDirection is threaded into decodeNcgr.",
+          "comment": "Same 6-file layout as Platinum (file 337, 494 species). Scans walk back-to-front.",
           "grouping": { "strategy": "interleaved", "order": ["NCGR", "NCGR", "NCGR", "NCGR", "NCLR", "NCLR"] },
           "render": { "scanDirection": "back-to-front" }
+        },
+        "/poketool/pokegra/otherpoke.narc": {
+          "role": "pokemon-alt-sprites",
+          "render": { "scanDirection": "back-to-front" }
+        },
+        "/poketool/trgra/trfgra.narc": {
+          "role": "trainer-front-sprites",
+          "comment": "Two files per sprite. The drawing (even index) is ciphered back-to-front.",
+          "grouping": { "strategy": "interleaved", "order": ["NCGR", "NCLR"] },
+          "render": { "transparent": true },
+          "cipher": { "indexMod": 2, "indexRem": 0, "scanDirection": "back-to-front" }
+        },
+        "/poketool/trgra/trbgra.narc": {
+          "role": "trainer-back-sprites",
+          "comment": "Two files per sprite. The drawing (even index) is ciphered back-to-front.",
+          "grouping": { "strategy": "interleaved", "order": ["NCGR", "NCLR"] },
+          "render": { "transparent": true },
+          "cipher": { "indexMod": 2, "indexRem": 0, "scanDirection": "back-to-front" }
         }
       }
     },
@@ -83,6 +174,22 @@
           "comment": "D/P scan back-to-front (see Diamond note) — needs scanDirection wired into decodeNcgr to render.",
           "grouping": { "strategy": "interleaved", "order": ["NCGR", "NCGR", "NCGR", "NCGR", "NCLR", "NCLR"] },
           "render": { "scanDirection": "back-to-front" }
+        },
+        "/poketool/pokegra/otherpoke.narc": {
+          "role": "pokemon-alt-sprites",
+          "render": { "scanDirection": "back-to-front" }
+        },
+        "/poketool/trgra/trfgra.narc": {
+          "role": "trainer-front-sprites",
+          "grouping": { "strategy": "interleaved", "order": ["NCGR", "NCLR"] },
+          "render": { "transparent": true },
+          "cipher": { "indexMod": 2, "indexRem": 0, "scanDirection": "back-to-front" }
+        },
+        "/poketool/trgra/trbgra.narc": {
+          "role": "trainer-back-sprites",
+          "grouping": { "strategy": "interleaved", "order": ["NCGR", "NCLR"] },
+          "render": { "transparent": true },
+          "cipher": { "indexMod": 2, "indexRem": 0, "scanDirection": "back-to-front" }
         }
       }
     }

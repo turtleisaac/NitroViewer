@@ -74,6 +74,10 @@ export interface IndexedRaster {
   height: number;
   bitDepth: number;
   scanned: boolean;
+  /** Nds4j captured a cipher key. Plain line-buffer sheets are scanned and not ciphered. */
+  ciphered: boolean;
+  /** Key word is the last pixels. Only meaningful when ciphered is true. */
+  seedAtEnd?: boolean;
   pixels: string; // base64 of width*height bytes, row-major palette indices
 }
 
@@ -409,6 +413,7 @@ export interface NitroViewerClient {
   /**
    * Import an image over an NCGR sprite (propagates down into the NCGR, and the NCLR when rebuilding).
    * rebuildPalette=false matches to the existing (sub-)palette; dryRun computes the fit without writing.
+   * scanFrontToBack is the caller's scan direction; a known ciphered sprite overrides it.
    */
   importPng(
     handle: number,
@@ -418,6 +423,7 @@ export interface NitroViewerClient {
     tilesWidth: number,
     rebuildPalette: boolean,
     dryRun: boolean,
+    scanFrontToBack: boolean,
     pngBytes: Uint8Array
   ): Promise<PngImportResult>;
 

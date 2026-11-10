@@ -14,7 +14,14 @@ export interface RenderHints {
   paletteIndex?: number; // default 4bpp sub-palette
   transparent?: boolean; // render index 0 as transparent
   scanned?: boolean; // NCGR is a bitmap (its pixels are the whole sprite), not tile-composed
-  scanDirection?: "front-to-back" | "back-to-front"; // scan seed direction (Pt/HG/SS vs D/P)
+  scanDirection?: "front-to-back" | "back-to-front"; // key in the first word, or the last
+}
+
+/** Which entries of a NARC are ciphered, and which way the key walks. */
+interface CipherRule {
+  scanDirection: "front-to-back" | "back-to-front";
+  indexMod?: number; // only index % indexMod === indexRem. Omit to cipher every entry.
+  indexRem?: number;
 }
 
 /** The sibling refs (all in the selection's container) that make up a 2D sprite unit. */
@@ -28,6 +35,7 @@ export interface SpriteUnit {
 interface NarcEntryDef {
   role?: string;
   render?: RenderHints;
+  cipher?: CipherRule;
   grouping?: { strategy: "lockstep" | "interleaved"; order: string[]; count?: number };
   entries?: Record<string, RenderHints & { role?: string }>;
   sets?: unknown[];
@@ -49,20 +57,29 @@ export interface EntryLike {
   format: string;
 }
 
-/** Best game entry for a 4-char code: an exact key wins over a `PREFIX*` wildcard. Returns its title too. */
-export function resolveGame(gameCode: string | undefined): { key: string; title: string } | null {
+/** Best game-code key in `games`. An exact key wins over a `PREFIX*` wildcard. Codes are matched in upper case. */
+function gameKey(games: Record<string, GameDef>, gameCode: string | undefined): string | null {
   if (!gameCode) return null;
-  if (db.games[gameCode]) return { key: gameCode, title: db.games[gameCode].title };
-  for (const [key, def] of Object.entries(db.games)) {
-    if (key.endsWith("*") && gameCode.startsWith(key.slice(0, -1))) return { key, title: def.title };
+  const code = gameCode.toUpperCase();
+  if (games[code]) return code;
+  for (const key of Object.keys(games)) {
+    const upper = key.toUpperCase();
+    if (upper.endsWith("*") && code.startsWith(upper.slice(0, -1))) return key;
   }
   return null;
 }
 
+/** Best game entry for a 4-char code: an exact key wins over a `PREFIX*` wildcard. Returns its title too. */
+export function resolveGame(gameCode: string | undefined): { key: string; title: string } | null {
+  const key = gameKey(db.games, gameCode);
+  if (!key) return null;
+  return { key, title: db.games[key].title };
+}
+
 function narcDef(gameCode: string | undefined, narcPath: string | null): NarcEntryDef | null {
-  const game = resolveGame(gameCode);
-  if (!game || !narcPath) return null;
-  return db.games[game.key].narcs?.[narcPath] ?? null;
+  const key = gameKey(db.games, gameCode);
+  if (!key || !narcPath) return null;
+  return db.games[key].narcs?.[narcPath] ?? null;
 }
 
 /** Human label for the resolved game/NARC (for the "game DB" badge), or null when unlisted. */
@@ -76,17 +93,46 @@ export function resolveNarcInfo(
   return { title: game.title, role: def.role };
 }
 
-/** Render hints for a specific entry: the NARC's per-unit `render` merged with any per-entry override. */
+/** True when this NARC entry is one of the ciphered scans. */
+function cipherMatches(rule: CipherRule, id: number): boolean {
+  if (id < 0) return false;
+  if (rule.indexMod == null) return true;
+
+  const mod = rule.indexMod;
+  if (mod <= 0) return false;
+
+  const rem = rule.indexRem ?? 0;
+  return ((id % mod) + mod) % mod === rem;
+}
+
+/** Render hints for one entry of `source`. Same precedence as `resolveRenderHints`. */
+export function resolveRenderHintsIn(
+  source: GameDb,
+  gameCode: string | undefined,
+  narcPath: string | null,
+  id: number
+): RenderHints | null {
+  const key = gameKey(source.games, gameCode);
+  if (!key || !narcPath) return null;
+  const def = source.games[key].narcs?.[narcPath];
+  if (!def) return null;
+  const perEntry = def.entries?.[String(id)];
+  const merged: RenderHints = { ...(def.render ?? {}) };
+  if (def.cipher && cipherMatches(def.cipher, id)) {
+    merged.scanned = true;
+    merged.scanDirection = def.cipher.scanDirection;
+  }
+  Object.assign(merged, perEntry ?? {});
+  return Object.keys(merged).length ? merged : null;
+}
+
+/** Render hints for one entry. A matching cipher rule sets scanned and the scan direction. */
 export function resolveRenderHints(
   gameCode: string | undefined,
   narcPath: string | null,
   id: number
 ): RenderHints | null {
-  const def = narcDef(gameCode, narcPath);
-  if (!def) return null;
-  const perEntry = def.entries?.[String(id)];
-  const merged: RenderHints = { ...(def.render ?? {}), ...(perEntry ?? {}) };
-  return Object.keys(merged).length ? merged : null;
+  return resolveRenderHintsIn(db, gameCode, narcPath, id);
 }
 
 /**

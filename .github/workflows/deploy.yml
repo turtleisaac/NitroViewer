@@ -43,8 +43,9 @@ jobs:
           java-version: "17"
           cache: maven
 
-      # Installs Nds4j into ~/.m2, builds the facade jar, and stages both into web/public/jars.
-      - name: Build & stage jars
+      # Installs Nds4j into ~/.m2, runs the facade tests against that version, then packages
+      # with -DskipTests and stages both jars into web/public/jars. ROM suites skip when no ROM is present.
+      - name: Test, build, and stage jars
         working-directory: NitroViewer
         env:
           NDS4J_DIR: ${{ github.workspace }}/Nds4j

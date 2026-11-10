@@ -3,6 +3,7 @@ import {
   resolveGame,
   resolveNarcInfo,
   resolveRenderHints,
+  resolveRenderHintsIn,
   resolveSpriteUnit,
   groupUnit,
   type EntryLike,
@@ -20,12 +21,58 @@ describe("resolveGame", () => {
     expect(resolveGame("ABCD")).toBeNull();
     expect(resolveGame(undefined)).toBeNull();
   });
+  it("matches a lower-case code the same way the Java loader does", () => {
+    expect(resolveGame("cpue")?.title).toBe("Pokémon Platinum");
+  });
+});
+
+// Same document as Gen4SpriteCipherTest.directionPrecedenceAgrees. Exact code beats the wildcard,
+// a matching cipher rule beats render.scanDirection, and a per-entry hint beats both.
+const conflictDb = {
+  version: 1,
+  games: {
+    "zzz*": {
+      title: "Wildcard",
+      narcs: {
+        "/conflict.narc": {
+          render: { scanDirection: "front-to-back" as const },
+          cipher: { indexMod: 5, indexRem: 4, scanDirection: "back-to-front" as const },
+          entries: { "4": { scanDirection: "front-to-back" as const } },
+        },
+      },
+    },
+    ZZZE: {
+      title: "Exact",
+      narcs: {
+        "/conflict.narc": {
+          render: { scanDirection: "back-to-front" as const },
+        },
+      },
+    },
+  },
+};
+
+describe("cipher direction precedence", () => {
+  it("agrees with the Java conflict document", () => {
+    const dir = (code: string, id: number) =>
+      resolveRenderHintsIn(conflictDb, code, "/conflict.narc", id)?.scanDirection;
+    expect(dir("ZZZE", 4)).toBe("back-to-front");
+    expect(dir("zzze", 4)).toBe("back-to-front");
+    expect(dir("ZZZJ", 0)).toBe("front-to-back");
+    expect(dir("ZZZJ", 9)).toBe("back-to-front");
+    expect(dir("ZZZJ", 4)).toBe("front-to-back");
+    expect(resolveRenderHintsIn(conflictDb, "ZZZJ", "/conflict.narc", 9)?.scanned).toBe(true);
+  });
 });
 
 describe("resolveRenderHints", () => {
-  it("returns the NARC's declared render hints (Platinum trainer back sprites are scanned)", () => {
-    const h = resolveRenderHints("CPUE", "/poketool/trgra/trbgra.narc", 0);
-    expect(h).toEqual({ transparent: true, scanned: true });
+  it("leaves a Platinum trainer drawing unciphered and marks the scan", () => {
+    expect(resolveRenderHints("CPUE", "/poketool/trgra/trbgra.narc", 0)).toEqual({ transparent: true });
+    expect(resolveRenderHints("CPUE", "/poketool/trgra/trbgra.narc", 4)).toEqual({
+      transparent: true,
+      scanned: true,
+      scanDirection: "front-to-back",
+    });
   });
   it("returns transparent for the trainer front sprites", () => {
     expect(resolveRenderHints("CPUE", "/poketool/trgra/trfgra.narc", 4)?.transparent).toBe(true);
@@ -76,7 +123,7 @@ describe("resolveSpriteUnit — Platinum battle sprites (pl_pokegra, PokEditor-C
 describe("resolveSpriteUnit (against the real manifest)", () => {
   it("returns null for a declared NARC with no grouping (render-hints only → heuristic pairing)", () => {
     const entries: EntryLike[] = [{ index: 4, format: "NCGR" }];
-    expect(resolveSpriteUnit("CPUE", "/poketool/trgra/trfgra.narc", 0, entries, 4)).toBeNull();
+    expect(resolveSpriteUnit("CPUE", "/poketool/icongra/pl_poke_icon.narc", 0, entries, 4)).toBeNull();
   });
   it("returns null for an unlisted NARC", () => {
     expect(resolveSpriteUnit("CPUE", "/nope.narc", 0, [], 0)).toBeNull();
