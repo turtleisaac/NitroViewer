@@ -21,6 +21,8 @@
     "build": "tsc --noEmit && npm run build-worklet && vite build",
     "preview": "vite preview",
     "test": "vitest run",
+    "coverage": "vitest run --coverage --config vitest.coverage.config.ts",
+    "mutate": "stryker run",
     "lint": "eslint . --max-warnings 0",
     "electron": "electron .",
     "dist": "electron-builder --publish never"
@@ -85,10 +87,13 @@
     }
   },
   "devDependencies": {
+    "@stryker-mutator/core": "^10.1.1",
+    "@stryker-mutator/vitest-runner": "^10.1.1",
     "@types/react": "^18.3.12",
     "@types/react-dom": "^18.3.1",
     "@types/three": "^0.169.0",
     "@vitejs/plugin-react": "^4.3.4",
+    "@vitest/coverage-v8": "^4.1.11",
     "electron": "^38.8.6",
     "electron-builder": "24.13.3",
     "esbuild": "^0.21.5",

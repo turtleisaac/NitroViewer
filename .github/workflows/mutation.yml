@@ -1,0 +1,55 @@
+name: Mutation testing
+
+# Changed files on pull requests. Full run weekly and on workflow_dispatch.
+on:
+  pull_request:
+  schedule:
+    - cron: "0 7 * * 1"
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  mutation:
+    name: PIT and Stryker
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/checkout@v4
+        with:
+          repository: turtleisaac/Nds4j
+          ref: main
+          path: Nds4j
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+          cache: maven
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install web dependencies
+        working-directory: web
+        run: npm ci
+
+      - name: Mutation score
+        env:
+          NDS4J_DIR: ${{ github.workspace }}/Nds4j
+          QUALITY_BASE: origin/${{ github.base_ref || 'main' }}
+          QUALITY_MODE: ${{ github.event_name == 'pull_request' && 'changed' || 'full' }}
+        run: scripts/quality/mutate.sh
