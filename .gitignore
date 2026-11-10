@@ -29,6 +29,11 @@ web/vendor/cheerpj/
 # (see CheerpjFacadeTest#dumpSoundEngineFixtures); never commit ROM-derived assets.
 web/src/sound/engine/__fixtures__/
 
+# Playwright
+web/test-results/
+web/playwright-report/
+web/blob-report/
+
 # OS / editor
 .DS_Store
 .idea/

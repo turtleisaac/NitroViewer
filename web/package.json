@@ -21,6 +21,7 @@
     "build": "tsc --noEmit && npm run build-worklet && vite build",
     "preview": "vite preview",
     "test": "vitest run",
+    "test:e2e": "playwright test",
     "lint": "eslint . --max-warnings 0",
     "electron": "electron .",
     "dist": "electron-builder --publish never"
@@ -85,6 +86,7 @@
     }
   },
   "devDependencies": {
+    "@playwright/test": "^1.65.0",
     "@types/react": "^18.3.12",
     "@types/react-dom": "^18.3.1",
     "@types/three": "^0.169.0",

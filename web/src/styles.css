@@ -627,6 +627,11 @@ button, input, select, textarea { font-family: inherit; }
   .topbar-actions { gap: 4px; }
 }
 
+/* The path plus Import and Export is wider than a phone if it stays on one line. */
+@media (max-width: 720px) {
+  .inspector-head { flex-wrap: wrap; }
+}
+
 /* Very short landscape (phones on their side): trim vertical chrome. */
 @media (max-height: 460px) and (orientation: landscape) {
   .canvas-wrap { min-height: 152px; padding: 12px; }

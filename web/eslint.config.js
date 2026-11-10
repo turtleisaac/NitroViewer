@@ -54,4 +54,14 @@ export default tseslint.config(
       "react/no-unknown-property": ["error", { ignore: ["directory"] }],
     },
   },
+  {
+    files: ["e2e/**/*.mjs"],
+    ...eslint.configs.recommended,
+    languageOptions: {
+      ...eslint.configs.recommended.languageOptions,
+      sourceType: "module",
+      ecmaVersion: 2022,
+      globals: { Buffer: "readonly" },
+    },
+  },
 );
