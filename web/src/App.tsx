@@ -302,7 +302,7 @@ export function App() {
                 folder (Nds4j/PokEditor with header.bin, or a ds-rom extract with config.yaml).
               </p>
               <div className="empty-actions">
-                <div className="open-wrap open-wrap--start" ref={emptyOpenRef}>
+                <div className="open-wrap open-wrap--center" ref={emptyOpenRef}>
                   <button
                     className="btn btn--lg btn--primary"
                     disabled={!booted}
