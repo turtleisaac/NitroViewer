@@ -34,6 +34,14 @@ web/test-results/
 web/playwright-report/
 web/blob-report/
 
+# Quality-gate tools and reports. Baselines under .quality/ are committed.
+.quality/py/
+__pycache__/
+*.pyc
+.metrics/
+.stryker-tmp/
+web/.stryker-tmp/
+
 # OS / editor
 .DS_Store
 .idea/

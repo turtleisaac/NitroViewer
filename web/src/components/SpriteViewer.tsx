@@ -1,12 +1,41 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type ChangeEvent, type Dispatch, type SetStateAction } from "react";
 import { useStore, type ResourceItem } from "../state/store";
-import { useChangedKey } from "../useChangedKey";
-import { pickSibling } from "../state/pairing";
-import { resolveNarcInfo, resolveRenderHints, resolveSpriteUnit } from "../state/grouping";
+import { resolveNarcInfo } from "../state/grouping";
 import { refKey, type DecodedImage, type ResourceRef } from "../transport";
 import { base64ToBytes, download } from "../util";
 import { SpriteEditor } from "./SpriteEditor";
-import { Icon } from "./icons";
+import { PlayPauseLabel } from "./playPauseLabel";
+import { fileStem, useApplyOnChange } from "./viewerShared";
+import {
+  readyTitle,
+  finishPending,
+  hideSpriteCanvas,
+  importDisabled,
+  importTitle,
+  itemsKeyOf,
+  maxFrameOf,
+  nanrBlock,
+  nanrPlaying,
+  ncgrBlock,
+  nextSpritePair,
+  pairBlock,
+  peersOf,
+  pendingText,
+  requireNanr,
+  requireNclr,
+  requireTiles,
+  roleSuffix,
+  runSpriteImport,
+  showImporter,
+  showSpriteEditor,
+  spriteDepKey,
+  spriteResources,
+  spriteViewSeed,
+  tilesFromPx,
+  tilesPx,
+  type PendingImport,
+  type SpritePair,
+} from "./spriteViewerLogic";
 
 function RefSelect({
   label,
@@ -73,7 +102,320 @@ function Stepper({
   );
 }
 
-export function SpriteViewer() {
+
+type SetNum = Dispatch<SetStateAction<number>>;
+
+/** Game code and narc path from the store without subscribing. */
+function readGameDb(container: number) {
+  const st = useStore.getState();
+  const narcPath = st.narcPathOf(container);
+  const gameCode = st.romInfo?.gameCode;
+  return { narcPath, gameCode, info: resolveNarcInfo(gameCode, narcPath) };
+}
+
+/** Saved pairing for this resource, or an empty override. */
+function savedPair(key: string): SpritePair {
+  return useStore.getState().pairingOverrides[key] ?? {};
+}
+
+/** Start the NANR timer, or do nothing when the clip cannot move. */
+function beginNanrPlayback(fmt: string, playing: boolean, animFrames: number[], animIndex: number, setFrameIndex: SetNum): () => void {
+  if (!nanrPlaying(fmt, playing, animFrames, animIndex)) return () => undefined;
+  const frames = animFrames[animIndex] ?? 0;
+  const id = setInterval(() => setFrameIndex((frame) => (frame + 1) % frames), 240);
+  return () => clearInterval(id);
+}
+
+/** Store a cell count when the request is still current. */
+function takeCellCount(alive: boolean, count: number, setCellCount: SetNum): void {
+  if (!alive) return;
+  setCellCount(count);
+}
+
+/** Store NANR clip lengths and auto-play the first clip that moves. */
+export function applyNanrMeta(
+  alive: boolean,
+  meta: { animations: { frames: number }[] },
+  setAnimFrames: (frames: number[]) => void,
+  setAnimIndex: SetNum,
+  setFrameIndex: SetNum,
+  setPlaying: (playing: boolean) => void,
+): void {
+  if (!alive) return;
+  const frames = meta.animations.map((anim) => anim.frames);
+  setAnimFrames(frames);
+  const firstMulti = frames.findIndex((count) => count > 1);
+  if (firstMulti > 0) {
+    setAnimIndex(firstMulti);
+    setFrameIndex(0);
+  }
+  setPlaying(firstMulti >= 0);
+}
+
+/** Load NCER or NANR counts for the steppers. */
+function loadSpriteMeta(
+  fmt: string,
+  alive: () => boolean,
+  client: {
+    decodeNcerMeta: (handle: number, ref: ResourceRef) => Promise<{ cellCount: number }>;
+    decodeNanrMeta: (handle: number, ref: ResourceRef) => Promise<{ animations: { frames: number }[] }>;
+  },
+  romHandle: number,
+  ref: ResourceRef,
+  setCellCount: SetNum,
+  setAnimFrames: (frames: number[]) => void,
+  setAnimIndex: SetNum,
+  setFrameIndex: SetNum,
+  setPlaying: (playing: boolean) => void,
+): void {
+  if (fmt === "NCER") {
+    client.decodeNcerMeta(romHandle, ref)
+      .then((meta) => takeCellCount(alive(), meta.cellCount, setCellCount))
+      .catch(() => takeCellCount(alive(), 0, setCellCount));
+    return;
+  }
+  if (fmt === "NANR") {
+    client.decodeNanrMeta(romHandle, ref)
+      .then((meta) => applyNanrMeta(alive(), meta, setAnimFrames, setAnimIndex, setFrameIndex, setPlaying))
+      .catch(() => { if (alive()) setAnimFrames([]); });
+  }
+}
+
+/** Decode whichever format is selected. */
+export function loadSelectionImage(args: {
+  fmt: string;
+  pair: SpritePair;
+  client: {
+    decodeNcgr: (handle: number, ref: ResourceRef, nclr: ResourceRef, tilesWidth: number, transparent: boolean, paletteIndex: number, scanFrontToBack: boolean) => Promise<DecodedImage>;
+    decodeNscr: (handle: number, ref: ResourceRef, ncgr: ResourceRef, nclr: ResourceRef, transparent: boolean) => Promise<DecodedImage>;
+    decodeNcer: (handle: number, ref: ResourceRef, ncgr: ResourceRef, nclr: ResourceRef, cellIndex: number, transparent: boolean) => Promise<DecodedImage>;
+    decodeNanr: (handle: number, ref: ResourceRef, ncer: ResourceRef, ncgr: ResourceRef, nclr: ResourceRef, animIndex: number, frameIndex: number, transparent: boolean) => Promise<DecodedImage>;
+  };
+  romHandle: number;
+  ref: ResourceRef;
+  tilesWidth: number;
+  transparent: boolean;
+  paletteIndex: number;
+  scanFrontToBack: boolean;
+  cellIndex: number;
+  animIndex: number;
+  frameIndex: number;
+}): Promise<DecodedImage> {
+  if (args.fmt === "NCGR") {
+    return args.client.decodeNcgr(args.romHandle, args.ref, requireNclr(args.pair.nclr), args.tilesWidth, args.transparent, args.paletteIndex, args.scanFrontToBack);
+  }
+  if (args.fmt === "NSCR") {
+    const need = requireTiles(args.pair.ncgr, args.pair.nclr, "A screen needs an NCGR tileset and an NCLR palette.");
+    return args.client.decodeNscr(args.romHandle, args.ref, need.ncgr, need.nclr, args.transparent);
+  }
+  if (args.fmt === "NCER") {
+    const need = requireTiles(args.pair.ncgr, args.pair.nclr, "Cells need an NCGR tileset and an NCLR palette.");
+    return args.client.decodeNcer(args.romHandle, args.ref, need.ncgr, need.nclr, args.cellIndex, args.transparent);
+  }
+  if (args.fmt === "NANR") {
+    const need = requireNanr(args.pair.ncer, args.pair.ncgr, args.pair.nclr);
+    return args.client.decodeNanr(args.romHandle, args.ref, need.ncer, need.ncgr, need.nclr, args.animIndex, args.frameIndex, args.transparent);
+  }
+  throw new Error("Unsupported: " + args.fmt);
+}
+
+/** Decode the current selection into the canvas state. */
+export async function decodeInto(
+  alive: () => boolean,
+  decode: () => Promise<DecodedImage>,
+  setBusy: (busy: boolean) => void,
+  setError: (error: string | null) => void,
+  setImage: (image: DecodedImage | null) => void,
+  setSubPalettes: SetNum,
+): Promise<void> {
+  setBusy(true);
+  setError(null);
+  try {
+    const image = await decode();
+    if (!alive()) return;
+    setImage(image);
+    setSubPalettes(image.subPalettes ?? 1);
+  } catch (err) {
+    if (!alive()) return;
+    setError((err as Error).message);
+    setImage(null);
+  } finally {
+    if (alive()) setBusy(false);
+  }
+}
+
+/** Route a chosen image to the importer for this format. */
+export function acceptSpriteFile(
+  event: ChangeEvent<HTMLInputElement>,
+  fmt: string,
+  handlers: { screen: (file: File) => void; cell: (file: File) => void; nanr: (file: File) => void; ncgr: (file: File) => void },
+): void {
+  const file = event.target.files?.[0];
+  event.target.value = "";
+  if (!file) return;
+  if (fmt === "NSCR") handlers.screen(file);
+  else if (fmt === "NCER") handlers.cell(file);
+  else if (fmt === "NANR") handlers.nanr(file);
+  else handlers.ncgr(file);
+}
+
+/** Ignore a stepper change. Used while the editor is open. */
+function ignoreChange(): void {
+  return undefined;
+}
+
+/** Bytes attached to a pending import, or an empty buffer when there is none. */
+export function pendingBytes(pending: PendingImport | null): Uint8Array {
+  return pending?.bytes ?? new Uint8Array();
+}
+
+/** Download the decoded PNG. */
+export function saveSpritePng(image: DecodedImage | null, name: string): void {
+  if (!image) return;
+  download(`${fileStem(name, "image")}.png`, base64ToBytes(image.png.split(",")[1] ?? ""), "image/png");
+}
+
+/** Remember a manual pairing choice. */
+function changePair(key: "ncgr" | "nclr" | "ncer", ref: ResourceRef, setPair: Dispatch<SetStateAction<SpritePair>>, setOverride: (key: string, partial: SpritePair) => void, selKey: string, editing: boolean): void {
+  if (key === "nclr" && editing) return;
+  setPair((pair) => ({ ...pair, [key]: ref }));
+  setOverride(selKey, { [key]: ref });
+}
+
+function GameDbBadge({ info }: { info: { title: string; role?: string } | null }) {
+  if (!info) return null;
+  return (
+    <div className="gamedb-badge" title="Grouping and render hints came from the game DB, not a heuristic">
+      Game DB · {info.title}
+      {roleSuffix(info.role)}
+    </div>
+  );
+}
+
+/** A sibling picker that hides itself when `show` is false. */
+function OptionalRef({ show, label, items, value, onChange }: { show: boolean; label: string; items: ResourceItem[]; value: ResourceRef | undefined; onChange: (ref: ResourceRef) => void }) {
+  if (!show) return null;
+  return <RefSelect label={label} items={items} value={value} onChange={onChange} />;
+}
+
+function NcgrGeometry(props: {
+  fmt: string;
+  tilesWidth: number;
+  editing: boolean;
+  paletteIndex: number;
+  subPalettes: number;
+  setTilesWidth: SetNum;
+  setPaletteIndex: SetNum;
+}) {
+  if (props.fmt !== "NCGR") return null;
+  return (
+    <>
+      <label className="ctrl">
+        <span>Width (px)</span>
+        <input
+          type="number"
+          min={0}
+          step={8}
+          placeholder="auto"
+          disabled={props.editing}
+          title="Sprite width in pixels (multiples of 8). Leave 0 for auto."
+          value={tilesPx(props.tilesWidth)}
+          onChange={(event) => props.setTilesWidth(tilesFromPx(event.target.value))}
+        />
+      </label>
+      <Stepper label="Palette" value={props.paletteIndex} max={props.subPalettes - 1} onChange={props.editing ? ignoreChange : props.setPaletteIndex} />
+    </>
+  );
+}
+
+function NanrControls(props: {
+  fmt: string;
+  animIndex: number;
+  frameIndex: number;
+  animFrames: number[];
+  playing: boolean;
+  setAnimIndex: SetNum;
+  setFrameIndex: SetNum;
+  setPlaying: Dispatch<SetStateAction<boolean>>;
+}) {
+  if (props.fmt !== "NANR") return null;
+  return (
+    <>
+      <Stepper label="Animation" value={props.animIndex} max={props.animFrames.length - 1} onChange={(n) => { props.setAnimIndex(n); props.setFrameIndex(0); }} />
+      <Stepper label="Frame" value={props.frameIndex} max={maxFrameOf(props.animFrames, props.animIndex)} onChange={props.setFrameIndex} />
+      <label className="ctrl">
+        <span>Playback</span>
+        <button className="play-btn" onClick={() => props.setPlaying((value) => !value)} disabled={(props.animFrames[props.animIndex] ?? 0) <= 1}>
+          <PlayPauseLabel playing={props.playing} />
+        </button>
+      </label>
+    </>
+  );
+}
+
+function ImportPngControl(props: {
+  fmt: string;
+  editing: boolean;
+  impBusy: boolean;
+  pair: SpritePair;
+  onClick: () => void;
+}) {
+  if (!showImporter(props.fmt)) return null;
+  return (
+    <label className="ctrl">
+      <span>Edit</span>
+      <button className="play-btn" disabled={importDisabled(props.fmt, props.editing, props.impBusy, props.pair)} title={importTitle(props.fmt, props.pair)} onClick={props.onClick}>
+        {props.impBusy ? "…" : "Import PNG…"}
+      </button>
+    </label>
+  );
+}
+
+function PendingChoice(props: { pending: PendingImport | null; impBusy: boolean; onMatch: () => void; onRebuild: () => void; onCancel: () => void }) {
+  if (!props.pending) return null;
+  return (
+    <div className="import-choice">
+      <span>
+        {props.pending.unmatched.toLocaleString()}
+        {pendingText(props.pending)}
+      </span>
+      <button className="btn btn--sm" disabled={props.impBusy} onClick={props.onMatch}>Match to palette</button>
+      <button className="btn btn--sm" disabled={props.impBusy} onClick={props.onRebuild}>Rebuild palette</button>
+      <button className="link-btn" disabled={props.impBusy} onClick={props.onCancel}>Cancel</button>
+    </div>
+  );
+}
+
+function SpriteCanvas({ error, image, zoom, busy }: { error: string | null; image: DecodedImage | null; zoom: number; busy: boolean }) {
+  if (error) return <div className="error">{error}</div>;
+  if (image) return <img className="sprite-img" src={image.png} width={image.width * zoom} height={image.height * zoom} alt="" />;
+  return <div className="placeholder">{busy ? "Decoding…" : "…"}</div>;
+}
+
+function ScannedNote({ image, fmt }: { image: DecodedImage | null; fmt: string }) {
+  if (!image?.scanned || (fmt !== "NCER" && fmt !== "NANR")) return null;
+  return (
+    <div className="import-choice">
+      <span>
+        This tileset is a scanned (bitmap) NCGR — its pixels are the full sprite, so it&apos;s shown
+        directly (cells/frames can&apos;t be composed over a bitmap).
+      </span>
+    </div>
+  );
+}
+
+function SpriteMeta({ image, error, busy, onSave }: { image: DecodedImage | null; error: string | null; busy: boolean; onSave: () => void }) {
+  if (!image || error) return null;
+  return (
+    <div className="sprite-meta">
+      <span>{image.width}×{image.height}px{busy ? " · decoding…" : ""}</span>
+      <button className="link-btn" onClick={onSave}>Save PNG</button>
+    </div>
+  );
+}
+
+/** State and handlers for `SpriteViewer`. */
+function useSpriteSession() {
   const selection = useStore((s) => s.selection)!;
   const client = useStore((s) => s.client);
   const romHandle = useStore((s) => s.romHandle)!;
@@ -84,44 +426,22 @@ export function SpriteViewer() {
   const importScreenPng = useStore((s) => s.importScreenPng);
   const importCellPng = useStore((s) => s.importCellPng);
   const importNanrPng = useStore((s) => s.importNanrPng);
-  const editVersion = useStore((s) => s.editVersion); // bumped on import → triggers an in-place re-decode
-
+  const editVersion = useStore((s) => s.editVersion);
   const fmt = selection.format;
   const container = selection.ref.container;
   const selKey = refKey(selection.ref);
-
-  // Game-DB (§8) resolution for this NARC: a badge + render hints, manifest-first. `narcs` is a dep so
-  // the path resolves once the container's NARC is open.
-  const gdb = useMemo(() => {
-    const st = useStore.getState();
-    const narcPath = st.narcPathOf(container);
-    const gameCode = st.romInfo?.gameCode;
-    return {
-      narcPath,
-      gameCode,
-      info: resolveNarcInfo(gameCode, narcPath),
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [container, narcs]);
-
-  const items: ResourceItem[] = useMemo(() => {
-    if (container >= 0) {
-      const n = narcs[container];
-      return n
-        ? n.entries.map((e) => ({ ref: { container, id: e.index }, label: `#${e.index}`, format: e.format }))
-        : [];
-    }
-    return romSiblings;
-  }, [container, narcs, romSiblings]);
-
-  const nclrs = useMemo(() => items.filter((i) => i.format === "NCLR"), [items]);
-  const ncgrs = useMemo(() => items.filter((i) => i.format === "NCGR"), [items]);
-  const ncers = useMemo(() => items.filter((i) => i.format === "NCER"), [items]);
-
-  const [pair, setPair] = useState<{ ncgr?: ResourceRef; nclr?: ResourceRef; ncer?: ResourceRef }>({});
+  // narcs is the signal that the container's path can resolve; the callback reads the store directly.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const gdb = useMemo(() => readGameDb(container), [container, narcs]);
+  const items = useMemo(() => spriteResources(container, narcs, romSiblings), [container, narcs, romSiblings]);
+  const nclrs = useMemo(() => peersOf(items, "NCLR"), [items]);
+  const ncgrs = useMemo(() => peersOf(items, "NCGR"), [items]);
+  const ncers = useMemo(() => peersOf(items, "NCER"), [items]);
+  const selfPeers = useMemo(() => peersOf(items, fmt), [items, fmt]);
+  const [pair, setPair] = useState<SpritePair>({});
   const [transparent, setTransparent] = useState(true);
   const [tilesWidth, setTilesWidth] = useState(0);
-  const [scanFrontToBack, setScanFrontToBack] = useState(true); // scanned-NCGR direction (D/P = false)
+  const [scanFrontToBack, setScanFrontToBack] = useState(true);
   const [paletteIndex, setPaletteIndex] = useState(0);
   const [cellIndex, setCellIndex] = useState(0);
   const [cellCount, setCellCount] = useState(0);
@@ -131,480 +451,210 @@ export function SpriteViewer() {
   const [zoom, setZoom] = useState(2);
   const [playing, setPlaying] = useState(false);
   const [subPalettes, setSubPalettes] = useState(1);
-
   const [image, setImage] = useState<DecodedImage | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
-
-  // PNG-import state (NCGR sprite or NSCR background): a pending match-vs-rebuild choice when the image
-  // doesn't fit the current palette. `kind` routes the apply to the sprite vs. tilemap importer.
-  const pngRef = useRef<HTMLInputElement>(null);
   const [impBusy, setImpBusy] = useState(false);
   const [dedupFlips, setDedupFlips] = useState(true);
-  const [pending, setPending] = useState<
-    { bytes: Uint8Array; unmatched: number; w: number; h: number; kind: "ncgr" | "screen" | "cell" | "nanr" } | null
-  >(null);
+  const [pending, setPending] = useState<PendingImport | null>(null);
   const [editing, setEditing] = useState(false);
 
-  // All resources of the selected file's own format, ordered by container index.
-  const selfPeers = useMemo(
-    () => items.filter((i) => i.format === fmt).slice().sort((a, b) => a.ref.id - b.ref.id),
-    [items, fmt]
-  );
+  useApplyOnChange(`${selKey}:${itemsKeyOf(items)}`, () => {
+    setPair(nextSpritePair({
+      items,
+      saved: savedPair(selKey),
+      gameCode: gdb.gameCode,
+      narcPath: gdb.narcPath,
+      container,
+      id: selection.ref.id,
+      peers: selfPeers,
+      ncgrs,
+      nclrs,
+      ncers,
+    }));
+  });
 
-  // Auto-pair when the selection (or its container's contents) changes — but honour any manual
-  // pairing the user previously chose for this resource (read without subscribing to avoid re-runs).
-  const itemsKey = items.map((i) => `${i.ref.container}:${i.ref.id}:${i.format}`).join("|");
-  if (useChangedKey(`${selKey}:${itemsKey}`)) {
-    const pick = (cands: ResourceItem[]) => pickSibling(cands, selfPeers, selection.ref.id);
-    const saved = useStore.getState().pairingOverrides[selKey] ?? {};
-    // Manifest-first (§8): a declared grouping resolves the exact sibling unit; else the heuristic.
-    const entryLikes = items.map((i) => ({ index: i.ref.id, format: i.format }));
-    const unit = resolveSpriteUnit(gdb.gameCode, gdb.narcPath, container, entryLikes, selection.ref.id);
-    setPair({
-      ncgr: saved.ncgr ?? unit?.ncgr ?? pick(ncgrs),
-      nclr: saved.nclr ?? unit?.nclr ?? pick(nclrs),
-      ncer: saved.ncer ?? unit?.ncer ?? pick(ncers),
-    });
-  }
-
-  // Reset the view controls only when a DIFFERENT file is selected — not when the current file's bytes
-  // are edited in place (an import bumps editVersion but keeps selKey), so the tile width / palette /
-  // zoom the user dialed in survive the edit.
-  if (useChangedKey(selKey)) {
-    // Seed the view controls from the game-DB render hints when the NARC is listed (manifest-first),
-    // else the neutral defaults. tileWidth is declared in pixels; the control works in 8px tiles.
-    const st = useStore.getState();
-    const hints = resolveRenderHints(st.romInfo?.gameCode, st.narcPathOf(container), selection.ref.id);
+  useApplyOnChange(selKey, () => {
+    const seed = spriteViewSeed(gdb.gameCode, gdb.narcPath, selection.ref.id);
     setCellIndex(0);
     setAnimIndex(0);
     setFrameIndex(0);
-    setPaletteIndex(hints?.paletteIndex ?? 0);
+    setPaletteIndex(seed.paletteIndex);
     setSubPalettes(1);
-    setTilesWidth(hints?.tileWidth ? Math.max(1, Math.round(hints.tileWidth / 8)) : 0);
-    setTransparent(hints?.transparent ?? true);
-    setScanFrontToBack(hints?.scanDirection !== "back-to-front"); // D/P battle sprites scan back-to-front
+    setTilesWidth(seed.tilesWidth);
+    setTransparent(seed.transparent);
+    setScanFrontToBack(seed.scanFrontToBack);
     setPlaying(false);
     setEditing(false);
-  }
+  });
 
-  // NANR playback: advance the frame on a timer while playing.
-  useEffect(() => {
-    if (fmt !== "NANR" || !playing) return;
-    const frames = animFrames[animIndex] ?? 0;
-    if (frames <= 1) return;
-    const id = setInterval(() => setFrameIndex((f) => (f + 1) % frames), 240);
-    return () => clearInterval(id);
-  }, [fmt, playing, animIndex, animFrames]);
-
-  // Metadata (counts) for the stepper controls.
+  useEffect(() => beginNanrPlayback(fmt, playing, animFrames, animIndex, setFrameIndex), [fmt, playing, animIndex, animFrames]);
   useEffect(() => {
     let alive = true;
-    if (fmt === "NCER") {
-      client
-        .decodeNcerMeta(romHandle, selection.ref)
-        .then((m) => alive && setCellCount(m.cellCount))
-        .catch(() => alive && setCellCount(0));
-    } else if (fmt === "NANR") {
-      client
-        .decodeNanrMeta(romHandle, selection.ref)
-        .then((m) => {
-          if (!alive) return;
-          const frames = m.animations.map((a) => a.frames);
-          setAnimFrames(frames);
-          // Clip 0 is often a single static frame; jump to the first animation that actually moves
-          // (>1 frame) and auto-play it, so a NANR looks alive on open instead of frozen.
-          const firstMulti = frames.findIndex((f) => f > 1);
-          if (firstMulti > 0) {
-            setAnimIndex(firstMulti);
-            setFrameIndex(0);
-          }
-          setPlaying(firstMulti >= 0);
-        })
-        .catch(() => alive && setAnimFrames([]));
-    }
-    return () => {
-      alive = false;
-    };
+    loadSpriteMeta(fmt, () => alive, client, romHandle, selection.ref, setCellCount, setAnimFrames, setAnimIndex, setFrameIndex, setPlaying);
+    return () => { alive = false; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selKey, fmt]);
 
-  const depKey = JSON.stringify({
-    selKey,
-    fmt,
-    ncgr: pair.ncgr && refKey(pair.ncgr),
-    nclr: pair.nclr && refKey(pair.nclr),
-    ncer: pair.ncer && refKey(pair.ncer),
-    transparent,
-    tilesWidth,
-    scanFrontToBack,
-    paletteIndex,
-    cellIndex,
-    animIndex,
-    frameIndex,
-    editVersion, // re-decode after an in-place import (bytes changed, no remount)
-  });
-
+  const depKey = spriteDepKey({ selKey, fmt, pair, transparent, tilesWidth, scanFrontToBack, paletteIndex, cellIndex, animIndex, frameIndex, editVersion });
   useEffect(() => {
     let alive = true;
-    void (async () => {
-      setBusy(true);
-      setError(null);
-      try {
-        let img: DecodedImage;
-        if (fmt === "NCGR") {
-          if (!pair.nclr) throw new Error("No palette (NCLR) in this container — pick one to color the tiles.");
-          img = await client.decodeNcgr(romHandle, selection.ref, pair.nclr, tilesWidth, transparent, paletteIndex, scanFrontToBack);
-        } else if (fmt === "NSCR") {
-          if (!pair.ncgr || !pair.nclr) throw new Error("A screen needs an NCGR tileset and an NCLR palette.");
-          img = await client.decodeNscr(romHandle, selection.ref, pair.ncgr, pair.nclr, transparent);
-        } else if (fmt === "NCER") {
-          if (!pair.ncgr || !pair.nclr) throw new Error("Cells need an NCGR tileset and an NCLR palette.");
-          img = await client.decodeNcer(romHandle, selection.ref, pair.ncgr, pair.nclr, cellIndex, transparent);
-        } else if (fmt === "NANR") {
-          if (!pair.ncer || !pair.ncgr || !pair.nclr)
-            throw new Error("An animation needs NCER + NCGR + NCLR.");
-          img = await client.decodeNanr(
-            romHandle, selection.ref, pair.ncer, pair.ncgr, pair.nclr, animIndex, frameIndex, transparent
-          );
-        } else {
-          throw new Error("Unsupported: " + fmt);
-        }
-        if (alive) {
-          setImage(img);
-          setSubPalettes(img.subPalettes ?? 1);
-        }
-      } catch (e) {
-        if (alive) {
-          setError((e as Error).message);
-          setImage(null);
-        }
-      } finally {
-        if (alive) setBusy(false);
-      }
-    })();
-    return () => {
-      alive = false;
-    };
+    void decodeInto(() => alive, () => loadSelectionImage({
+      fmt, pair, client, romHandle, ref: selection.ref, tilesWidth, transparent, paletteIndex, scanFrontToBack, cellIndex, animIndex, frameIndex,
+    }), setBusy, setError, setImage, setSubPalettes);
+    return () => { alive = false; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [depKey]);
 
-  const maxFrame = animFrames[animIndex] != null ? animFrames[animIndex] - 1 : -1;
-
-  const savePng = () => {
-    if (!image) return;
-    const base = (selection.name.split(/[/:]/).pop() || "image").replace(/[^\w.-]+/g, "_");
-    download(`${base}.png`, base64ToBytes(image.png.split(",")[1]), "image/png");
+  const onPng = (file: File) => {
+    void runSpriteImport(file, {
+      blocked: ncgrBlock(pair.nclr),
+      requiresOk: false,
+      kind: "ncgr",
+      failPrefix: "PNG import failed: ",
+      dry: (bytes) => importPng(selection.ref, requireNclr(pair.nclr), paletteIndex, tilesWidth, false, true, scanFrontToBack, bytes),
+      apply: (bytes) => importPng(selection.ref, requireNclr(pair.nclr), paletteIndex, tilesWidth, false, false, scanFrontToBack, bytes),
+    }, setImpBusy, setPending);
+  };
+  const onScreen = (file: File) => {
+    void runSpriteImport(file, {
+      blocked: pairBlock(pair.ncgr, pair.nclr, "A screen import needs both a tileset (NCGR) and a palette (NCLR) — pick them first."),
+      requiresOk: true,
+      kind: "screen",
+      failPrefix: "Background import failed: ",
+      dry: (bytes) => importScreenPng(selection.ref, requireTiles(pair.ncgr, pair.nclr, "missing").ncgr, requireTiles(pair.ncgr, pair.nclr, "missing").nclr, dedupFlips, false, true, bytes),
+      apply: (bytes) => importScreenPng(selection.ref, requireTiles(pair.ncgr, pair.nclr, "missing").ncgr, requireTiles(pair.ncgr, pair.nclr, "missing").nclr, dedupFlips, false, false, bytes),
+    }, setImpBusy, setPending);
   };
 
-  // Import an image over this NCGR. Dry-run first: if every pixel fits the current palette, apply the
-  // match immediately; otherwise surface the match-vs-rebuild choice with the unmatched-pixel count.
-  const onPngChosen = async (file: File) => {
-    if (!pair.nclr) {
-      alert("Pick a palette (NCLR) first — the import needs one to match colors against.");
-      return;
-    }
-    setImpBusy(true);
-    try {
-      const bytes = new Uint8Array(await file.arrayBuffer());
-      const dry = await importPng(selection.ref, pair.nclr, paletteIndex, tilesWidth, false, true, scanFrontToBack, bytes);
-      if (dry.unmatched === 0) {
-        await importPng(selection.ref, pair.nclr, paletteIndex, tilesWidth, false, false, scanFrontToBack, bytes);
-      } else {
-        setPending({ bytes, unmatched: dry.unmatched, w: dry.width, h: dry.height, kind: "ncgr" });
-      }
-    } catch (e) {
-      alert("PNG import failed: " + (e as Error).message);
-    } finally {
-      setImpBusy(false);
-    }
+  const onCell = (file: File) => {
+    void runSpriteImport(file, {
+      blocked: pairBlock(pair.ncgr, pair.nclr, "A cell import needs a tileset (NCGR) and a palette (NCLR) — pick them first."),
+      requiresOk: true,
+      kind: "cell",
+      failPrefix: "Cell import failed: ",
+      dry: (bytes) => {
+        const need = requireTiles(pair.ncgr, pair.nclr, "missing");
+        return importCellPng(selection.ref, need.ncgr, need.nclr, cellIndex, false, true, bytes);
+      },
+      apply: (bytes) => {
+        const need = requireTiles(pair.ncgr, pair.nclr, "missing");
+        return importCellPng(selection.ref, need.ncgr, need.nclr, cellIndex, false, false, bytes);
+      },
+    }, setImpBusy, setPending);
+  };
+  const onNanr = (file: File) => {
+    void runSpriteImport(file, {
+      blocked: nanrBlock(pair.ncer, pair.ncgr, pair.nclr),
+      requiresOk: true,
+      kind: "nanr",
+      failPrefix: "Animation cell import failed: ",
+      dry: (bytes) => {
+        const need = requireNanr(pair.ncer, pair.ncgr, pair.nclr);
+        return importNanrPng(selection.ref, need.ncer, need.ncgr, need.nclr, animIndex, frameIndex, false, true, bytes);
+      },
+      apply: (bytes) => {
+        const need = requireNanr(pair.ncer, pair.ncgr, pair.nclr);
+        return importNanrPng(selection.ref, need.ncer, need.ncgr, need.nclr, animIndex, frameIndex, false, false, bytes);
+      },
+    }, setImpBusy, setPending);
+  };
+  const finish = (rebuild: boolean) => {
+    const bytes = pendingBytes(pending);
+    void finishPending(pending, pair, {
+      screen: () => {
+        const need = requireTiles(pair.ncgr, pair.nclr, "missing");
+        return importScreenPng(selection.ref, need.ncgr, need.nclr, dedupFlips, rebuild, false, bytes);
+      },
+      cell: () => {
+        const need = requireTiles(pair.ncgr, pair.nclr, "missing");
+        return importCellPng(selection.ref, need.ncgr, need.nclr, cellIndex, rebuild, false, bytes);
+      },
+      nanr: () => {
+        const need = requireNanr(pair.ncer, pair.ncgr, pair.nclr);
+        return importNanrPng(selection.ref, need.ncer, need.ncgr, need.nclr, animIndex, frameIndex, rebuild, false, bytes);
+      },
+      ncgr: () => importPng(selection.ref, requireNclr(pair.nclr), paletteIndex, tilesWidth, rebuild, false, scanFrontToBack, bytes),
+    }, setImpBusy, setPending);
   };
 
-  // Import a background image over this NSCR — decomposes it into the paired NCGR tileset + this tilemap
-  // (and the NCLR when rebuilding). Dry-run first: if every color fits, apply the match; else prompt.
-  const onScreenPngChosen = async (file: File) => {
-    if (!pair.ncgr || !pair.nclr) {
-      alert("A screen import needs both a tileset (NCGR) and a palette (NCLR) — pick them first.");
-      return;
-    }
-    setImpBusy(true);
-    try {
-      const bytes = new Uint8Array(await file.arrayBuffer());
-      const dry = await importScreenPng(selection.ref, pair.ncgr, pair.nclr, dedupFlips, false, true, bytes);
-      if (!dry.ok) throw new Error("import failed");
-      if (dry.unmatched === 0) {
-        await importScreenPng(selection.ref, pair.ncgr, pair.nclr, dedupFlips, false, false, bytes);
-      } else {
-        setPending({ bytes, unmatched: dry.unmatched, w: 0, h: 0, kind: "screen" });
-      }
-    } catch (e) {
-      alert("Background import failed: " + (e as Error).message);
-    } finally {
-      setImpBusy(false);
-    }
+  return {
+    fmt, gdb, ncgrs, nclrs, ncers, pair, setPair, setPairingOverride, selKey, editing, tilesWidth, setTilesWidth,
+    paletteIndex, setPaletteIndex, subPalettes, cellIndex, setCellIndex, cellCount, animIndex, setAnimIndex,
+    frameIndex, setFrameIndex, animFrames, playing, setPlaying, transparent, setTransparent, zoom, setZoom,
+    dedupFlips, setDedupFlips, impBusy, pending, setPending, image, error, busy, selection, onPng, onScreen,
+    onCell, onNanr, finish, scanFrontToBack, setEditing,
   };
+}
 
-  // Import an image over the composed NCER cell → decomposes into the NCGR tiles. Dry-run to match first;
-  // if it fits, apply, else prompt match-vs-rebuild (rebuild synthesises a new NCLR from the image).
-  const onCellPngChosen = async (file: File) => {
-    if (!pair.ncgr || !pair.nclr) {
-      alert("A cell import needs a tileset (NCGR) and a palette (NCLR) — pick them first.");
-      return;
-    }
-    setImpBusy(true);
-    try {
-      const bytes = new Uint8Array(await file.arrayBuffer());
-      const dry = await importCellPng(selection.ref, pair.ncgr, pair.nclr, cellIndex, false, true, bytes);
-      if (!dry.ok) throw new Error("import failed");
-      if (dry.unmatched === 0) await importCellPng(selection.ref, pair.ncgr, pair.nclr, cellIndex, false, false, bytes);
-      else setPending({ bytes, unmatched: dry.unmatched, w: 0, h: 0, kind: "cell" });
-    } catch (e) {
-      alert("Cell import failed: " + (e as Error).message);
-    } finally {
-      setImpBusy(false);
-    }
-  };
+/** Open the hidden PNG input. */
+function openPngPicker(input: { current: HTMLInputElement | null }): void {
+  input.current?.click();
+}
 
-  // Import an image over the NANR frame's underlying cell (edits the animation's artwork).
-  const onNanrPngChosen = async (file: File) => {
-    if (!pair.ncer || !pair.ncgr || !pair.nclr) {
-      alert("An animation import needs NCER + NCGR + NCLR — pick them first.");
-      return;
-    }
-    setImpBusy(true);
-    try {
-      const bytes = new Uint8Array(await file.arrayBuffer());
-      const dry = await importNanrPng(selection.ref, pair.ncer, pair.ncgr, pair.nclr, animIndex, frameIndex, false, true, bytes);
-      if (!dry.ok) throw new Error("import failed");
-      if (dry.unmatched === 0) await importNanrPng(selection.ref, pair.ncer, pair.ncgr, pair.nclr, animIndex, frameIndex, false, false, bytes);
-      else setPending({ bytes, unmatched: dry.unmatched, w: 0, h: 0, kind: "nanr" });
-    } catch (e) {
-      alert("Animation cell import failed: " + (e as Error).message);
-    } finally {
-      setImpBusy(false);
-    }
-  };
-
-  const applyPending = async (rebuild: boolean) => {
-    if (!pending) return;
-    setImpBusy(true);
-    try {
-      if (pending.kind === "screen") {
-        if (!pair.ncgr || !pair.nclr) return;
-        await importScreenPng(selection.ref, pair.ncgr, pair.nclr, dedupFlips, rebuild, false, pending.bytes);
-      } else if (pending.kind === "cell") {
-        if (!pair.ncgr || !pair.nclr) return;
-        await importCellPng(selection.ref, pair.ncgr, pair.nclr, cellIndex, rebuild, false, pending.bytes);
-      } else if (pending.kind === "nanr") {
-        if (!pair.ncer || !pair.ncgr || !pair.nclr) return;
-        await importNanrPng(selection.ref, pair.ncer, pair.ncgr, pair.nclr, animIndex, frameIndex, rebuild, false, pending.bytes);
-      } else {
-        if (!pair.nclr) return;
-        await importPng(selection.ref, pair.nclr, paletteIndex, tilesWidth, rebuild, false, scanFrontToBack, pending.bytes);
-      }
-      setPending(null); // (the viewer also remounts on editVersion bump)
-    } catch (e) {
-      alert("Import failed: " + (e as Error).message);
-    } finally {
-      setImpBusy(false);
-    }
-  };
-
+export function SpriteViewer() {
+  const pngRef = useRef<HTMLInputElement>(null);
+  const vm = useSpriteSession();
   return (
     <div className="sprite">
-      {gdb.info && (
-        <div className="gamedb-badge" title="Grouping and render hints came from the game DB, not a heuristic">
-          Game DB · {gdb.info.title}
-          {gdb.info.role ? ` · ${gdb.info.role.replace(/-/g, " ")}` : ""}
-        </div>
-      )}
+      <GameDbBadge info={vm.gdb.info} />
       <div className="controls">
-        {fmt !== "NCGR" && <RefSelect label="Tileset (NCGR)" items={ncgrs} value={pair.ncgr} onChange={(r) => { setPair((p) => ({ ...p, ncgr: r })); setPairingOverride(selKey, { ncgr: r }); }} />}
-        {fmt === "NANR" && <RefSelect label="Cells (NCER)" items={ncers} value={pair.ncer} onChange={(r) => { setPair((p) => ({ ...p, ncer: r })); setPairingOverride(selKey, { ncer: r }); }} />}
-        <RefSelect label="Palette (NCLR)" items={nclrs} value={pair.nclr} onChange={(r) => { if (editing) return; setPair((p) => ({ ...p, nclr: r })); setPairingOverride(selKey, { nclr: r }); }} />
-
-        {fmt === "NCGR" && (
-          <>
-            <label className="ctrl">
-              <span>Width (px)</span>
-              {/* Users think in pixels; the NCGR geometry is in 8px tiles, so accept pixels (step 8) and
-                  convert. 0 = auto (read the width from the NCGR header). */}
-              <input
-                type="number"
-                min={0}
-                step={8}
-                placeholder="auto"
-                disabled={editing}
-                title="Sprite width in pixels (multiples of 8). Leave 0 for auto."
-                value={tilesWidth ? tilesWidth * 8 : 0}
-                onChange={(e) => setTilesWidth(Math.max(0, Math.round((+e.target.value | 0) / 8)))}
-              />
-            </label>
-            <Stepper label="Palette" value={paletteIndex} max={subPalettes - 1} onChange={editing ? () => undefined : setPaletteIndex} />
-          </>
-        )}
-        {fmt === "NCER" && <Stepper label="Cell" value={cellIndex} max={cellCount - 1} onChange={setCellIndex} />}
-        {fmt === "NANR" && (
-          <>
-            <Stepper label="Animation" value={animIndex} max={animFrames.length - 1} onChange={(n) => { setAnimIndex(n); setFrameIndex(0); }} />
-            <Stepper label="Frame" value={frameIndex} max={maxFrame} onChange={setFrameIndex} />
-            <label className="ctrl">
-              <span>Playback</span>
-              <button
-                className="play-btn"
-                onClick={() => setPlaying((p) => !p)}
-                disabled={(animFrames[animIndex] ?? 0) <= 1}
-              >
-                {playing ? <><Icon name="pause" /> Pause</> : <><Icon name="play" /> Play</>}
-              </button>
-            </label>
-          </>
-        )}
-
+        <OptionalRef show={vm.fmt !== "NCGR"} label="Tileset (NCGR)" items={vm.ncgrs} value={vm.pair.ncgr} onChange={(ref) => changePair("ncgr", ref, vm.setPair, vm.setPairingOverride, vm.selKey, vm.editing)} />
+        <OptionalRef show={vm.fmt === "NANR"} label="Cells (NCER)" items={vm.ncers} value={vm.pair.ncer} onChange={(ref) => changePair("ncer", ref, vm.setPair, vm.setPairingOverride, vm.selKey, vm.editing)} />
+        <RefSelect label="Palette (NCLR)" items={vm.nclrs} value={vm.pair.nclr} onChange={(ref) => changePair("nclr", ref, vm.setPair, vm.setPairingOverride, vm.selKey, vm.editing)} />
+        <NcgrGeometry fmt={vm.fmt} tilesWidth={vm.tilesWidth} editing={vm.editing} paletteIndex={vm.paletteIndex} subPalettes={vm.subPalettes} setTilesWidth={vm.setTilesWidth} setPaletteIndex={vm.setPaletteIndex} />
+        {vm.fmt === "NCER" && <Stepper label="Cell" value={vm.cellIndex} max={vm.cellCount - 1} onChange={vm.setCellIndex} />}
+        <NanrControls fmt={vm.fmt} animIndex={vm.animIndex} frameIndex={vm.frameIndex} animFrames={vm.animFrames} playing={vm.playing} setAnimIndex={vm.setAnimIndex} setFrameIndex={vm.setFrameIndex} setPlaying={vm.setPlaying} />
         <label className="ctrl ctrl--inline">
-          <input type="checkbox" checked={transparent} onChange={(e) => setTransparent(e.target.checked)} />
+          <input type="checkbox" checked={vm.transparent} onChange={(event) => vm.setTransparent(event.target.checked)} />
           <span>Transparency</span>
         </label>
         <label className="ctrl">
           <span>Zoom</span>
-          <select value={zoom} onChange={(e) => setZoom(+e.target.value)}>
-            {[1, 2, 3, 4, 6, 8].map((z) => (
-              <option key={z} value={z}>{z}×</option>
-            ))}
+          <select value={vm.zoom} onChange={(event) => vm.setZoom(+event.target.value)}>
+            {[1, 2, 3, 4, 6, 8].map((z) => <option key={z} value={z}>{z}×</option>)}
           </select>
         </label>
-
-        {fmt === "NSCR" && (
+        {vm.fmt === "NSCR" && (
           <label className="ctrl ctrl--inline">
-            <input type="checkbox" checked={dedupFlips} onChange={(e) => setDedupFlips(e.target.checked)} />
+            <input type="checkbox" checked={vm.dedupFlips} onChange={(event) => vm.setDedupFlips(event.target.checked)} />
             <span>Share flipped tiles</span>
           </label>
         )}
-
-        {fmt === "NCGR" && (
+        {vm.fmt === "NCGR" && (
           <label className="ctrl">
             <span>Sprite</span>
-            <button
-              className="play-btn"
-              disabled={editing || !pair.nclr}
-              title={pair.nclr ? "Open the built-in pixel editor" : "Pick a palette first"}
-              onClick={() => setEditing(true)}
-            >
+            <button className="play-btn" disabled={vm.editing || !vm.pair.nclr} title={readyTitle(!!vm.pair.nclr, "Open the built-in pixel editor", "Pick a palette first")} onClick={() => vm.setEditing(true)}>
               Edit sprite…
             </button>
           </label>
         )}
-
-        {(fmt === "NCGR" || fmt === "NSCR" || fmt === "NCER" || fmt === "NANR") && (
-          <label className="ctrl">
-            <span>Edit</span>
-            <button
-              className="play-btn"
-              disabled={
-                editing ||
-                impBusy ||
-                (fmt === "NCGR" ? !pair.nclr : fmt === "NANR" ? !pair.ncer || !pair.ncgr || !pair.nclr : !pair.ncgr || !pair.nclr)
-              }
-              title={
-                fmt === "NCGR"
-                  ? pair.nclr ? "Replace this sprite's pixels from an image file" : "Pick a palette first"
-                  : fmt === "NSCR"
-                    ? pair.ncgr && pair.nclr ? "Import a background image into this tilemap (rebuilds the tileset)" : "Pick a tileset + palette first"
-                    : fmt === "NCER"
-                      ? pair.ncgr && pair.nclr ? "Replace this cell's pixels (writes back to the NCGR)" : "Pick a tileset + palette first"
-                      : pair.ncer && pair.ncgr && pair.nclr ? "Replace the current frame's cell artwork (writes back to the NCGR)" : "Pick NCER + NCGR + NCLR first"
-              }
-              onClick={() => pngRef.current?.click()}
-            >
-              {impBusy ? "…" : "Import PNG…"}
-            </button>
-            <input
-              ref={pngRef}
-              type="file"
-              accept="image/*"
-              hidden
-              onChange={(e) => {
-                const f = e.target.files?.[0];
-                e.target.value = "";
-                if (!f) return;
-                if (fmt === "NSCR") void onScreenPngChosen(f);
-                else if (fmt === "NCER") void onCellPngChosen(f);
-                else if (fmt === "NANR") void onNanrPngChosen(f);
-                else void onPngChosen(f);
-              }}
-            />
-          </label>
-        )}
-      </div>
-
-      {fmt === "NCGR" && editing && pair.nclr ? (
-        <SpriteEditor
-          ncgr={selection.ref}
-          nclr={pair.nclr}
-          tilesWidth={tilesWidth}
-          paletteIndex={paletteIndex}
-          scanFrontToBack={scanFrontToBack}
-          transparent={transparent}
-          initialZoom={zoom}
-          onClose={() => setEditing(false)}
+        <ImportPngControl
+          fmt={vm.fmt}
+          editing={vm.editing}
+          impBusy={vm.impBusy}
+          pair={vm.pair}
+          onClick={() => openPngPicker(pngRef)}
         />
+        <input
+          ref={pngRef}
+          type="file"
+          accept="image/*"
+          hidden
+          onChange={(event) => acceptSpriteFile(event, vm.fmt, { screen: vm.onScreen, cell: vm.onCell, nanr: vm.onNanr, ncgr: vm.onPng })}
+        />
+      </div>
+      {showSpriteEditor(vm.fmt, vm.editing, vm.pair.nclr) && vm.pair.nclr ? (
+        <SpriteEditor ncgr={vm.selection.ref} nclr={vm.pair.nclr} tilesWidth={vm.tilesWidth} paletteIndex={vm.paletteIndex} scanFrontToBack={vm.scanFrontToBack} transparent={vm.transparent} initialZoom={vm.zoom} onClose={() => vm.setEditing(false)} />
       ) : null}
-
-      {pending && (
-        <div className="import-choice">
-          <span>
-            {pending.unmatched.toLocaleString()}
-            {pending.kind === "ncgr"
-              ? ` of ${(pending.w * pending.h).toLocaleString()} pixels don't match the current palette.`
-              : " pixels don't match the current palette."}
-          </span>
-          <button className="btn btn--sm" disabled={impBusy} onClick={() => void applyPending(false)}>
-            Match to palette
-          </button>
-          <button className="btn btn--sm" disabled={impBusy} onClick={() => void applyPending(true)}>
-            Rebuild palette
-          </button>
-          <button className="link-btn" disabled={impBusy} onClick={() => setPending(null)}>
-            Cancel
-          </button>
-        </div>
-      )}
-
-      {!(fmt === "NCGR" && editing) && (
+      <PendingChoice pending={vm.pending} impBusy={vm.impBusy} onMatch={() => vm.finish(false)} onRebuild={() => vm.finish(true)} onCancel={() => vm.setPending(null)} />
+      {!hideSpriteCanvas(vm.fmt, vm.editing) && (
         <>
           <div className="canvas-wrap">
-            {error ? (
-              <div className="error">{error}</div>
-            ) : image ? (
-              <img
-                className="sprite-img"
-                src={image.png}
-                width={image.width * zoom}
-                height={image.height * zoom}
-                alt=""
-              />
-            ) : (
-              <div className="placeholder">{busy ? "Decoding…" : "…"}</div>
-            )}
+            <SpriteCanvas error={vm.error} image={vm.image} zoom={vm.zoom} busy={vm.busy} />
           </div>
-          {image?.scanned && (fmt === "NCER" || fmt === "NANR") && (
-            <div className="import-choice">
-              <span>
-                This tileset is a scanned (bitmap) NCGR — its pixels are the full sprite, so it&apos;s shown
-                directly (cells/frames can&apos;t be composed over a bitmap).
-              </span>
-            </div>
-          )}
-          {image && !error && (
-            <div className="sprite-meta">
-              <span>
-                {image.width}×{image.height}px{busy ? " · decoding…" : ""}
-              </span>
-              <button className="link-btn" onClick={savePng}>
-                Save PNG
-              </button>
-            </div>
-          )}
+          <ScannedNote image={vm.image} fmt={vm.fmt} />
+          <SpriteMeta image={vm.image} error={vm.error} busy={vm.busy} onSave={() => saveSpritePng(vm.image, vm.selection.name)} />
         </>
       )}
     </div>

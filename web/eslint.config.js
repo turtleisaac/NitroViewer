@@ -20,6 +20,7 @@ export default tseslint.config(
       "release/**",
       "electron/**",
       "scripts/**",
+      ".stryker-tmp/**",
     ],
   },
   {

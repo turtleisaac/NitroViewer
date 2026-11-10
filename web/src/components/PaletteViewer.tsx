@@ -1,9 +1,19 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type Dispatch, type SetStateAction } from "react";
 import { useStore } from "../state/store";
 import { useChangedKey } from "../useChangedKey";
 import type { PaletteData } from "../transport";
-import { download } from "../util";
-import { sameHex, snapHex } from "../color";
+import {
+  applyDecodedPalette,
+  cancelPaletteEdits,
+  commitColor,
+  exportPalettePng,
+  importPaletteFile,
+  paintColor,
+  paletteDirty,
+  pushCommitted,
+  savePaletteColors,
+  stepColorStack,
+} from "./paletteEdit";
 import { useDraftEditor } from "../useDraftEditor";
 import { ColorPicker } from "./ColorPicker";
 
@@ -26,16 +36,6 @@ function paletteToPng(colors: string[], block = 16, cols = 16): Promise<Uint8Arr
       })();
     }, "image/png");
   });
-}
-
-function cloneColors(c: string[]): string[] {
-  return c.slice();
-}
-
-function colorsEqual(a: string[], b: string[]): boolean {
-  if (a.length !== b.length) return false;
-  for (let i = 0; i < a.length; i++) if (!sameHex(a[i], b[i])) return false;
-  return true;
 }
 
 export function PaletteViewer() {
@@ -74,13 +74,7 @@ export function PaletteViewer() {
       .decodePalette(romHandle, { container: refContainer, id: refId })
       .then((p) => {
         if (!alive) return;
-        setPal(p);
-        const c = p.colors.map(snapHex);
-        setColors(c);
-        setBaseline(c);
-        committedRef.current = cloneColors(c);
-        setUndoStack([]);
-        setRedoStack([]);
+        applyDecodedPalette(p, setPal, setColors, setBaseline, committedRef, setUndoStack, setRedoStack);
       })
       .catch((e) => alive && setErr((e as Error).message));
     return () => {
@@ -88,42 +82,10 @@ export function PaletteViewer() {
     };
   }, [client, romHandle, refContainer, refId, editVersion]); // editVersion → re-decode after an import
 
-  const dirty = !!(colors && baseline && !colorsEqual(colors, baseline));
+  const dirty = paletteDirty(colors, baseline);
 
-  const pushCommitted = (next: string[]) => {
-    const prev = committedRef.current;
-    if (!prev || colorsEqual(prev, next)) {
-      setColors(next);
-      committedRef.current = cloneColors(next);
-      return;
-    }
-    setUndoStack((s) => [...s, cloneColors(prev)]);
-    setRedoStack([]);
-    committedRef.current = cloneColors(next);
-    setColors(next);
-  };
-
-  const undo = () => {
-    setUndoStack((stack) => {
-      if (stack.length === 0 || !committedRef.current) return stack;
-      const prev = stack[stack.length - 1];
-      setRedoStack((r) => [...r, cloneColors(committedRef.current!)]);
-      committedRef.current = cloneColors(prev);
-      setColors(cloneColors(prev));
-      return stack.slice(0, -1);
-    });
-  };
-
-  const redo = () => {
-    setRedoStack((stack) => {
-      if (stack.length === 0 || !committedRef.current) return stack;
-      const next = stack[stack.length - 1];
-      setUndoStack((u) => [...u, cloneColors(committedRef.current!)]);
-      committedRef.current = cloneColors(next);
-      setColors(cloneColors(next));
-      return stack.slice(0, -1);
-    });
-  };
+  const undo = () => setUndoStack((stack) => stepColorStack(stack, committedRef, setRedoStack, setColors));
+  const redo = () => setRedoStack((stack) => stepColorStack(stack, committedRef, setUndoStack, setColors));
 
   useDraftEditor(
     pal
@@ -138,124 +100,173 @@ export function PaletteViewer() {
       : null
   );
 
-  const onImport = async (file: File) => {
-    if (dirty && !window.confirm("Importing a PNG will replace your unsaved palette edits. Continue?")) return;
-    setBusy(true);
-    try {
-      const bytes = new Uint8Array(await file.arrayBuffer());
-      const res = await importPalette(selection.ref, bytes);
-      if (res.unique < res.colors)
-        // Non-blocking heads-up: the image had fewer colors than the palette holds.
-        console.info(`Palette import: ${res.unique} unique colors → padded to ${res.colors}.`);
-    } catch (e) {
-      alert("Palette import failed: " + (e as Error).message);
-    } finally {
-      setBusy(false);
-    }
-  };
+  const onImport = (file: File) =>
+    importPaletteFile(
+      file,
+      dirty,
+      () => window.confirm("Importing a PNG will replace your unsaved palette edits. Continue?"),
+      selection.ref,
+      importPalette,
+      setBusy
+    );
 
-  const onExport = async () => {
-    const src = colors ?? pal?.colors;
-    if (!src) return;
-    const base = (selection.name.split(/[/:]/).pop() || "palette").replace(/[^\w.-]+/g, "_");
-    download(`${base}.png`, await paletteToPng(src), "image/png");
-  };
-
-  const onSave = async () => {
-    if (!colors) return;
-    setBusy(true);
-    try {
-      await setPaletteColors(selection.ref, colors);
-    } catch (e) {
-      alert("Saving palette failed: " + (e as Error).message);
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  const onCancel = () => {
-    if (!baseline) return;
-    setColors(cloneColors(baseline));
-    committedRef.current = cloneColors(baseline);
-    setUndoStack([]);
-    setRedoStack([]);
-    setSelected(null);
-  };
+  const onExport = () => exportPalettePng(selection.name, colors, pal, paletteToPng);
+  const onSave = () => savePaletteColors(colors, selection.ref, setPaletteColors, setBusy);
+  const onCancel = () => cancelPaletteEdits(baseline, setColors, committedRef, setUndoStack, setRedoStack, setSelected);
 
   if (err) return <div className="error">Could not decode palette: {err}</div>;
   if (!pal || !colors) return <div className="placeholder">Decoding palette…</div>;
 
   return (
+    <PaletteView
+      pal={pal}
+      colors={colors}
+      dirty={dirty}
+      busy={busy}
+      selected={selected}
+      setSelected={setSelected}
+      setColors={setColors}
+      fileRef={fileRef}
+      colorsRef={colorsRef}
+      committedRef={committedRef}
+      setUndoStack={setUndoStack}
+      setRedoStack={setRedoStack}
+      onSave={onSave}
+      onCancel={onCancel}
+      onExport={onExport}
+      onImport={onImport}
+    />
+  );
+}
+
+function PaletteView(props: {
+  pal: PaletteData;
+  colors: string[];
+  dirty: boolean;
+  busy: boolean;
+  selected: number | null;
+  setSelected: (index: number) => void;
+  setColors: Dispatch<SetStateAction<string[] | null>>;
+  fileRef: { current: HTMLInputElement | null };
+  colorsRef: { current: string[] | null };
+  committedRef: { current: string[] | null };
+  setUndoStack: (fn: (stack: string[][]) => string[][]) => void;
+  setRedoStack: (stack: string[][]) => void;
+  onSave: () => Promise<void>;
+  onCancel: () => void;
+  onExport: () => Promise<void>;
+  onImport: (file: File) => Promise<void>;
+}) {
+  const {
+    pal, colors, dirty, busy, selected, setSelected, setColors, fileRef, colorsRef, committedRef,
+    setUndoStack, setRedoStack, onSave, onCancel, onExport, onImport,
+  } = props;
+  return (
     <div className="palette">
-      <div className="palette-bar">
-        <div className="palette-info">
-          {pal.count} colors
-          {dirty ? <span className="palette-dirty"> · unsaved</span> : null}
-          {selected != null ? <span> · #{selected}</span> : <span className="palette-hint"> · click a color to edit</span>}
-        </div>
-        <div className="palette-actions">
-          {dirty && (
-            <>
-              <button className="btn btn--save btn--sm" disabled={busy} onClick={() => void onSave()}>
-                {busy ? "…" : "Save"}
-              </button>
-              <button className="btn btn--ghost btn--sm" disabled={busy} onClick={onCancel}>
-                Cancel
-              </button>
-            </>
-          )}
-          <button className="link-btn" onClick={() => { void onExport(); }}>
-            Export PNG
-          </button>
-          <button className="play-btn" disabled={busy} onClick={() => fileRef.current?.click()}>
-            {busy ? "…" : "Import…"}
-          </button>
-          <input
-            ref={fileRef}
-            type="file"
-            accept="image/*"
-            hidden
-            onChange={(e) => {
-              const f = e.target.files?.[0];
-              e.target.value = "";
-              if (f) void onImport(f);
-            }}
-          />
-        </div>
-      </div>
-      <div className="swatches">
-        {colors.map((c, i) => (
-          <button
-            key={i}
-            type="button"
-            className={"swatch" + (selected === i ? " swatch--selected" : "")}
-            style={{ background: c }}
-            title={`#${i} ${c}`}
-            aria-label={`Color ${i} ${c}`}
-            aria-pressed={selected === i}
-            onClick={() => setSelected(i)}
-          />
-        ))}
-      </div>
+      <PaletteBar
+        count={pal.count}
+        dirty={dirty}
+        busy={busy}
+        selected={selected}
+        fileRef={fileRef}
+        onSave={onSave}
+        onCancel={onCancel}
+        onExport={onExport}
+        onImport={onImport}
+      />
+      <Swatches colors={colors} selected={selected} setSelected={setSelected} />
       {selected != null && colors[selected] && (
         <ColorPicker
           color={colors[selected]}
-          onChange={(hex) => {
-            setColors((prev) => {
-              if (!prev) return prev;
-              const next = prev.slice();
-              next[selected] = hex;
-              return next;
-            });
-          }}
-          onCommit={(hex) => {
-            const src = colorsRef.current ?? colors;
-            const next = src.slice();
-            next[selected] = snapHex(hex);
-            pushCommitted(next);
-          }}
+          onChange={(hex) => setColors((prev) => paintColor(prev, selected, hex))}
+          onCommit={(hex) => commitSwatch(colorsRef.current ?? colors, selected, hex, committedRef, setColors, setUndoStack, setRedoStack)}
         />
       )}
+    </div>
+  );
+}
+
+/** Commits one swatch edit onto the undo stack. */
+function commitSwatch(
+  colors: string[],
+  index: number,
+  hex: string,
+  committedRef: { current: string[] | null },
+  setColors: Dispatch<SetStateAction<string[] | null>>,
+  setUndoStack: (fn: (stack: string[][]) => string[][]) => void,
+  setRedoStack: (stack: string[][]) => void
+) {
+  pushCommitted(commitColor(colors, index, hex), committedRef, setColors, setUndoStack, setRedoStack);
+}
+
+function PaletteBar(props: {
+  count: number;
+  dirty: boolean;
+  busy: boolean;
+  selected: number | null;
+  fileRef: { current: HTMLInputElement | null };
+  onSave: () => Promise<void>;
+  onCancel: () => void;
+  onExport: () => Promise<void>;
+  onImport: (file: File) => Promise<void>;
+}) {
+  const { count, dirty, busy, selected, fileRef, onSave, onCancel, onExport, onImport } = props;
+  return (
+    <div className="palette-bar">
+      <div className="palette-info">
+        {count} colors
+        {dirty ? <span className="palette-dirty"> · unsaved</span> : null}
+        {selected != null ? <span> · #{selected}</span> : <span className="palette-hint"> · click a color to edit</span>}
+      </div>
+      <div className="palette-actions">
+        {dirty && (
+          <>
+            <button className="btn btn--save btn--sm" disabled={busy} onClick={() => void onSave()}>
+              {busy ? "…" : "Save"}
+            </button>
+            <button className="btn btn--ghost btn--sm" disabled={busy} onClick={onCancel}>
+              Cancel
+            </button>
+          </>
+        )}
+        <button className="link-btn" onClick={() => { void onExport(); }}>
+          Export PNG
+        </button>
+        <button className="play-btn" disabled={busy} onClick={() => fileRef.current?.click()}>
+          {busy ? "…" : "Import…"}
+        </button>
+        <input
+          ref={fileRef}
+          type="file"
+          accept="image/*"
+          hidden
+          onChange={(e) => {
+            const f = e.target.files?.[0];
+            e.target.value = "";
+            if (f) void onImport(f);
+          }}
+        />
+      </div>
+    </div>
+  );
+}
+
+function Swatches(props: { colors: string[]; selected: number | null; setSelected: (index: number) => void }) {
+  const { colors, selected, setSelected } = props;
+  return (
+    <div className="swatches">
+      {colors.map((c, i) => (
+        <button
+          key={i}
+          type="button"
+          className={"swatch" + (selected === i ? " swatch--selected" : "")}
+          style={{ background: c }}
+          title={`#${i} ${c}`}
+          aria-label={`Color ${i} ${c}`}
+          aria-pressed={selected === i}
+          onClick={() => setSelected(i)}
+        />
+      ))}
     </div>
   );
 }

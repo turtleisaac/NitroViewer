@@ -1,0 +1,337 @@
+{
+  "version": 1,
+  "score": {
+    "killedAndTimedOut": "counted as detected",
+    "excluded": [
+      "NON_VIABLE",
+      "EQUIVALENT",
+      "COMPILE_ERROR",
+      "IGNORED"
+    ]
+  },
+  "java": {
+    "tool": "pitest",
+    "totals": {
+      "killed": 230,
+      "timedOut": 1,
+      "survived": 46,
+      "noCoverage": 811,
+      "other": 0
+    },
+    "classes": {
+      "com.nitroviewer.core.CheerpjFacade": {
+        "killed": 100,
+        "timedOut": 0,
+        "survived": 26,
+        "noCoverage": 753,
+        "other": 0
+      },
+      "com.nitroviewer.core.Gen4SpriteCipher": {
+        "killed": 71,
+        "timedOut": 1,
+        "survived": 11,
+        "noCoverage": 3,
+        "other": 0
+      },
+      "com.nitroviewer.core.GameDb": {
+        "killed": 59,
+        "timedOut": 0,
+        "survived": 9,
+        "noCoverage": 8,
+        "other": 0
+      },
+      "com.nitroviewer.core.SpikeFacade": {
+        "killed": 0,
+        "timedOut": 0,
+        "survived": 0,
+        "noCoverage": 47,
+        "other": 0
+      }
+    }
+  },
+  "typescript": {
+    "tool": "stryker",
+    "totals": {
+      "killed": 956,
+      "timedOut": 77,
+      "survived": 1196,
+      "noCoverage": 6621,
+      "other": 0
+    },
+    "files": {
+      "web/src/App.tsx": {
+        "killed": 0,
+        "timedOut": 0,
+        "survived": 0,
+        "noCoverage": 300,
+        "other": 0
+      },
+      "web/src/color.ts": {
+        "killed": 75,
+        "timedOut": 0,
+        "survived": 26,
+        "noCoverage": 8,
+        "other": 0
+      },
+      "web/src/components/BannerViewer.tsx": {
+        "killed": 0,
+        "timedOut": 0,
+        "survived": 0,
+        "noCoverage": 105,
+        "other": 0
+      },
+      "web/src/components/BmgViewer.tsx": {
+        "killed": 0,
+        "timedOut": 0,
+        "survived": 0,
+        "noCoverage": 124,
+        "other": 0
+      },
+      "web/src/components/ColorPicker.tsx": {
+        "killed": 0,
+        "timedOut": 0,
+        "survived": 0,
+        "noCoverage": 128,
+        "other": 0
+      },
+      "web/src/components/FontViewer.tsx": {
+        "killed": 0,
+        "timedOut": 0,
+        "survived": 0,
+        "noCoverage": 198,
+        "other": 0
+      },
+      "web/src/components/InfoViewer.tsx": {
+        "killed": 0,
+        "timedOut": 0,
+        "survived": 0,
+        "noCoverage": 46,
+        "other": 0
+      },
+      "web/src/components/InspectorPane.tsx": {
+        "killed": 0,
+        "timedOut": 0,
+        "survived": 0,
+        "noCoverage": 195,
+        "other": 0
+      },
+      "web/src/components/ModelViewer.tsx": {
+        "killed": 72,
+        "timedOut": 0,
+        "survived": 296,
+        "noCoverage": 453,
+        "other": 0
+      },
+      "web/src/components/MultiCellViewer.tsx": {
+        "killed": 0,
+        "timedOut": 0,
+        "survived": 0,
+        "noCoverage": 373,
+        "other": 0
+      },
+      "web/src/components/NarcBrowser.tsx": {
+        "killed": 0,
+        "timedOut": 0,
+        "survived": 0,
+        "noCoverage": 167,
+        "other": 0
+      },
+      "web/src/components/PaletteViewer.tsx": {
+        "killed": 0,
+        "timedOut": 0,
+        "survived": 0,
+        "noCoverage": 240,
+        "other": 0
+      },
+      "web/src/components/ParticleViewer.tsx": {
+        "killed": 0,
+        "timedOut": 0,
+        "survived": 0,
+        "noCoverage": 62,
+        "other": 0
+      },
+      "web/src/components/SoundViewer.tsx": {
+        "killed": 0,
+        "timedOut": 0,
+        "survived": 0,
+        "noCoverage": 1297,
+        "other": 0
+      },
+      "web/src/components/SpriteEditor.tsx": {
+        "killed": 0,
+        "timedOut": 0,
+        "survived": 0,
+        "noCoverage": 444,
+        "other": 0
+      },
+      "web/src/components/SpriteViewer.tsx": {
+        "killed": 0,
+        "timedOut": 0,
+        "survived": 0,
+        "noCoverage": 750,
+        "other": 0
+      },
+      "web/src/components/TextureViewer.tsx": {
+        "killed": 0,
+        "timedOut": 0,
+        "survived": 0,
+        "noCoverage": 35,
+        "other": 0
+      },
+      "web/src/components/TreePane.tsx": {
+        "killed": 0,
+        "timedOut": 0,
+        "survived": 0,
+        "noCoverage": 137,
+        "other": 0
+      },
+      "web/src/main.tsx": {
+        "killed": 0,
+        "timedOut": 0,
+        "survived": 0,
+        "noCoverage": 1,
+        "other": 0
+      },
+      "web/src/pixelTools.ts": {
+        "killed": 33,
+        "timedOut": 4,
+        "survived": 33,
+        "noCoverage": 38,
+        "other": 0
+      },
+      "web/src/sound/engine/host.ts": {
+        "killed": 0,
+        "timedOut": 0,
+        "survived": 0,
+        "noCoverage": 45,
+        "other": 0
+      },
+      "web/src/sound/engine/liveEngineSlot.ts": {
+        "killed": 5,
+        "timedOut": 0,
+        "survived": 0,
+        "noCoverage": 0,
+        "other": 0
+      },
+      "web/src/sound/engine/load.ts": {
+        "killed": 14,
+        "timedOut": 0,
+        "survived": 7,
+        "noCoverage": 49,
+        "other": 0
+      },
+      "web/src/sound/engine/protocol.ts": {
+        "killed": 0,
+        "timedOut": 0,
+        "survived": 0,
+        "noCoverage": 1,
+        "other": 0
+      },
+      "web/src/sound/engine/sseq-worklet.ts": {
+        "killed": 0,
+        "timedOut": 0,
+        "survived": 0,
+        "noCoverage": 67,
+        "other": 0
+      },
+      "web/src/sound/engine/stepper.ts": {
+        "killed": 401,
+        "timedOut": 67,
+        "survived": 487,
+        "noCoverage": 108,
+        "other": 0
+      },
+      "web/src/sound/engine/tables.ts": {
+        "killed": 5,
+        "timedOut": 0,
+        "survived": 128,
+        "noCoverage": 0,
+        "other": 0
+      },
+      "web/src/sound/noteTrack.ts": {
+        "killed": 15,
+        "timedOut": 0,
+        "survived": 16,
+        "noCoverage": 220,
+        "other": 0
+      },
+      "web/src/spriteCipher.ts": {
+        "killed": 47,
+        "timedOut": 2,
+        "survived": 23,
+        "noCoverage": 1,
+        "other": 0
+      },
+      "web/src/state/grouping.ts": {
+        "killed": 117,
+        "timedOut": 0,
+        "survived": 17,
+        "noCoverage": 3,
+        "other": 0
+      },
+      "web/src/state/pairing.ts": {
+        "killed": 59,
+        "timedOut": 0,
+        "survived": 25,
+        "noCoverage": 2,
+        "other": 0
+      },
+      "web/src/state/store.ts": {
+        "killed": 31,
+        "timedOut": 0,
+        "survived": 68,
+        "noCoverage": 673,
+        "other": 0
+      },
+      "web/src/transport/cheerpj.ts": {
+        "killed": 0,
+        "timedOut": 0,
+        "survived": 13,
+        "noCoverage": 230,
+        "other": 0
+      },
+      "web/src/transport/index.ts": {
+        "killed": 0,
+        "timedOut": 0,
+        "survived": 1,
+        "noCoverage": 0,
+        "other": 0
+      },
+      "web/src/transport/types.ts": {
+        "killed": 3,
+        "timedOut": 0,
+        "survived": 2,
+        "noCoverage": 0,
+        "other": 0
+      },
+      "web/src/useChangedKey.ts": {
+        "killed": 8,
+        "timedOut": 0,
+        "survived": 0,
+        "noCoverage": 0,
+        "other": 0
+      },
+      "web/src/useDraftEditor.ts": {
+        "killed": 0,
+        "timedOut": 0,
+        "survived": 0,
+        "noCoverage": 36,
+        "other": 0
+      },
+      "web/src/util.ts": {
+        "killed": 0,
+        "timedOut": 0,
+        "survived": 22,
+        "noCoverage": 78,
+        "other": 0
+      },
+      "web/src/zip.ts": {
+        "killed": 71,
+        "timedOut": 4,
+        "survived": 32,
+        "noCoverage": 7,
+        "other": 0
+      }
+    }
+  }
+}
