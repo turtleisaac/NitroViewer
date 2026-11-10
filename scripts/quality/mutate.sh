@@ -3,6 +3,7 @@
 set -euo pipefail
 
 root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+# shellcheck source-path=SCRIPTDIR
 # shellcheck source=java-env.sh
 source "$root/scripts/quality/java-env.sh"
 
@@ -65,6 +66,7 @@ if [[ "$run_ts" -eq 1 ]]; then
     echo "web/node_modules is missing. Run npm ci in web/ first." >&2
     exit 1
   fi
+
   echo "Stryker"
   if [[ "$mode" == "changed" ]]; then
     joined="$(IFS=,; echo "${ts_files[*]}")"

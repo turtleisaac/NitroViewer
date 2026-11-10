@@ -10,6 +10,7 @@ while IFS= read -r file; do
   [[ -z "$file" ]] && continue
   staged+=("$file")
 done < <(git diff --cached --name-only --diff-filter=ACMR)
+
 if [[ ${#staged[@]} -eq 0 ]]; then
   exit 0
 fi
@@ -22,6 +23,7 @@ cleanup() {
   fi
   exit "$status"
 }
+
 trap cleanup EXIT
 
 if ! git diff --quiet || [[ -n "$(git ls-files --others --exclude-standard)" ]]; then
@@ -57,6 +59,7 @@ if [[ ${#web[@]} -gt 0 ]]; then
   for file in "${web[@]}"; do
     rel+=("${file#web/}")
   done
+
   (cd web && npx eslint --max-warnings 0 -- "${rel[@]}")
 fi
 

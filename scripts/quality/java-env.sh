@@ -9,16 +9,18 @@ prepare_nds4j() {
   elif [[ -f "$root/../Nds4j/pom.xml" ]]; then
     dir="$(cd "$root/../Nds4j" && pwd)"
   fi
-  MVN_NDS4J=()
+
+  export MVN_NDS4J=()
   if [[ -z "$dir" ]]; then
     echo "Nds4j checkout not found. Set NDS4J_DIR to a current Nds4j clone." >&2
     return 1
   fi
+
   echo "Installing Nds4j from $dir"
   mvn -B -ntp -f "$dir/pom.xml" -DskipTests install
   local version
   version="$(mvn -B -ntp -q -f "$dir/pom.xml" help:evaluate -Dexpression=project.version -DforceStdout | tail -n 1 | tr -d '[:space:]')"
-  MVN_NDS4J=(-Dnds4j.version="$version")
+  export MVN_NDS4J=(-Dnds4j.version="$version")
   echo "Nds4j version $version"
 }
 

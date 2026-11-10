@@ -59,6 +59,7 @@ def main(argv=None):
 
     failures = crap_failures(root, pins, functions, ranges)
     failures.extend(dry_failures(root, pins, pairs, threshold, ranges))
+
     if failures:
         print('%s quality gate failure(s):' % len(failures))
         for failure in failures:
@@ -115,12 +116,15 @@ def crap_failures(root, pins, functions, ranges):
     path = root / '.quality' / 'crap-baseline.json'
     if not path.is_file():
         return ['missing .quality/crap-baseline.json (run scripts/quality/refresh-baseline.sh)']
+
     baseline = read_json(path)
     failures = pin_failure('crapper', baseline.get('crapper'), pins.get('crapper'))
     if failures:
         return failures
+
     current = group_functions(functions)
     recorded = group_functions(baseline['functions'])
+
     for key, rows in current.items():
         matched, fresh = match_overloads(recorded.get(key, []), rows)
         for previous, row in matched:
@@ -146,6 +150,7 @@ def dry_failures(root, pins, pairs, threshold, ranges):
     path = root / '.quality' / 'dry-baseline.json'
     if not path.is_file():
         return ['missing .quality/dry-baseline.json (run scripts/quality/refresh-baseline.sh)']
+
     baseline = read_json(path)
     failures = pin_failure('dryer', baseline.get('dryer'), pins.get('dryer'))
     if abs(float(baseline['threshold']) - float(threshold)) > CRAP_EPSILON:
@@ -153,6 +158,7 @@ def dry_failures(root, pins, pairs, threshold, ranges):
                         (threshold, baseline['threshold']))
 
     known = {pair_key(pair) for pair in baseline['pairs']}
+
     for pair in pairs:
         edited = False
         for side in (pair['left'], pair['right']):
@@ -161,6 +167,7 @@ def dry_failures(root, pins, pairs, threshold, ranges):
 
         if pair_key(pair) in known and not edited:
             continue
+
         if pair_key(pair) not in known:
             kind = 'new duplicate pair'
         else:

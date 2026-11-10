@@ -50,6 +50,7 @@ def main(argv=None):
     failures, reports = judge(root, args.scope, java, typescript, ranges)
     for line in reports:
         print(line)
+
     if failures:
         print('%s mutation gate failure(s):' % len(failures))
         for failure in failures:
@@ -68,6 +69,7 @@ def load_pit(root):
     for report in sorted(root.glob('**/target/pit-reports/mutations.xml')):
         if 'Nds4j' in report.parts or '.quality' in report.parts:
             continue
+
         root_node = ET.parse(report).getroot()
         for node in root_node.findall('mutation'):
             add_pit(classes, survivors, node)
@@ -81,11 +83,13 @@ def add_pit(classes, survivors, node):
     status = bucket((node.get('status') or '').upper())
     if status is None:
         return
+
     name = node.findtext('mutatedClass') or ''
     counts = classes.setdefault(name, dict(EMPTY))
     counts[status] += 1
     if status != 'survived':
         return
+
     survivors.append({
         'stack': 'java',
         'id': name,
@@ -113,9 +117,11 @@ def load_stryker(root):
             status = bucket(str(mutant.get('status') or '').upper())
             if status is None:
                 continue
+
             counts[status] += 1
             if status != 'survived':
                 continue
+
             location = mutant.get('location') or {}
             start = location.get('start') or {}
             survivors.append({
@@ -146,6 +152,7 @@ def bucket(status):
         return 'noCoverage'
     if token in IGNORED or not token:
         return None
+
     return 'other'
 
 def sum_counts(groups):
@@ -190,6 +197,7 @@ def dropped(new, old):
         return False
     if new_total == 0:
         return True
+
     return hits(new) * old_total < hits(old) * new_total
 
 def percent(counts):
@@ -250,6 +258,7 @@ def judge_full(baseline, java, typescript):
         typescript['files'],
         baseline['typescript'].get('files', {}),
     ))
+
     lines = ['Full mutation run']
     lines.append('java %s (%s/%s)' % (percent(java['totals']), hits(java['totals']), total_of(java['totals'])))
     lines.append('typescript %s (%s/%s)' % (
@@ -317,7 +326,6 @@ def stack_drop(label, new, old):
     """
     if not dropped(new, old):
         return []
-
     return ['%s mutation score dropped: %s -> %s' % (label, percent(old), percent(new))]
 
 def group_drop(label, new_groups, old_groups):
@@ -346,12 +354,14 @@ def changed_group(label, names, new_groups, old_groups):
                 continue
             failures.append('no mutation result for %s %s' % (label, name))
             continue
+
         for key in matches:
             old = old_groups.get(key)
             if old is None and key != name:
                 old = old_groups.get(name)
             if old is None:
                 continue
+
             if dropped(new_groups[key], old):
                 failures.append('%s %s mutation score dropped: %s -> %s' %
                                 (label, key, percent(old), percent(new_groups[key])))

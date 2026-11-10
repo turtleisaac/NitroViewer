@@ -68,10 +68,12 @@ def parse_diff(text):
         match = HUNK.match(line)
         if match is None or current is None:
             continue
+
         start = int(match.group(3))
         count = int(match.group(4) or '1')
         if count <= 0:
             continue
+
         files[current].append((start, start + count - 1))
 
     return files
@@ -87,6 +89,7 @@ def diff_path(raw):
         path = path[2:]
     if path.startswith('"') and path.endswith('"'):
         path = path[1:-1]
+
     return path
 
 def changed_ranges(root, mode, base):
@@ -295,6 +298,7 @@ def function_at(functions, path, start, end):
     ]
     if containing:
         return min(containing, key=lambda row: row['end'] - row['start'])
+
     overlapping = [
         row
         for row in functions
