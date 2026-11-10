@@ -7,6 +7,7 @@ const fs = require("fs");
 const path = require("path");
 const { app, BrowserWindow, dialog, ipcMain, net, shell } = require("electron");
 const { startServer, cheerpjDir } = require("./serve.cjs");
+const { pokeHubIsRunning, showDonationNotice } = require("./pokeHub.cjs");
 
 let mainWindow = null;
 let server = null;
@@ -301,11 +302,15 @@ if (!gotLock) {
     if (mainWindow.isMinimized()) mainWindow.restore();
     mainWindow.focus();
   });
-  app.whenReady().then(() => createWindow().catch((err) => {
-    console.error(err);
-    dialog.showErrorBox("NitroViewer", String(err && err.stack ? err.stack : err));
-    app.quit();
-  }));
+  app.whenReady().then(() => {
+    const open = () => createWindow().catch((err) => {
+      console.error(err);
+      dialog.showErrorBox("NitroViewer", String(err && err.stack ? err.stack : err));
+      app.quit();
+    });
+
+    return showDonationNotice((options) => dialog.showMessageBox(options), pokeHubIsRunning).then(open);
+  });
   app.on("activate", () => {
     if (BrowserWindow.getAllWindows().length === 0) {
       createWindow().catch((err) => console.error(err));

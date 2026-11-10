@@ -11,7 +11,7 @@ export default mergeConfig(
         provider: "v8",
         reporter: ["lcov"],
         reportsDirectory: "../target/coverage/typescript",
-        include: ["src/**/*.{ts,tsx}"],
+        include: ["src/**/*.{ts,tsx}", "electron/pokeHub.cjs"],
         exclude: ["src/**/*.test.ts", "src/**/*.test.tsx", "src/**/*.d.ts"],
       },
     },
