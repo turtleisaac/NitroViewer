@@ -12,11 +12,9 @@ export interface NoteEvent {
 
 const LANE_H = 28;
 const GUTTER = 72;
-// One accent leads. The rest are quiet steps so a program is still distinguishable
-// without a neon rainbow.
 const COLORS = [
-  "#5b7cfa", "#8aa0c8", "#e5b13a", "#e07a72", "#7d9a8a", "#b7a48a",
-  "#9aa1b1", "#6e8fbf", "#c4b49a", "#8a939f", "#d4a574", "#7f8c9a",
+  "#5b7cfa", "#4fd1c5", "#e5b13a", "#f2675f", "#c084fc", "#34d399",
+  "#60a5fa", "#fb7185", "#a3e635", "#f472b6", "#38bdf8", "#fbbf24",
 ];
 
 export const NOTE_LANE_HEIGHT = LANE_H;
