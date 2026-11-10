@@ -23,6 +23,8 @@ Two-space indent, double quotes, semicolons, LF, a final newline, no tabs. `{` s
 
 Group the lines that do one step, and put one blank line between steps. A run of the same kind of statement stays together. When that run switches to a different kind, add a blank line.
 
+A long run of the same kind of statement is not one step just because the lines look alike. Split where a new stage begins, when later lines are built from the results above.
+
 A braced block gets one blank line after it before the next statement, unless it is the last thing in its enclosing block. That is the closing `}` of `if` / `for` / `while` / `switch` / `try`, or of a function or arrow body used as a statement. Nested blocks that end together share that one blank line. The parts of one construct stay joined, with no blank between them: `if` / `else`, `try` / `catch` / `finally`, and `do` / `while`. The blank line comes after the whole construct.
 
 A braceless one-line `if` or loop follows those grouping rules and may skip the blank. Tiny guards stay together. A chain of `if` / `return` stays together, and the fallback `return` gets a blank line above it. Put a blank line before a `return`, unless it is the only line in its block or it follows one or two short statements.

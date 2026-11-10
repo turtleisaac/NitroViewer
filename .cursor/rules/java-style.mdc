@@ -82,6 +82,8 @@ for (String folderName : folders.keySet())
 
 Group the lines that do one step, and put one blank line between steps. A run of the same kind of statement stays together. When that run switches to a different kind, add a blank line.
 
+A long run of the same kind of statement is not one step just because the lines look alike. Split where a new stage begins, when later lines are built from the results above.
+
 A braced block, anything that ends in `}`, gets one blank line after it before the next statement, unless it is the last thing in its enclosing block. Nested blocks that end together share that one blank line. A braced loop with a `return` after it gets that blank too, even in a short method. The parts of one construct stay joined, with no blank between them: `if`/`else` (including `else if`), `try`/`catch`/`finally`, and `do`/`while`. So `} else {`, `} catch (...) {`, `} finally {`, and `} while (...);` attach to the block before them. The blank line comes after the whole construct.
 
 A braceless single-line `if`, `for`, or `while` may skip the blank. Tiny guards stay together. A step's lines stay grouped, and a blank line separates steps. A chain of `if`/`return` stays together, and the fallback `return` gets a blank line above it. Back-to-back short similar blocks, and `if` pairs that read like `if`/`else`, get no blank between them.
