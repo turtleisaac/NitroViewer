@@ -11,6 +11,7 @@ prepare_nds4j() {
   fi
 
   MVN_NDS4J=()
+
   if [[ -z "$dir" ]]; then
     echo "Nds4j checkout not found. Set NDS4J_DIR to a current Nds4j clone." >&2
     return 1
@@ -18,6 +19,7 @@ prepare_nds4j() {
 
   echo "Installing Nds4j from $dir"
   mvn -B -ntp -f "$dir/pom.xml" -DskipTests install
+
   local version
   version="$(mvn -B -ntp -q -f "$dir/pom.xml" help:evaluate -Dexpression=project.version -DforceStdout | tail -n 1 | tr -d '[:space:]')"
   # Not exported: bash 3.2 drops an array that was exported from a function.

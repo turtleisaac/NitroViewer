@@ -31,7 +31,9 @@ public class TinyAssets
         Palette palette = spritePalette();
         IndexedImage sprite = filledSprite(palette);
         byte[] ncgr = sprite.save();
+
         new IndexedImage(ncgr, 0, 0, 1, 1, true);
+
         Files.write(dir.resolve("sprite.ncgr"), ncgr);
         Files.write(dir.resolve("sprite.nclr"), palette.save());
     }
@@ -67,8 +69,10 @@ public class TinyAssets
                 + "<tex_image name=\"dot\" width=\"8\" height=\"8\" color0_mode=\"color\">"
                 + "<bitmap>" + bitmap + "</bitmap></tex_image>"
                 + "<tex_palette name=\"dot\">" + paletteWords + "</tex_palette>";
+
         byte[] nsbtx = ImdImporter.toNsbtx(imd);
         checkTexture(new TextureSet(nsbtx));
+
         Files.write(dir.resolve("texture.nsbtx"), nsbtx);
     }
 
@@ -76,6 +80,7 @@ public class TinyAssets
     {
         if (textures.getTextures().isEmpty())
             throw new IllegalStateException("texture did not decode");
+
         checkTextureImage(textures);
     }
 
@@ -92,6 +97,7 @@ public class TinyAssets
                 new float[] {-1f, -1f, 0f, 1f, -1f, 0f, 0f, 1f, 0f},
                 new int[] {0, 1, 2});
         checkModel(nsbmd);
+
         Files.write(dir.resolve("model.nsbmd"), nsbmd);
     }
 
@@ -107,6 +113,7 @@ public class TinyAssets
         byte[] events = new byte[] { 0x3C, 0x7F, 24, (byte) 0xFF };
         byte[] sseq = sseq(events);
         byte[] name = "SEQ_SE_SW_CHAMPIRIS_01".getBytes(StandardCharsets.ISO_8859_1);
+
         int nameAt = 0x30;
         int symbSize = nameAt + name.length + 1;
         int infoSize = 0x3C;
@@ -116,12 +123,14 @@ public class TinyAssets
         int fatOff = align(infoOff + infoSize, 4);
         int fileOff = align(fatOff + fatSize, 4);
         int sseqAt = align(fileOff + 12, 32);
+
         byte[] out = new byte[sseqAt + sseq.length];
         writeHeader(out, symbOff, symbSize, infoOff, infoSize, fatOff, fatSize, fileOff);
         writeSymbols(out, symbOff, symbSize, nameAt, name);
         writeInfo(out, infoOff, infoSize);
         writeFat(out, fatOff, fatSize, sseqAt, sseq.length);
         writeFileBlock(out, fileOff, sseqAt, sseq);
+
         checkArchive(out);
         return out;
     }
@@ -152,6 +161,7 @@ public class TinyAssets
         putLe(out, symbOff + 8, 0x28, 4);
         putLe(out, symbOff + 0x28, 1, 4);
         putLe(out, symbOff + 0x2C, nameAt, 4);
+
         System.arraycopy(name, 0, out, symbOff + nameAt, name.length);
     }
 
@@ -164,6 +174,7 @@ public class TinyAssets
         putLe(out, infoOff + 0x2C, 0x30, 4);
         putLe(out, infoOff + 0x30, 0, 2);
         putLe(out, infoOff + 0x34, 0, 2);
+
         out[infoOff + 0x36] = 127;
         out[infoOff + 0x37] = 64;
         out[infoOff + 0x38] = 64;
@@ -184,6 +195,7 @@ public class TinyAssets
         putAscii(out, fileOff, "FILE");
         putLe(out, fileOff + 4, out.length - fileOff, 4);
         putLe(out, fileOff + 8, 1, 4);
+
         System.arraycopy(sseq, 0, out, sseqAt, sseq.length);
     }
 
@@ -226,6 +238,7 @@ public class TinyAssets
         putAscii(file, 16, "DATA");
         putLe(file, 20, file.length - 16, 4);
         putLe(file, 24, 0x1C, 4);
+
         System.arraycopy(events, 0, file, 0x1C, events.length);
         return file;
     }
