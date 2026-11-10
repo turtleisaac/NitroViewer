@@ -21,6 +21,7 @@
     "build": "tsc --noEmit && npm run build-worklet && vite build",
     "preview": "vite preview",
     "test": "vitest run",
+    "test:e2e": "playwright test",
     "coverage": "vitest run --coverage --config vitest.coverage.config.ts",
     "mutate": "stryker run",
     "lint": "eslint . --max-warnings 0",
@@ -87,6 +88,7 @@
     }
   },
   "devDependencies": {
+    "@playwright/test": "^1.65.0",
     "@stryker-mutator/core": "^10.1.1",
     "@stryker-mutator/vitest-runner": "^10.1.1",
     "@types/react": "^18.3.12",

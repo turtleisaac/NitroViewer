@@ -1743,6 +1743,30 @@
       "body": "8a1179ef1442a273"
     },
     {
+      "path": "web/e2e/TinyAssets.java",
+      "namespace": "TinyAssets",
+      "name": "main",
+      "language": "java",
+      "start": 15,
+      "end": 55,
+      "complexity": 7,
+      "coverage": 0.0,
+      "crap": 56.0,
+      "body": "ad3f2ebbf6cc59a0"
+    },
+    {
+      "path": "web/e2e/tiny-rom.mjs",
+      "namespace": "web.e2e.tiny-rom",
+      "name": "entry",
+      "language": "typescript",
+      "start": 29,
+      "end": 36,
+      "complexity": 4,
+      "coverage": 0.0,
+      "crap": 20.0,
+      "body": "c3724ce688b4ab70"
+    },
+    {
       "path": "web/electron/main.cjs",
       "namespace": "web.electron.main",
       "name": "builderArch",
