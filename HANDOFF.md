@@ -635,6 +635,17 @@ Save ROM, dirty badge, status) have made the header cramped on narrow screens an
 iOS layout. Needs a responsive pass: collapse Undo/Redo to icon-only (or an overflow/"⋯" menu) below a
 breakpoint, and re-check the topbar wrap/scroll on iOS Safari. (See the iOS 3D notes in the CheerpJ memory.)
 
+**Tech debt — header Redo doesn't restore a sprite pencil stroke.** Repro: open `nfont.NCGR`, click
+Edit sprite, draw a short line, then Undo (the line disappears and Redo enables), then Redo. The line
+stays gone. Likely in `web/src/components/SpriteEditor.tsx` (~lines 158–167) and its wiring through
+`web/src/state/store.ts` (~847–851). It's pre-existing and happens identically on main, so it wasn't
+introduced by PR #3. Found during PR #3 exploratory QA on 2026-11-09. Medium severity, and it's hit by
+anyone who undoes a stroke.
+
+**Tech debt — browser Back leaves the app.** The app records no navigation in history
+(`web/src/App.tsx` has no history handling), so Back goes to a blank page instead of the previous file.
+Low severity. If fixed, it could push file selections into history with pushState/popstate.
+
 **SEO / discoverability.** On-page is **done**, now incl. ✅ **`FAQPage` JSON-LD** (mirrors the visible FAQ)
 + ✅ **`softwareVersion`**/`isAccessibleForFree`. What's left is **off-platform** (needs the owner):
 - Verify the site in **Google Search Console + Bing Webmaster** and submit `sitemap.xml` (paste a
