@@ -13,7 +13,8 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 
-/** Writes a tiny sprite, texture, model, and sound archive that Nds4j can decode. Not taken from a ROM. */
+/** Writes a tiny sprite, texture, model, and sound archive that Nds4j can decode. Not taken from a ROM.
+ *  Deliberately avoids MemBuf, so these tests still run when MemBuf is broken. */
 public class TinyAssets
 {
     public static void main(String[] args) throws Exception
