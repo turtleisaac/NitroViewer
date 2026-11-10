@@ -124,11 +124,8 @@ export function drawNoteTrack(
       const ny = n.track * LANE_H + pad + (1 - (n.key - r.min) / span) * (usable - 6);
       const color = COLORS[n.program % COLORS.length];
       ctx.save();
-      ctx.shadowColor = color;
-      ctx.shadowBlur = 10;
       ctx.fillStyle = color;
       ctx.fillRect(x, ny - 1, w, 8);
-      ctx.shadowBlur = 0;
       ctx.strokeStyle = "#e7e9ef";
       ctx.strokeRect(x + 0.5, ny - 0.5, Math.max(1, w - 1), 7);
       ctx.restore();

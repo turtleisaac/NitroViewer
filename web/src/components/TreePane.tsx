@@ -1,7 +1,41 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useStore } from "../state/store";
-import { BANNER_CONTAINER, BANNER_REF, ROM_CONTAINER, type TreeFolder } from "../transport";
+import { BANNER_CONTAINER, BANNER_REF, ROM_CONTAINER, type NitroViewerClient, type TreeFolder } from "../transport";
 import { base64ToBytes, download } from "../util";
+import { Icon } from "./icons";
+import { bannerRowClass, folderDownloadName, matchCount, rowSelected, searchFiles, searchHitLabel, treePaneClass } from "./treeSearch";
+
+/** Download one folder zip, or null when no ROM is open. */
+async function folderZip(client: NitroViewerClient, romHandle: number | null, path: string) {
+  if (romHandle == null) return null;
+  const r = await client.exportFolderZip(romHandle, path);
+  return { name: `${folderDownloadName(path)}.zip`, bytes: base64ToBytes(r.base64) };
+}
+
+function FileRow({
+  path,
+  file,
+  selected,
+  onSelect,
+}: {
+  path: string;
+  file: { id: number; name?: string };
+  selected: boolean;
+  onSelect: () => void;
+}) {
+  const name = file.name || `#${file.id}`;
+  return (
+    <div
+      className={"tree-row file" + (selected ? " selected" : "")}
+      title={path + name}
+      onClick={onSelect}
+    >
+      <span className="twisty" />
+      <span className="file-name">{name}</span>
+      <span className="file-id">#{file.id}</span>
+    </div>
+  );
+}
 
 function FolderNode({ folder, path }: { folder: TreeFolder; path: string }) {
   const expanded = useStore((s) => s.expanded);
@@ -15,12 +49,10 @@ function FolderNode({ folder, path }: { folder: TreeFolder; path: string }) {
   const extractFolder = async (e: React.MouseEvent) => {
     e.stopPropagation();
     const st = useStore.getState();
-    if (st.romHandle == null) return;
     setExtracting(true);
     try {
-      const r = await st.client.exportFolderZip(st.romHandle, path);
-      const base = (path.replace(/\/$/, "").split("/").pop() || "filesystem").replace(/[^\w.-]+/g, "_");
-      download(`${base}.zip`, base64ToBytes(r.base64), "application/zip");
+      const zip = await folderZip(st.client, st.romHandle, path);
+      if (zip) download(zip.name, zip.bytes, "application/zip");
     } catch (err) {
       alert("Extract folder failed: " + (err as Error).message);
     } finally {
@@ -31,7 +63,7 @@ function FolderNode({ folder, path }: { folder: TreeFolder; path: string }) {
   return (
     <div className="tree-folder">
       <div className="tree-row folder" data-path={path} onClick={() => toggle(path)}>
-        <span className="twisty">{isOpen ? "▾" : "▸"}</span>
+        <span className="twisty">{isOpen ? <Icon name="chevron-down" /> : <Icon name="chevron-right" />}</span>
         <span className="folder-name">{folder.name}</span>
         <button
           className="icon-btn tree-extract"
@@ -39,7 +71,7 @@ function FolderNode({ folder, path }: { folder: TreeFolder; path: string }) {
           disabled={extracting}
           onClick={(e) => { void extractFolder(e); }}
         >
-          {extracting ? "…" : "↓"}
+          {extracting ? "…" : <Icon name="download" />}
         </button>
       </div>
       {isOpen && (
@@ -47,22 +79,15 @@ function FolderNode({ folder, path }: { folder: TreeFolder; path: string }) {
           {folder.folders.map((sub) => (
             <FolderNode key={path + sub.name + "/"} folder={sub} path={path + sub.name + "/"} />
           ))}
-          {folder.files.map((file) => {
-            const selected =
-              selection?.ref.container === ROM_CONTAINER && selection.ref.id === file.id;
-            return (
-              <div
-                key={file.id}
-                className={"tree-row file" + (selected ? " selected" : "")}
-                title={path + (file.name || file.id)}
-                onClick={() => void select({ container: ROM_CONTAINER, id: file.id }, file.name)}
-              >
-                <span className="twisty" />
-                <span className="file-name">{file.name || `#${file.id}`}</span>
-                <span className="file-id">#{file.id}</span>
-              </div>
-            );
-          })}
+          {folder.files.map((file) => (
+            <FileRow
+              key={file.id}
+              path={path}
+              file={file}
+              selected={rowSelected(selection, file.id)}
+              onSelect={() => void select({ container: ROM_CONTAINER, id: file.id }, file.name)}
+            />
+          ))}
         </div>
       )}
     </div>
@@ -90,25 +115,17 @@ export function TreePane() {
   }, [revealPath, revealTick]);
 
   // Search filters the whole filesystem by path (a flat, clickable result list) — Tinke-style file search.
-  const q = query.trim().toLowerCase();
-  const results = useMemo(() => {
-    if (!q) return [];
-    const hits: { id: number; path: string }[] = [];
-    for (const [id, path] of Object.entries(idToPath)) {
-      if (path.toLowerCase().includes(q)) hits.push({ id: Number(id), path });
-      if (hits.length >= 300) break;
-    }
-    return hits.sort((a, b) => a.path.localeCompare(b.path));
-  }, [q, idToPath]);
+  const results = useMemo(() => searchFiles(idToPath, query), [query, idToPath]);
+  const q = query.trim();
 
   return (
-    <aside className={"pane tree-pane" + (navOpen ? " open" : "")}>
+    <aside className={treePaneClass(navOpen)}>
       <div className="pane-head tree-head">
         <span>Filesystem</span>
         <input
           className="tree-search"
           type="search"
-          placeholder="Search files…"
+          placeholder="Search"
           value={query}
           onChange={(e) => setQuery(e.target.value)}
         />
@@ -116,7 +133,7 @@ export function TreePane() {
       <div className="tree-scroll" ref={scrollRef}>
         {/* The icon/title banner isn't a file, but it lives in the ROM — pin it above the filesystem. */}
         <div
-          className={"tree-row file tree-pinned" + (bannerSelected ? " selected" : "")}
+          className={bannerRowClass(bannerSelected)}
           title="The DS home-menu icon and per-language game titles"
           onClick={() => void select(BANNER_REF, "Game icon")}
         >
@@ -125,10 +142,9 @@ export function TreePane() {
         </div>
         {q ? (
           <div className="search-results">
-            <div className="search-count">{results.length}{results.length >= 300 ? "+" : ""} matches</div>
+            <div className="search-count">{matchCount(results.length)} matches</div>
             {results.map((r) => {
-              const name = r.path.split("/").pop() || String(r.id);
-              const dir = r.path.slice(0, r.path.length - name.length);
+              const { name, dir } = searchHitLabel(r.path, r.id);
               return (
                 <button
                   key={r.id}
