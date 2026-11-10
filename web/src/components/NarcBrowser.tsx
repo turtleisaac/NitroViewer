@@ -3,6 +3,7 @@ import { useStore } from "../state/store";
 import { useChangedKey } from "../useChangedKey";
 import { refKey, type NarcEntry, type ResourceRef } from "../transport";
 import { base64ToBytes, download, exportFileName } from "../util";
+import { Icon } from "./icons";
 
 export function NarcBrowser() {
   const selection = useStore((s) => s.selection)!;
@@ -145,7 +146,7 @@ export function NarcBrowser() {
                 disabled={busy != null}
                 onClick={() => void exportEntry(e)}
               >
-                {busy === e.index ? "…" : "↓"}
+                {busy === e.index ? "…" : <Icon name="download" />}
               </button>
               <button
                 className="icon-btn"
@@ -156,7 +157,7 @@ export function NarcBrowser() {
                   importRef.current?.click();
                 }}
               >
-                ↑
+                <Icon name="upload" />
               </button>
             </span>
           </div>

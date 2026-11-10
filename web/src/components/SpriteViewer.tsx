@@ -6,6 +6,7 @@ import { resolveNarcInfo, resolveRenderHints, resolveSpriteUnit } from "../state
 import { refKey, type DecodedImage, type ResourceRef } from "../transport";
 import { base64ToBytes, download } from "../util";
 import { SpriteEditor } from "./SpriteEditor";
+import { Icon } from "./icons";
 
 function RefSelect({
   label,
@@ -413,7 +414,7 @@ export function SpriteViewer() {
     <div className="sprite">
       {gdb.info && (
         <div className="gamedb-badge" title="Grouping and render hints came from the game DB, not a heuristic">
-          <span className="gamedb-dot">◆</span> Game DB · {gdb.info.title}
+          Game DB · {gdb.info.title}
           {gdb.info.role ? ` · ${gdb.info.role.replace(/-/g, " ")}` : ""}
         </div>
       )}
@@ -454,7 +455,7 @@ export function SpriteViewer() {
                 onClick={() => setPlaying((p) => !p)}
                 disabled={(animFrames[animIndex] ?? 0) <= 1}
               >
-                {playing ? "⏸ Pause" : "▶ Play"}
+                {playing ? <><Icon name="pause" /> Pause</> : <><Icon name="play" /> Play</>}
               </button>
             </label>
           </>
@@ -600,7 +601,7 @@ export function SpriteViewer() {
                 {image.width}×{image.height}px{busy ? " · decoding…" : ""}
               </span>
               <button className="link-btn" onClick={savePng}>
-                Save PNG ↓
+                Save PNG
               </button>
             </div>
           )}

@@ -205,7 +205,7 @@ export function PaletteViewer() {
             </>
           )}
           <button className="link-btn" onClick={() => { void onExport(); }}>
-            Export PNG ↓
+            Export PNG
           </button>
           <button className="play-btn" disabled={busy} onClick={() => fileRef.current?.click()}>
             {busy ? "…" : "Import…"}

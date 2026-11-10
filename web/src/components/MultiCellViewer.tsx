@@ -4,6 +4,7 @@ import { useChangedKey } from "../useChangedKey";
 import { pickSibling } from "../state/pairing";
 import { refKey, type DecodedImage, type ResourceRef } from "../transport";
 import { base64ToBytes, download } from "../util";
+import { Icon } from "./icons";
 
 function RefSelect({
   label,
@@ -253,7 +254,7 @@ export function MultiCellViewer() {
             <label className="ctrl">
               <span>Playback</span>
               <button className="play-btn" onClick={() => setPlaying((p) => !p)} disabled={(animFrames[animIndex]?.frames ?? 0) <= 1}>
-                {playing ? "⏸ Pause" : "▶ Play"}
+                {playing ? <><Icon name="pause" /> Pause</> : <><Icon name="play" /> Play</>}
               </button>
             </label>
           </>
@@ -288,7 +289,7 @@ export function MultiCellViewer() {
             {image.width}×{image.height}px{busy ? " · decoding…" : ""}
           </span>
           <button className="link-btn" onClick={savePng}>
-            Save PNG ↓
+            Save PNG
           </button>
         </div>
       )}

@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useStore } from "../state/store";
 import { BANNER_CONTAINER, BANNER_REF, ROM_CONTAINER, type TreeFolder } from "../transport";
 import { base64ToBytes, download } from "../util";
+import { Icon } from "./icons";
 
 function FolderNode({ folder, path }: { folder: TreeFolder; path: string }) {
   const expanded = useStore((s) => s.expanded);
@@ -31,7 +32,7 @@ function FolderNode({ folder, path }: { folder: TreeFolder; path: string }) {
   return (
     <div className="tree-folder">
       <div className="tree-row folder" data-path={path} onClick={() => toggle(path)}>
-        <span className="twisty">{isOpen ? "▾" : "▸"}</span>
+        <span className="twisty">{isOpen ? <Icon name="chevron-down" /> : <Icon name="chevron-right" />}</span>
         <span className="folder-name">{folder.name}</span>
         <button
           className="icon-btn tree-extract"
@@ -39,7 +40,7 @@ function FolderNode({ folder, path }: { folder: TreeFolder; path: string }) {
           disabled={extracting}
           onClick={(e) => { void extractFolder(e); }}
         >
-          {extracting ? "…" : "↓"}
+          {extracting ? "…" : <Icon name="download" />}
         </button>
       </div>
       {isOpen && (
@@ -108,7 +109,7 @@ export function TreePane() {
         <input
           className="tree-search"
           type="search"
-          placeholder="Search files…"
+          placeholder="Search"
           value={query}
           onChange={(e) => setQuery(e.target.value)}
         />
@@ -120,7 +121,7 @@ export function TreePane() {
           title="The DS home-menu icon and per-language game titles"
           onClick={() => void select(BANNER_REF, "Game icon")}
         >
-          <span className="twisty">◆</span>
+          <span className="twisty"><Icon name="cart" /></span>
           <span className="file-name">Game icon &amp; titles</span>
         </div>
         {q ? (

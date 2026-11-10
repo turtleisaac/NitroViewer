@@ -18,6 +18,7 @@ import type {
   WavePreview,
 } from "../transport";
 import { base64ToBytes, download } from "../util";
+import { Icon } from "./icons";
 import { createEngine, type EngineHandle } from "../sound/engine/host";
 import { LiveEngineSlot } from "../sound/engine/liveEngineSlot";
 
@@ -576,7 +577,7 @@ function WavePanel({
           <>
             <div className="controls">
               <button className="play-btn" onClick={onPlay} disabled={busy}>
-                ▶ Play
+                <Icon name="play" /> Play
               </button>
               <button className="btn btn--sm" onClick={onExport} disabled={busy}>
                 Export WAV
@@ -1085,13 +1086,13 @@ export function SoundViewer() {
                         : busy === "engine"
                           ? "Starting…"
                           : isPlaying
-                            ? "▶ Playing"
-                            : "▶ Play"}
+                            ? <><Icon name="play" /> Playing</>
+                            : <><Icon name="play" /> Play</>}
                     </button>
                   )}
                   {isPlaying && (
                     <button className="play-btn" onClick={stopPlayback}>
-                      ⏹ Stop
+                      <Icon name="stop" /> Stop
                     </button>
                   )}
                   {canPlaySeq && (
@@ -1226,7 +1227,7 @@ export function SoundViewer() {
               <>
                 <div className="controls">
                   <button className="play-btn" onClick={() => audio.play(base64ToBytes(streamPrev.wavBase64))}>
-                    ▶ Play
+                    <Icon name="play" /> Play
                   </button>
                   <button
                     className="btn btn--sm"

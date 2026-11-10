@@ -2,6 +2,7 @@ import { useEffect, useRef, useState, type CSSProperties } from "react";
 import { useStore } from "./state/store";
 import { TreePane } from "./components/TreePane";
 import { InspectorPane } from "./components/InspectorPane";
+import { Icon } from "./components/icons";
 
 export function App() {
   const boot = useStore((s) => s.boot);
@@ -164,11 +165,12 @@ export function App() {
       <header className="topbar">
         {romHandle != null && (
           <button className="nav-toggle" aria-label="Toggle file list" onClick={() => setNavOpen(!navOpen)}>
-            ☰
+            <Icon name="menu" />
           </button>
         )}
         <div className="brand">
-          <span className="logo">◆</span> <span className="brand-name">NitroViewer</span>
+          <span className="logo"><Icon name="cart" /></span>
+          <span className="brand-name">NitroViewer</span>
           <span className="tagline">DS ROM viewer</span>
         </div>
         <div className="topbar-actions">
@@ -182,7 +184,8 @@ export function App() {
                   : "Unsaved edits — download with Save ROM"
               }
             >
-              ● unsaved
+              <span className="status-dot" />
+              Unsaved
             </span>
           )}
           {romHandle != null && (
@@ -201,7 +204,8 @@ export function App() {
                 }
                 onClick={() => void undo()}
               >
-                ↶ Undo
+                <Icon name="undo" />
+                <span className="btn-label">Undo</span>
               </button>
               <button
                 className="btn btn--icon"
@@ -217,7 +221,8 @@ export function App() {
                 }
                 onClick={() => void redo()}
               >
-                ↷ Redo
+                <Icon name="redo" />
+                <span className="btn-label">Redo</span>
               </button>
               <button
                 className="btn btn--save"
@@ -225,7 +230,14 @@ export function App() {
                 title={dirty ? "Download the edited .nds" : "No edits to save"}
                 onClick={() => void saveRom()}
               >
-                {saving ? "Saving…" : "Save ROM"}
+                {saving ? (
+                  "Saving…"
+                ) : (
+                  <>
+                    <span className="btn-label btn-label--wide">Save ROM</span>
+                    <span className="btn-label btn-label--narrow">Save</span>
+                  </>
+                )}
               </button>
             </>
           )}
@@ -236,7 +248,14 @@ export function App() {
               title="Open a .nds ROM or an unpacked ROM folder"
               onClick={() => void onOpenClick("top")}
             >
-              {romHandle == null ? "Open ROM…" : "Open another…"}
+              {romHandle == null ? (
+                "Open ROM…"
+              ) : (
+                <>
+                  <span className="btn-label btn-label--wide">Open another…</span>
+                  <span className="btn-label btn-label--narrow">Open</span>
+                </>
+              )}
             </button>
             {openMenu === "top" && openMenuItems()}
           </div>
@@ -276,16 +295,16 @@ export function App() {
         ) : romHandle == null ? (
           <div className="empty">
             <div className="empty-card">
-              <div className="empty-logo">◆</div>
+              <div className="empty-logo"><Icon name="cart" size={32} /></div>
               <h1>NitroViewer</h1>
               <p>
-                A modern replacement for Tinke. Open a Nintendo DS ROM file, or an unpacked ROM
+                A replacement for Tinke. Open a Nintendo DS ROM file, or an unpacked ROM
                 folder (Nds4j/PokEditor with header.bin, or a ds-rom extract with config.yaml).
               </p>
               <div className="empty-actions">
-                <div className="open-wrap open-wrap--center" ref={emptyOpenRef}>
+                <div className="open-wrap open-wrap--start" ref={emptyOpenRef}>
                   <button
-                    className="btn btn--lg"
+                    className="btn btn--lg btn--primary"
                     disabled={!booted}
                     title="Open a .nds ROM or an unpacked ROM folder"
                     onClick={() => void onOpenClick("empty")}
@@ -326,7 +345,7 @@ export function App() {
               title={treeCollapsed ? "Show file browser" : "Hide file browser"}
               onClick={() => setTreeCollapsed(!treeCollapsed)}
             >
-              {treeCollapsed ? "▶" : "◀"}
+              {treeCollapsed ? <Icon name="chevron-right" /> : <Icon name="chevron-left" />}
             </button>
           </div>
         )}

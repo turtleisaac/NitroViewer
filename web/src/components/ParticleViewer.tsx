@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { useStore } from "../state/store";
 import { useChangedKey } from "../useChangedKey";
+import { Icon } from "./icons";
 
 // SPA effects are rendered to frames server-side (Nds4j ParticleRenderer); the viewer just cycles
 // the pre-rendered frames, so a simple interval is fine (no CheerpJ call during playback).
@@ -51,7 +52,7 @@ export function ParticleViewer() {
         <label className="ctrl">
           <span>Playback</span>
           <button className="play-btn" onClick={() => setPlaying((p) => !p)}>
-            {playing ? "⏸ Pause" : "▶ Play"}
+            {playing ? <><Icon name="pause" /> Pause</> : <><Icon name="play" /> Play</>}
           </button>
         </label>
         <div className="ctrl">

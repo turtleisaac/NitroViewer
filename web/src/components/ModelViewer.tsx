@@ -12,6 +12,7 @@ import {
   type TexturePatternAnim,
   type VisibilityAnim,
 } from "../transport";
+import { Icon } from "./icons";
 
 function describeError(err: unknown): string {
   if (typeof err === "string") return err;
@@ -721,7 +722,7 @@ export default function ModelViewer() {
           <label className="ctrl">
             <span>Playback</span>
             <button className="play-btn" onClick={() => setPlaying((p) => !p)}>
-              {playing ? "⏸ Pause" : "▶ Play"}
+              {playing ? <><Icon name="pause" /> Pause</> : <><Icon name="play" /> Play</>}
             </button>
           </label>
         )}
@@ -750,15 +751,15 @@ export default function ModelViewer() {
         <span>Drag to orbit · scroll to zoom · right-drag to pan</span>
         {loadTick > 0 && !error && (
           <>
-            <button className="link-btn" onClick={capturePng}>Capture PNG ↓</button>
-            <button className="link-btn" onClick={saveGltf}>Save glTF ↓</button>
+            <button className="link-btn" onClick={capturePng}>Capture PNG</button>
+            <button className="link-btn" onClick={saveGltf}>Save glTF</button>
             <button
               className="link-btn"
               disabled={importing}
               title="Replace this model with a Wavefront OBJ (select the .obj, and optionally a texture image)"
               onClick={() => objRef.current?.click()}
             >
-              {importing ? "Importing…" : "Import OBJ ↑"}
+              {importing ? "Importing…" : "Import OBJ"}
             </button>
             <input
               ref={objRef}
