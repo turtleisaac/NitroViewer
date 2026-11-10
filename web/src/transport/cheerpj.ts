@@ -129,6 +129,7 @@ interface CheerpjFacade {
     tilesWidth: number,
     rebuildPalette: boolean,
     dryRun: boolean,
+    scanFrontToBack: boolean,
     png: JavaBytes,
   ): Promise<string>;
   importScreenPng(
@@ -612,6 +613,7 @@ export class CheerpjTransport implements NitroViewerClient {
     tilesWidth: number,
     rebuildPalette: boolean,
     dryRun: boolean,
+    scanFrontToBack: boolean,
     pngBytes: Uint8Array
   ): Promise<PngImportResult> {
     const signed = new Int8Array(pngBytes.buffer, pngBytes.byteOffset, pngBytes.byteLength);
@@ -619,7 +621,7 @@ export class CheerpjTransport implements NitroViewerClient {
       unwrap<PngImportResult>(
         await this.f.importPng(
           handle, ncgr.container, ncgr.id, nclr.container, nclr.id,
-          paletteIndex, tilesWidth, rebuildPalette, dryRun, signed
+          paletteIndex, tilesWidth, rebuildPalette, dryRun, scanFrontToBack, signed
         )
       )
     );

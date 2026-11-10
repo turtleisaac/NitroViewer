@@ -306,9 +306,9 @@ export function SpriteViewer() {
     setImpBusy(true);
     try {
       const bytes = new Uint8Array(await file.arrayBuffer());
-      const dry = await importPng(selection.ref, pair.nclr, paletteIndex, tilesWidth, false, true, bytes);
+      const dry = await importPng(selection.ref, pair.nclr, paletteIndex, tilesWidth, false, true, scanFrontToBack, bytes);
       if (dry.unmatched === 0) {
-        await importPng(selection.ref, pair.nclr, paletteIndex, tilesWidth, false, false, bytes);
+        await importPng(selection.ref, pair.nclr, paletteIndex, tilesWidth, false, false, scanFrontToBack, bytes);
       } else {
         setPending({ bytes, unmatched: dry.unmatched, w: dry.width, h: dry.height, kind: "ncgr" });
       }
@@ -399,7 +399,7 @@ export function SpriteViewer() {
         await importNanrPng(selection.ref, pair.ncer, pair.ncgr, pair.nclr, animIndex, frameIndex, rebuild, false, pending.bytes);
       } else {
         if (!pair.nclr) return;
-        await importPng(selection.ref, pair.nclr, paletteIndex, tilesWidth, rebuild, false, pending.bytes);
+        await importPng(selection.ref, pair.nclr, paletteIndex, tilesWidth, rebuild, false, scanFrontToBack, pending.bytes);
       }
       setPending(null); // (the viewer also remounts on editVersion bump)
     } catch (e) {

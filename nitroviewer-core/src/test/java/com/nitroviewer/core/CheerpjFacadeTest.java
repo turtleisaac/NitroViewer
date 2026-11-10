@@ -187,11 +187,11 @@ class CheerpjFacadeTest
         Assumptions.assumeTrue(two != null, "palette has fewer than 2 distinct colors");
         byte[] png = checkerPng(w, h, hexColor(two[0]), hexColor(two[1]));
 
-        String dry = s1.importPng(r1, narc1, ncgr, narc1, nclr, 0, 0, false, true, png);
+        String dry = s1.importPng(r1, narc1, ncgr, narc1, nclr, 0, 0, false, true, true, png);
         assertThat(dry).contains("\"ok\":true");
         assertThat(intField(dry, "unmatched")).as("exact palette colors fit").isEqualTo(0);
 
-        assertThat(s1.importPng(r1, narc1, ncgr, narc1, nclr, 0, 0, false, false, png)).contains("\"ok\":true");
+        assertThat(s1.importPng(r1, narc1, ncgr, narc1, nclr, 0, 0, false, false, true, png)).contains("\"ok\":true");
         byte[] ncgrAfter = java.util.Base64.getDecoder().decode(strField(s1.exportRaw(r1, narc1, ncgr), "base64"));
         assertThat(ncgrAfter).as("import changed the NCGR bytes").isNotEqualTo(ncgrBefore);
 
@@ -223,7 +223,7 @@ class CheerpjFacadeTest
         int h = intField(s1.decodeNcgr(r1, narc1, ncgr, narc1, nclr, 0, false, 0, true), "height");
         byte[] png = gradientPng(w, h); // many colors → forces a real median-cut
 
-        assertThat(s1.importPng(r1, narc1, ncgr, narc1, nclr, 0, 0, true, false, png)).contains("\"paletteRebuilt\":true");
+        assertThat(s1.importPng(r1, narc1, ncgr, narc1, nclr, 0, 0, true, false, true, png)).contains("\"paletteRebuilt\":true");
 
         byte[] saved = s1.saveRom(r1);
         CheerpjFacade s2 = new CheerpjFacade();
@@ -243,7 +243,7 @@ class CheerpjFacadeTest
         int r1 = intField(s1.openRom(romBytes), "handle");
         int narc1 = intField(s1.openNarc(r1, g[0]), "narcHandle");
         byte[] tiny = solidPng(8, 8, java.awt.Color.RED); // almost certainly the wrong size
-        String res = s1.importPng(r1, narc1, g[2], narc1, g[3], 0, 0, false, false, tiny);
+        String res = s1.importPng(r1, narc1, g[2], narc1, g[3], 0, 0, false, false, true, tiny);
         // either it matched an 8x8 sprite (fine) or it reported a structured size error — never threw
         assertThat(res).contains("\"ok\":");
     }
@@ -297,7 +297,7 @@ class CheerpjFacadeTest
         CheerpjFacade s1 = new CheerpjFacade();
         int r1 = intField(s1.openRom(romBytes), "handle");
         int narc1 = intField(s1.openNarc(r1, g[0]), "narcHandle");
-        String res = s1.setPaletteColors(r1, narc1, g[3], new byte[]{1, 2, 3});
+        String res = s1.setPaletteColors(r1, narc1, g[3], new byte[] { 1, 2, 3 });
         assertThat(res).contains("\"ok\":false").contains("\"error\":");
     }
 
@@ -357,7 +357,8 @@ class CheerpjFacadeTest
         int r1 = intField(s1.openRom(romBytes), "handle");
 
         byte[] payload = new byte[4096];
-        for (int i = 0; i < payload.length; i++) payload[i] = (byte) (i * 7 + 3);
+        for (int i = 0; i < payload.length; i++)
+            payload[i] = (byte) (i * 7 + 3);
         assertThat(s1.importRaw(r1, -1, romFileId, payload)).contains("\"ok\":true");
 
         byte[] saved = s1.saveRom(r1);
@@ -501,7 +502,7 @@ class CheerpjFacadeTest
         {
             String ff = formatField(s.detectFormat(r, -1, f));
             if (fmt.equals(ff))
-                return new int[]{-1, f};
+                return new int[] { -1, f };
             if ("NARC".equals(ff))
             {
                 String o = s.openNarc(r, f);
@@ -509,7 +510,7 @@ class CheerpjFacadeTest
                     continue;
                 Integer i = firstIndexOfFormat(s.listNarc(intField(o, "narcHandle")), fmt);
                 if (i != null)
-                    return new int[]{intField(o, "narcHandle"), i};
+                    return new int[] { intField(o, "narcHandle"), i };
             }
         }
         return null;
@@ -518,7 +519,7 @@ class CheerpjFacadeTest
     /** One pass over the ROM collecting the first NSBMA/NSBVA/NSBTP (loose or in a NARC). */
     private java.util.Map<String, int[]> findTracks(CheerpjFacade s, int r)
     {
-        String[] want = {"NSBMA", "NSBVA", "NSBTP"};
+        String[] want = { "NSBMA", "NSBVA", "NSBTP" };
         java.util.Map<String, int[]> out = new java.util.HashMap<>();
         int n = intField(s.getRomInfo(r), "numFiles");
         for (int f = 0; f < n && out.size() < want.length; f++)
@@ -535,14 +536,15 @@ class CheerpjFacadeTest
                     if (!out.containsKey(w))
                     {
                         Integer i = firstIndexOfFormat(list, w);
-                        if (i != null) out.put(w, new int[]{nh, i});
+                        if (i != null)
+                            out.put(w, new int[] { nh, i });
                     }
             }
             else
             {
                 for (String w : want)
                     if (w.equals(ff) && !out.containsKey(w))
-                        out.put(w, new int[]{-1, f});
+                        out.put(w, new int[] { -1, f });
             }
         }
         return out;
@@ -558,7 +560,7 @@ class CheerpjFacadeTest
         {
             String fmt = formatField(svc.detectFormat(rom, -1, f));
             if ("NSBTX".equals(fmt))
-                return new int[]{-1, f};
+                return new int[] { -1, f };
             if ("NARC".equals(fmt))
             {
                 String open = svc.openNarc(rom, f);
@@ -567,7 +569,7 @@ class CheerpjFacadeTest
                 int narc = intField(open, "narcHandle");
                 Integer t = firstIndexOfFormat(svc.listNarc(narc), "NSBTX");
                 if (t != null)
-                    return new int[]{narc, t};
+                    return new int[] { narc, t };
             }
         }
         return null;
@@ -586,7 +588,7 @@ class CheerpjFacadeTest
                 continue;
             int narc = intField(open, "narcHandle");
             if (narcFileCount(narc) >= 2)
-                return new int[]{f, narc, 0, 1};
+                return new int[] { f, narc, 0, 1 };
         }
         return null;
     }
@@ -596,7 +598,11 @@ class CheerpjFacadeTest
         // count "index": occurrences in the listNarc JSON
         String list = svc.listNarc(narcHandle);
         int count = 0, i = 0;
-        while ((i = list.indexOf("\"index\":", i)) >= 0) { count++; i += 8; }
+        while ((i = list.indexOf("\"index\":", i)) >= 0)
+        {
+            count++;
+            i += 8;
+        }
         return count;
     }
 
@@ -616,7 +622,7 @@ class CheerpjFacadeTest
             Integer ncgr = firstIndexOfFormat(list, "NCGR");
             Integer nclr = firstIndexOfFormat(list, "NCLR");
             if (ncgr != null && nclr != null)
-                return new int[]{f, narc, ncgr, nclr};
+                return new int[] { f, narc, ncgr, nclr };
         }
         return null;
     }
@@ -626,7 +632,8 @@ class CheerpjFacadeTest
     {
         Matcher m = Pattern.compile("#[0-9a-fA-F]{6}").matcher(palJson);
         java.util.List<String> out = new java.util.ArrayList<>();
-        while (m.find()) out.add(m.group());
+        while (m.find())
+            out.add(m.group());
         return out.toArray(new String[0]);
     }
 
@@ -648,7 +655,8 @@ class CheerpjFacadeTest
     {
         Matcher m = Pattern.compile("#[0-9a-fA-F]{6}").matcher(palJson);
         String last = "#000000";
-        for (int k = 0; k <= i && m.find(); k++) last = m.group();
+        for (int k = 0; k <= i && m.find(); k++)
+            last = m.group();
         return last;
     }
 
@@ -665,8 +673,10 @@ class CheerpjFacadeTest
         while (m.find())
         {
             String c = m.group();
-            if (first == null) first = c;
-            else if (!c.equalsIgnoreCase(first)) return new String[]{first, c};
+            if (first == null)
+                first = c;
+            else if (!c.equalsIgnoreCase(first))
+                return new String[] { first, c };
         }
         return null;
     }
@@ -685,7 +695,9 @@ class CheerpjFacadeTest
     private static byte[] solidPng(int w, int h, java.awt.Color c) throws Exception
     {
         java.awt.image.BufferedImage img = new java.awt.image.BufferedImage(w, h, java.awt.image.BufferedImage.TYPE_INT_ARGB);
-        for (int y = 0; y < h; y++) for (int x = 0; x < w; x++) img.setRGB(x, y, c.getRGB());
+        for (int y = 0; y < h; y++)
+            for (int x = 0; x < w; x++)
+                img.setRGB(x, y, c.getRGB());
         java.io.ByteArrayOutputStream baos = new java.io.ByteArrayOutputStream();
         javax.imageio.ImageIO.write(img, "png", baos);
         return baos.toByteArray();
@@ -718,7 +730,7 @@ class CheerpjFacadeTest
             Integer ncgr = firstIndexOfFormat(list, "NCGR");
             Integer nclr = firstIndexOfFormat(list, "NCLR");
             if (ncgr != null && nclr != null)
-                return new int[]{narc, ncgr, nclr};
+                return new int[] { narc, ncgr, nclr };
         }
         return null;
     }
@@ -743,7 +755,7 @@ class CheerpjFacadeTest
             {
                 String img = svc.decodeNcgr(rom, narc, ncgr, narc, nclr, 0, true, 0, true);
                 if (!img.contains("\"error\"") && intField(img, "subPalettes") > 1)
-                    return new int[]{narc, ncgr, nclr};
+                    return new int[] { narc, ncgr, nclr };
             }
         }
         return null;
@@ -759,7 +771,7 @@ class CheerpjFacadeTest
             if ("NSBMD".equals(fmt))
             {
                 if (svc.getModelSetInfo(rom, -1, f).contains("\"hasEmbeddedTextures\":true"))
-                    return new int[]{-1, f};
+                    return new int[] { -1, f };
             }
             else if ("NARC".equals(fmt))
             {
@@ -770,7 +782,7 @@ class CheerpjFacadeTest
                 Integer nsbmd = firstIndexOfFormat(svc.listNarc(narc), "NSBMD");
                 if (nsbmd != null
                         && svc.getModelSetInfo(rom, narc, nsbmd).contains("\"hasEmbeddedTextures\":true"))
-                    return new int[]{narc, nsbmd};
+                    return new int[] { narc, nsbmd };
             }
         }
         return null;
@@ -793,7 +805,7 @@ class CheerpjFacadeTest
             Integer nsbca = firstIndexOfFormat(list, "NSBCA");
             if (nsbmd != null && nsbca != null
                     && svc.getModelSetInfo(rom, narc, nsbmd).contains("\"hasEmbeddedTextures\":true"))
-                return new int[]{narc, nsbmd, nsbca};
+                return new int[] { narc, nsbmd, nsbca };
         }
         return null;
     }
@@ -814,8 +826,7 @@ class CheerpjFacadeTest
         return out;
     }
 
-    private static final String CUBE_OBJ =
-            "v -1 -1 -1\nv 1 -1 -1\nv 1 1 -1\nv -1 1 -1\nv -1 -1 1\nv 1 -1 1\nv 1 1 1\nv -1 1 1\n" +
+    private static final String CUBE_OBJ = "v -1 -1 -1\nv 1 -1 -1\nv 1 1 -1\nv -1 1 -1\nv -1 -1 1\nv 1 -1 1\nv 1 1 1\nv -1 1 1\n" +
             "f 1 2 3\nf 1 3 4\nf 5 7 6\nf 5 8 7\nf 1 5 6\nf 1 6 2\n" +
             "f 2 6 7\nf 2 7 3\nf 3 7 8\nf 3 8 4\nf 4 8 5\nf 4 5 1\n";
 
@@ -828,7 +839,7 @@ class CheerpjFacadeTest
         String res = svc.importObj(rom, -1, 200, objBytes);
         assertThat(res).contains("\"ok\":true");
         assertThat(intField(res, "triangles")).isEqualTo(12); // a cube = 12 triangles
-        assertThat(intField(res, "vertices")).isEqualTo(8);   // ObjImporter dedups to 8 unique corners
+        assertThat(intField(res, "vertices")).isEqualTo(8); // ObjImporter dedups to 8 unique corners
 
         // The written bytes must parse as an NSBMD holding one model named "model".
         String info = svc.getModelSetInfo(rom, -1, 200);
@@ -892,7 +903,8 @@ class CheerpjFacadeTest
         int rom2 = intField(svc.openRom(romBytes), "handle");
 
         Color[] colors = new Color[16];
-        for (int i = 0; i < 16; i++) colors[i] = new Color(i * 16, (i * 7) & 0xFF, 255 - i * 16);
+        for (int i = 0; i < 16; i++)
+            colors[i] = new Color(i * 16, (i * 7) & 0xFF, 255 - i * 16);
         Palette pal = new Palette(colors);
         byte[] nclrBytes = pal.save();
         IndexedImage template = new IndexedImage(8, 8, 4, pal); // 4bpp, 1 tile per row
@@ -943,7 +955,8 @@ class CheerpjFacadeTest
         int rom2 = intField(svc.openRom(romBytes), "handle");
 
         Color[] colors = new Color[16];
-        for (int i = 0; i < 16; i++) colors[i] = Color.BLACK; // start all-black so a rebuild must change it
+        for (int i = 0; i < 16; i++)
+            colors[i] = Color.BLACK; // start all-black so a rebuild must change it
         Palette pal = new Palette(colors);
         IndexedImage template = new IndexedImage(8, 8, 4, pal);
         Screen blank = new Screen(16, 16, 0);
@@ -976,24 +989,40 @@ class CheerpjFacadeTest
         // Find a NARC with a coherent NCER+NCGR+NCLR bundle whose cell composes (non-scanned NCGR).
         NintendoDsRom probe = new NintendoDsRom(romBytes);
         int romFileId = -1, ncerI = -1, ncgrI = -1, nclrI = -1;
-        outer:
-        for (int f = 0; f < probe.getNumFiles(); f++)
+        outer: for (int f = 0; f < probe.getNumFiles(); f++)
         {
             byte[] file = probe.getFile(f);
             if (file.length < 4 || !new String(file, 0, 4, java.nio.charset.StandardCharsets.ISO_8859_1).equals("NARC"))
                 continue;
             Narc narc;
-            try { narc = new Narc(file); } catch (RuntimeException e) { continue; }
+            try
+            {
+                narc = new Narc(file);
+            }
+            catch (RuntimeException e)
+            {
+                continue;
+            }
             int ce = -1, cg = -1, cl = -1;
             for (int i = 0; i < narc.getNumFiles(); i++)
             {
                 byte[] sub = narc.getFile(i);
                 String m = sub.length >= 4 ? new String(sub, 0, 4, java.nio.charset.StandardCharsets.ISO_8859_1) : "";
-                if (m.equals("RECN") && ce < 0) ce = i;
-                else if (m.equals("RGCN") && cg < 0) cg = i;
-                else if (m.equals("RLCN") && cl < 0) cl = i;
+                if (m.equals("RECN") && ce < 0)
+                    ce = i;
+                else if (m.equals("RGCN") && cg < 0)
+                    cg = i;
+                else if (m.equals("RLCN") && cl < 0)
+                    cl = i;
             }
-            if (ce >= 0 && cg >= 0 && cl >= 0) { romFileId = f; ncerI = ce; ncgrI = cg; nclrI = cl; break outer; }
+            if (ce >= 0 && cg >= 0 && cl >= 0)
+            {
+                romFileId = f;
+                ncerI = ce;
+                ncgrI = cg;
+                nclrI = cl;
+                break outer;
+            }
         }
         Assumptions.assumeTrue(romFileId >= 0, "no NCER+NCGR+NCLR bundle found in the test ROM");
 
@@ -1037,8 +1066,16 @@ class CheerpjFacadeTest
             byte[] f = probe.getFile(i);
             if (f.length >= 4 && new String(f, 0, 4, java.nio.charset.StandardCharsets.ISO_8859_1).equals("NARC"))
             {
-                try { if (new Narc(f).getNumFiles() >= 2) { narcId = i; break; } }
-                catch (RuntimeException ignored) { }
+                try
+                {
+                    if (new Narc(f).getNumFiles() >= 2)
+                    {
+                        narcId = i;
+                        break;
+                    }
+                }
+                catch (RuntimeException ignored)
+                {}
             }
         }
         Assumptions.assumeTrue(narcId >= 0, "no multi-file NARC found in the test ROM");
@@ -1120,7 +1157,8 @@ class CheerpjFacadeTest
         // sample rate (matches getWavePreview's decode path, just batched for every wave up front).
         Matcher wave = Pattern.compile(
                 "\"sampleRate\":(\\d+),\"timer\":(\\d+),\"loops\":(true|false),\"loopStart\":(\\d+),\"loopEnd\":(\\d+),"
-                        + "\"sampleCount\":(\\d+),\"pcmBase64\":\"([^\"]+)\"").matcher(tail);
+                        + "\"sampleCount\":(\\d+),\"pcmBase64\":\"([^\"]+)\"")
+                .matcher(tail);
         assertThat(wave.find()).as("at least one decoded wave").isTrue();
         int sampleRate = Integer.parseInt(wave.group(1));
         int timer = Integer.parseInt(wave.group(2));
@@ -1155,9 +1193,14 @@ class CheerpjFacadeTest
         String sdatInfo = null;
         for (int f = 0; f < n && sdatId < 0; f++)
         {
-            if (!"SDAT".equals(formatField(psvc.detectFormat(prom, -1, f)))) continue;
+            if (!"SDAT".equals(formatField(psvc.detectFormat(prom, -1, f))))
+                continue;
             String candidate = psvc.getSdatInfo(prom, -1, f);
-            if (candidate.contains("\"SEQ_TOWN01_D\"")) { sdatId = f; sdatInfo = candidate; }
+            if (candidate.contains("\"SEQ_TOWN01_D\""))
+            {
+                sdatId = f;
+                sdatInfo = candidate;
+            }
         }
         Assumptions.assumeTrue(sdatId >= 0, "no SDAT with SEQ_TOWN01_D found in Platinum");
 
@@ -1227,10 +1270,12 @@ class CheerpjFacadeTest
         byte[] chunk = new byte[8192];
         while ((e = zis.getNextEntry()) != null)
         {
-            if (e.isDirectory()) continue;
+            if (e.isDirectory())
+                continue;
             java.io.ByteArrayOutputStream buf = new java.io.ByteArrayOutputStream();
             int r;
-            while ((r = zis.read(chunk)) > 0) buf.write(chunk, 0, r);
+            while ((r = zis.read(chunk)) > 0)
+                buf.write(chunk, 0, r);
             out.add(buf.toByteArray());
         }
         return out;
@@ -1290,7 +1335,7 @@ class CheerpjFacadeTest
         assertThat(strField(svc.getBanner(rom2), "text")).isEqualTo(newTitle);
 
         // Edit the icon with a valid 32x32 image: transparency + a handful of opaque colors (<=15).
-        int[] swatch = {0xFFE53935, 0xFF43A047, 0xFF1E88E5, 0xFFFDD835};
+        int[] swatch = { 0xFFE53935, 0xFF43A047, 0xFF1E88E5, 0xFFFDD835 };
         BufferedImage icon = new BufferedImage(32, 32, BufferedImage.TYPE_INT_ARGB);
         for (int y = 0; y < 32; y++)
             for (int x = 0; x < 32; x++)
@@ -1332,7 +1377,8 @@ class CheerpjFacadeTest
     {
         Matcher m = p.matcher(s);
         long n = 0;
-        while (m.find()) n++;
+        while (m.find())
+            n++;
         return n;
     }
 
