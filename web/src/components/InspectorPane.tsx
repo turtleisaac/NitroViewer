@@ -1,6 +1,8 @@
-import { lazy, Suspense, useRef, useState, type ReactNode } from "react";
+import { lazy, Suspense, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { flushSync } from "react-dom";
 import { useStore } from "../state/store";
-import { refKey, type ResourceRef } from "../transport";
+import { resolveAllSpriteUnitGroups, type SpriteUnit } from "../state/grouping";
+import { refKey, type NarcEntry, type ResourceRef } from "../transport";
 import { base64ToBytes, download, exportFileName } from "../util";
 import { BannerViewer } from "./BannerViewer";
 import { NarcBrowser } from "./NarcBrowser";
@@ -128,6 +130,142 @@ function Breadcrumb() {
   return <span className="insp-crumbs" title={chain.map((c) => c.label).join(" › ")}>{nodes}</span>;
 }
 
+// A persistent strip of the current file's NARC siblings, shown above whatever viewer is open for a
+// NARC sub-file (an NCGR, NCLR, a nested NARC, …) — lets you scroll/click through the archive's
+// contents without leaving the viewer, instead of bouncing back to NarcBrowser's full grid each time.
+// Reads narcs[container] rather than calling ensureNarc itself: the only way to have a NARC sub-file
+// selected at all is via NarcBrowser, which already populated it.
+type StripItem =
+  | { kind: "group"; anchor: number; unit: SpriteUnit; memberIds: number[] }
+  // The group containing the file currently being viewed — expanded to its real members (e.g. all 4
+  // sprite variants + both palettes) instead of one collapsed chip, since that file's own selection
+  // already implies you're working with this specific unit and want its siblings within reach (the
+  // other 3 NCGR variants, the shiny NCLR, …), not just the one representative member.
+  | { kind: "expanded"; anchor: number; members: { index: number; format: string; size: number }[] }
+  | { kind: "entry"; anchor: number; index: number; format: string; size: number };
+
+function NarcSiblingStrip() {
+  const selection = useStore((s) => s.selection)!;
+  const narc = useStore((s) => s.narcs[selection.ref.container]);
+  const select = useStore((s) => s.select);
+  const narcPathOf = useStore((s) => s.narcPathOf);
+  const gameCode = useStore((s) => s.romInfo?.gameCode);
+  const narcGroupCollapse = useStore((s) => s.narcGroupCollapse);
+  const setNarcGroupCollapse = useStore((s) => s.setNarcGroupCollapse);
+  const activeRef = useRef<HTMLButtonElement>(null);
+  const container = selection.ref.container;
+
+  useEffect(() => {
+    activeRef.current?.scrollIntoView({ inline: "center", block: "nearest" });
+  }, [selection.ref.container, selection.ref.id]);
+
+  const narcPath = narc ? (narcPathOf(container) ?? selection.name) : null;
+  const { items, hasGrouping } = useMemo(() => {
+    if (!narc) return { items: [] as StripItem[], hasGrouping: false };
+    const entryLikes = narc.entries.map((e) => ({ index: e.index, format: e.format }));
+    const allGroups = resolveAllSpriteUnitGroups(gameCode, narcPath, container, entryLikes);
+    const activeGroups = narcGroupCollapse ? allGroups : null;
+    const consumed = new Set<number>();
+    const out: StripItem[] = [];
+    if (activeGroups) {
+      for (const { unit, memberIndices } of activeGroups) {
+        if (memberIndices.length === 0) continue;
+        memberIndices.forEach((id) => consumed.add(id));
+        const anchor = Math.min(...memberIndices);
+        if (memberIndices.includes(selection.ref.id)) {
+          const members = memberIndices
+            .map((id) => narc.entries.find((e) => e.index === id))
+            .filter((e): e is NarcEntry => !!e)
+            .map((e) => ({ index: e.index, format: e.format, size: e.size }));
+          out.push({ kind: "expanded", anchor, members });
+        } else {
+          out.push({ kind: "group", anchor, unit, memberIds: memberIndices });
+        }
+      }
+    }
+    for (const e of narc.entries) {
+      if (consumed.has(e.index)) continue;
+      out.push({ kind: "entry", anchor: e.index, index: e.index, format: e.format, size: e.size });
+    }
+    out.sort((a, b) => a.anchor - b.anchor);
+    return { items: out, hasGrouping: !!allGroups && allGroups.length > 0 };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [narc, narcPath, gameCode, container, narcGroupCollapse, selection.ref.id]);
+
+  if (!narc) return null;
+
+  function toggleGroupCollapse() {
+    const next = !narcGroupCollapse;
+    const doc = document as Document & { startViewTransition?: (cb: () => void) => unknown };
+    if (typeof doc.startViewTransition === "function") {
+      doc.startViewTransition(() => flushSync(() => setNarcGroupCollapse(next)));
+    } else {
+      setNarcGroupCollapse(next);
+    }
+  }
+
+  const baseName = selection.name.replace(/ : #\d+$/, "").replace(/ group$/, "");
+
+  const entryChip = (index: number, format: string, size: number) => {
+    const active = index === selection.ref.id;
+    return (
+      <button
+        key={index}
+        ref={active ? activeRef : undefined}
+        className={"narc-chip" + (active ? " active" : "")}
+        title={`#${index} · ${format || "raw"} · ${size.toLocaleString()}B`}
+        onClick={() => void select({ container, id: index }, `${baseName} : #${index}`)}
+      >
+        <span className="narc-chip-idx">#{index}</span>
+        <span className="narc-chip-fmt">{format || "raw"}</span>
+      </button>
+    );
+  };
+
+  return (
+    <div className="narc-strip">
+      {hasGrouping && (
+        <button
+          className="narc-strip-toggle"
+          title={narcGroupCollapse ? "Showing grouped files — click to show every file" : "Showing every file — click to group related files"}
+          onClick={toggleGroupCollapse}
+        >
+          {narcGroupCollapse ? "⊞" : "⊟"}
+        </button>
+      )}
+      {items.map((item) => {
+        if (item.kind === "expanded") {
+          // The group the current file belongs to — its real members instead of one collapsed chip,
+          // so the other sprite variants / the alternate palette stay one click away.
+          return (
+            <div key={`e${item.anchor}`} className="narc-chip-cluster" title={`#${item.anchor} group, expanded`}>
+              {item.members.map((m) => entryChip(m.index, m.format, m.size))}
+            </div>
+          );
+        }
+        if (item.kind === "group") {
+          const active = item.memberIds.includes(selection.ref.id);
+          const target = item.unit.nanr ?? item.unit.ncer ?? item.unit.ncgr ?? item.unit.nclr;
+          return (
+            <button
+              key={`g${item.anchor}`}
+              ref={active ? activeRef : undefined}
+              className={"narc-chip narc-chip--group" + (active ? " active" : "")}
+              title={`#${item.anchor} group · ${item.memberIds.length} files`}
+              disabled={!target}
+              onClick={() => target && void select({ container, id: target.id }, `${baseName} : #${item.anchor} group`)}
+            >
+              <span className="narc-chip-idx">#{item.anchor}</span>
+              <span className="narc-chip-fmt">×{item.memberIds.length}</span>
+            </button>
+          );
+        }
+        return entryChip(item.index, item.format, item.size);
+      })}
+    </div>
+  );
+}
+
 export function InspectorPane() {
   const selection = useStore((s) => s.selection);
   const editVersion = useStore((s) => s.editVersion);
@@ -171,6 +309,7 @@ export function InspectorPane() {
         )}
       </div>
       <div className="inspector-body">
+        {selection.ref.container >= 0 && <NarcSiblingStrip />}
         {(() => {
           // Fold editVersion into each viewer key so importing new bytes remounts the viewer and it
           // re-decodes from the edited ROM instead of showing stale pixels.

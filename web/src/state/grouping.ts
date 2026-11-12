@@ -111,10 +111,55 @@ export function resolveSpriteUnit(
   return groupUnit(g, entries, id, container);
 }
 
+/** A resolved unit plus every raw entry index it actually spans — see {@link resolveAllSpriteUnitGroups}. */
+export interface SpriteUnitGroup {
+  unit: SpriteUnit;
+  memberIndices: number[];
+}
+
 /**
- * Pure grouping math (exported for testing): given a grouping spec and the container's entries, return
- * the sibling unit that entry `id` belongs to. See {@link resolveSpriteUnit} for the strategy semantics.
+ * Every sprite unit in a NARC, for a "collapse into one card per unit" grid. `SpriteUnit` only carries
+ * one ref per role (all a viewer needs to render), so when `order` repeats a format — e.g. Platinum's
+ * battle sprites are `[NCGR,NCGR,NCGR,NCGR,NCLR,NCLR]`, 4 sprite variants + 2 palettes per species —
+ * `unit.ncgr`/`unit.nclr` alone name only 2 of the 6 real files. `memberIndices` is the FULL set (every
+ * position in the unit's stride/run, regardless of role), so a collapse can correctly hide all of them,
+ * not just the one-per-role subset `SpriteUnit` names. The per-unit math is a pure function of position
+ * (see {@link groupUnit}), so the whole NARC's units enumerate directly without a decode or per-entry
+ * lookup. Returns null when the game/NARC doesn't declare a `grouping` (nothing to collapse).
  */
+export function resolveAllSpriteUnitGroups(
+  gameCode: string | undefined,
+  narcPath: string | null,
+  container: number,
+  entries: EntryLike[]
+): SpriteUnitGroup[] | null {
+  const g = narcDef(gameCode, narcPath)?.grouping;
+  if (!g) return null;
+  const groups: SpriteUnitGroup[] = [];
+  if (g.strategy === "interleaved") {
+    const stride = g.order.length;
+    for (let start = 0; start < entries.length; start += stride) {
+      const unit = groupUnit(g, entries, entries[start].index, container);
+      if (!unit) continue;
+      const memberIndices = entries.slice(start, start + stride).map((e) => e.index);
+      groups.push({ unit, memberIndices });
+    }
+  } else if (g.strategy === "lockstep") {
+    const runLen = g.count ?? Math.floor(entries.length / g.order.length);
+    for (let i = 0; i < runLen && i < entries.length; i++) {
+      const unit = groupUnit(g, entries, entries[i].index, container);
+      if (!unit) continue;
+      const memberIndices: number[] = [];
+      g.order.forEach((_, run) => {
+        const at = run * runLen + i;
+        if (at < entries.length) memberIndices.push(entries[at].index);
+      });
+      groups.push({ unit, memberIndices });
+    }
+  }
+  return groups;
+}
+
 export function groupUnit(
   g: { strategy: "lockstep" | "interleaved"; order: string[]; count?: number },
   entries: EntryLike[],
@@ -133,12 +178,20 @@ export function groupUnit(
     // format repeats within the unit, the FIRST slot is the canonical companion (e.g. the non-shiny
     // PALETTE at index 4, not SHINY_PALETTE at 5) — but the clicked file itself wins for its own role, so
     // clicking any of the four sprites pairs it with that species' palette.
+    //
+    // A slot's ACTUAL format must match what `order` expects there before it's eligible: a genderless or
+    // single-gender species (Nidoran♂, Unown, Porygon2, Tyrogue, …) stores its unused "opposite gender"
+    // NCGR as a real, valid 0-byte NARC entry (detectFormat reports "" for it) rather than duplicating
+    // data — picking that slot blindly would hand the viewer/thumbnail an empty file to decode instead
+    // of falling through to the next NCGR slot that's actually populated.
     const stride = order.length;
     const start = Math.floor(pos / stride) * stride;
     const out: SpriteUnit = {};
     for (let k = 0; k < stride && start + k < entries.length; k++) {
+      const entry = entries[start + k];
+      if (entry.format !== order[k]) continue;
       const role = roleKey(order[k]);
-      if (out[role] === undefined) out[role] = ref(entries[start + k].index);
+      if (out[role] === undefined) out[role] = ref(entry.index);
     }
     out[roleKey(entries[pos].format)] = ref(entries[pos].index); // clicked file is authoritative for its role
     return out;

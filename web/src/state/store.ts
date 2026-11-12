@@ -65,6 +65,11 @@ interface AppState {
   navOpen: boolean; // tree drawer open (only affects narrow screens)
   treeCollapsed: boolean; // file browser hidden on desktop (wide screens)
   treeWidth: number; // file browser column width in px on desktop (drag-resizable)
+  // Collapse a NARC's game-DB-declared sprite units (NCGR+NCLR+NCER+NANR, etc.) into one card/chip each
+  // in NarcBrowser and NarcSiblingStrip, instead of listing every member file separately. Global (not
+  // per-NARC) — both views read the same flag, and it only has any visible effect where the game DB
+  // actually declares a `grouping` for that NARC (see resolveAllSpriteUnits).
+  narcGroupCollapse: boolean;
   revealPath: string | null; // folder path the tree should scroll into view
   revealTick: number; // bumped on each reveal so re-revealing the same folder still scrolls
   narcScroll: Record<number, number>; // narcHandle -> inspector scrollTop, so "back" restores the spot
@@ -95,6 +100,7 @@ interface AppState {
   setNavOpen: (open: boolean) => void;
   setTreeCollapsed: (collapsed: boolean) => void;
   setTreeWidth: (width: number) => void;
+  setNarcGroupCollapse: (v: boolean) => void;
   revealFolder: (folderPath: string) => void;
   setNarcScroll: (narcHandle: number, top: number) => void;
   setPairingOverride: (key: string, partial: PairOverride) => void;
@@ -399,6 +405,7 @@ export const useStore = create<AppState>((set, get) => ({
   navOpen: false,
   treeCollapsed: loadTreeCollapsed(),
   treeWidth: loadTreeWidth(),
+  narcGroupCollapse: true,
   revealPath: null,
   revealTick: 0,
   narcScroll: {},
@@ -442,6 +449,8 @@ export const useStore = create<AppState>((set, get) => ({
   },
 
   setNavOpen: (open) => set({ navOpen: open }),
+
+  setNarcGroupCollapse: (v) => set({ narcGroupCollapse: v }),
 
   setTreeCollapsed: (collapsed) => {
     if (typeof localStorage !== "undefined") localStorage.setItem(TREE_COLLAPSED_KEY, collapsed ? "1" : "0");

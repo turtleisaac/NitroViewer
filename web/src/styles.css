@@ -100,7 +100,11 @@ body { background: var(--bg); color: var(--text); font-size: 13px; }
 .open-menu .hint { display: block; font-size: 11px; font-weight: 400; color: var(--text-faint); margin-top: 2px; }
 
 /* Panes */
-.pane { min-height: 0; display: flex; flex-direction: column; }
+/* min-height/min-width: 0 override the grid-item default of "auto" (sized to content) — without it, a
+   wide non-wrapping child (e.g. .narc-strip's row of chips) forces the whole 1fr grid column, and with
+   it the whole page, to grow to fit that content instead of clipping it to the actual viewport and
+   letting the child's own overflow:auto scroll it. */
+.pane { min-height: 0; min-width: 0; display: flex; flex-direction: column; }
 .tree-pane { border-right: 1px solid var(--line); background: var(--bg-1); }
 .pane-head {
   flex: 0 0 auto; padding: 10px 14px; font-size: 11px; font-weight: 600;
@@ -178,13 +182,35 @@ body { background: var(--bg); color: var(--text); font-size: 13px; }
 .narc-bar { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 12px; flex-wrap: wrap; }
 .narc-bar-actions { display: flex; gap: 8px; }
 .narc-info { color: var(--text-dim); }
-.narc-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); gap: 8px; }
+/* Named so toggling "Group related files" (narcGroupCollapse) scopes the View Transitions API
+   crossfade to just this box — the tree/header/etc. don't participate since they don't change. */
+.narc-grid { view-transition-name: narc-collapse-region; display: grid; grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); gap: 8px; }
 .narc-item {
   position: relative; display: flex; flex-direction: column; align-items: stretch;
   background: var(--bg-1); border: 1px solid var(--line); border-radius: 8px;
   color: var(--text); transition: border-color .12s, background .12s;
 }
 .narc-item:hover { border-color: var(--accent); background: var(--bg-2); }
+/* Collapsed sprite-unit card: a single <button>, not the div+inner-button of a normal entry — reset
+   button chrome to match .narc-item's look, then lay out a thumbnail above the index/count badge. */
+.narc-item.narc-group {
+  font: inherit; color: var(--text); cursor: pointer; padding: 8px; gap: 6px; align-items: center;
+}
+.narc-item.narc-group:disabled { cursor: default; opacity: .5; }
+.narc-thumb {
+  width: 100%; aspect-ratio: 1; display: flex; align-items: center; justify-content: center;
+  overflow: hidden; background: var(--bg-2); border-radius: 5px;
+}
+.narc-thumb img { max-width: 100%; max-height: 100%; image-rendering: pixelated; }
+.narc-thumb-x { color: var(--text-faint); font-size: 13px; }
+/* Small variant of .spinner, sized for a ~100px thumbnail card instead of the full-screen ROM loader —
+   same animation/color so it reads as the same "working on it" indicator throughout the app. */
+.narc-thumb-spinner {
+  width: 20px; height: 20px; border-radius: 50%;
+  border: 3px solid var(--line); border-top-color: var(--accent);
+  animation: nv-spin 0.8s linear infinite;
+}
+@media (prefers-reduced-motion: reduce) { .narc-thumb-spinner { animation-duration: 2s; } }
 .narc-open {
   display: flex; flex-direction: column; align-items: flex-start; gap: 5px;
   background: none; border: 0; padding: 9px 10px; cursor: pointer; text-align: left; color: inherit; width: 100%;
@@ -196,6 +222,45 @@ body { background: var(--bg); color: var(--text); font-size: 13px; }
   border-radius: 5px; width: 22px; height: 22px; font-size: 13px; line-height: 1; cursor: pointer; padding: 0;
 }
 .icon-btn:hover:not(:disabled) { border-color: var(--accent); color: var(--text); }
+/* A group card's "jump to a specific member" picker — same slot/size as an .icon-btn, styled as one,
+   but a native <select> so the OS handles the actual dropdown (no popover/click-outside code needed). */
+.narc-group-pick {
+  appearance: none; -webkit-appearance: none; text-align: center; text-align-last: center;
+  background: var(--bg-2); color: var(--text-dim); border: 1px solid var(--line-2);
+  border-radius: 5px; width: 22px; height: 22px; font-size: 13px; line-height: 1; cursor: pointer; padding: 0;
+}
+.narc-group-pick:hover { border-color: var(--accent); color: var(--text); }
+
+/* Persistent NARC-siblings strip above a sub-file's viewer — scroll/click through the archive without
+   leaving the current entry. */
+.narc-strip {
+  view-transition-name: narc-collapse-region;
+  display: flex; gap: 6px; overflow-x: auto; padding-bottom: 10px; margin-bottom: 12px;
+  border-bottom: 1px solid var(--line);
+}
+.narc-strip-toggle {
+  flex: none; background: var(--bg-2); color: var(--text-dim); border: 1px solid var(--line-2);
+  border-radius: 6px; width: 26px; font-size: 13px; cursor: pointer; padding: 0;
+}
+.narc-strip-toggle:hover { border-color: var(--accent); color: var(--text); }
+.narc-chip {
+  flex: none; display: flex; flex-direction: column; align-items: center; gap: 2px;
+  background: var(--bg-1); border: 1px solid var(--line); border-radius: 6px; padding: 4px 9px;
+  color: var(--text-dim); cursor: pointer; font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+.narc-chip:hover { border-color: var(--accent); color: var(--text); }
+.narc-chip.active { border-color: var(--accent); background: #24304f; color: #fff; }
+.narc-chip--group { background: var(--bg-2); }
+.narc-chip:disabled { cursor: default; opacity: .5; }
+/* The one group currently expanded inline in the strip (it contains the file being viewed) — a faint
+   bracket around its real member chips so they read as one cluster rather than blending into the
+   ungrouped entries on either side. */
+.narc-chip-cluster {
+  flex: none; display: flex; gap: 4px; padding: 3px; border: 1px solid var(--accent);
+  border-radius: 8px; background: rgba(107, 140, 255, .08);
+}
+.narc-chip-idx { font-size: 11.5px; }
+.narc-chip-fmt { font-size: 9.5px; text-transform: uppercase; opacity: .75; }
 .icon-btn:disabled { opacity: .4; cursor: default; }
 .narc-idx { font-family: ui-monospace, monospace; font-size: 12px; color: var(--text-dim); }
 .narc-size { font-size: 10.5px; color: var(--text-faint); }
