@@ -632,6 +632,33 @@ manifest stub" dev action. The **D/P battle-sprite scan direction** fix already 
 
 **NARC browsing, cycling, and bookmarks:** [docs/narc-browsing-plan.md](docs/narc-browsing-plan.md).
 
+**Diverged work on unmerged branches.** A local checkout held uncommitted work from 2026-09-01 to
+2026-10-25, made before the quality gates and the UI polish landed. On 2026-11-12 it was split into the
+branches below. Each is one commit on c5f5378, the commit before #2. None is rebased onto main. Each
+conflicts with main and would fail the CRAP, dryer, and ESLint gates as written. Check this list before
+building any of these features from scratch.
+
+- `unpacked-save-in-place`. When an unpacked ndstool or ds-rom folder is opened through Electron's native
+  picker, Save ROM writes the edited tree back into that folder instead of downloading a `.nds`. It adds
+  `saveUnpackedRom` to the facade, `unzipStore` in `zip.ts`, and a `write-unpacked` IPC handler. The handler
+  only creates or overwrites files and never deletes. It needs Nds4j work that is not committed yet
+  (`NintendoDsRom.unpackDsRom`, `DsRomUnpacked.save`, `SimpleYaml.dump`). CI builds Nds4j main, so this
+  branch does not compile there until that work lands.
+- `multi-window-dnd`. Adds a New Window button and `.nds`/`.srl` file associations, and shows the ROM name
+  in the window title. You can drag a tree file or NARC entry onto another window's row to overwrite that
+  row, or drag a file in from the OS or out to it. A PNG dropped on an NCGR goes through SpriteViewer's
+  Import PNG flow. The drag handlers are copied in `TreePane` and `NarcBrowser`, so they need to move into a
+  shared hook before the dryer gate passes.
+- `narc-grouping`. Adds `resolveAllSpriteUnitGroups` and a group-card mode for the NARC grid, with
+  thumbnails and a member picker. It also adds `NarcSiblingStrip`, a row of chips above a subfile's viewer.
+  This overlaps the NARC browsing plan above. The plan's drawer would replace the strip, and the plan puts
+  group mode last (PR 5). Fold `resolveAllSpriteUnitGroups` and the thumbnail decoding into that PR rather
+  than merging this branch.
+- `wip/sound-viewer-oct25`. An abandoned SoundViewer edit that does not compile. It removes the live
+  engine and the long-sequence routing. Kept only so nothing is lost. Do not merge.
+- `wip/e2e-banner-mobile-script`. A one-off phone-width screenshot script with hard-coded paths.
+  `web/e2e/phone.spec.ts` covers this now. Do not merge.
+
 **Tech debt — mobile/iOS header crowding.** The write-half controls added to the top bar (Undo/Redo,
 Save ROM, dirty badge, status) have made the header cramped on narrow screens and worsened the already-shaky
 iOS layout. Needs a responsive pass: collapse Undo/Redo to icon-only (or an overflow/"⋯" menu) below a
