@@ -1,11 +1,11 @@
-// Per-game asset manifest resolver ("game DB", HANDOFF §8). Turns the declarative gamedb.json into
+// Per-game asset manifest resolver ("game DB", HANDOFF §8). Turns the foldered game DB into
 // concrete answers — render hints and sibling groupings — for a clicked resource. Resolution is
 // MANIFEST-FIRST, HEURISTIC-FALLBACK: a known game/NARC returns exact answers; anything unlisted
 // returns null so the caller drops back to the pairing.ts heuristics. Pure data + pure functions, so
 // an HTTP backend could serve the same manifest unchanged.
 
 import type { ResourceRef } from "../transport";
-import gamedb from "../gamedb/gamedb.json";
+import { loadGameDb, winningKey } from "../gamedb/load";
 
 /** Per-unit / per-entry render facts that heuristics otherwise have to guess (tile width is the big one). */
 export interface RenderHints {
@@ -49,7 +49,7 @@ interface GameDb {
   games: Record<string, GameDef>;
 }
 
-const db = gamedb as unknown as GameDb;
+const db = loadGameDb() as unknown as GameDb;
 
 /** A minimal (format, index) pair — what the caller knows about the container's entries. */
 export interface EntryLike {
@@ -59,14 +59,7 @@ export interface EntryLike {
 
 /** Best game-code key in `games`. An exact key wins over a `PREFIX*` wildcard. Codes are matched in upper case. */
 function gameKey(games: Record<string, GameDef>, gameCode: string | undefined): string | null {
-  if (!gameCode) return null;
-  const code = gameCode.toUpperCase();
-  if (games[code]) return code;
-  for (const key of Object.keys(games)) {
-    const upper = key.toUpperCase();
-    if (upper.endsWith("*") && code.startsWith(upper.slice(0, -1))) return key;
-  }
-  return null;
+  return winningKey(games, gameCode);
 }
 
 /** Best game entry for a 4-char code: an exact key wins over a `PREFIX*` wildcard. Returns its title too. */

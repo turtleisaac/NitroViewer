@@ -10,7 +10,7 @@ import io.github.turtleisaac.nds4j.framework.MemBuf;
 /**
  * Gen 4 (DPPt/HGSS) sprite pixel cipher. <p>
  * Reimplementation of the LCG XOR in DSPRE <code>SpriteScrambling</code> (AGPL-3.0, branch <code>feature/avalonia</code>).
- * Nds4j applies the XOR for a scanned NCGR. Which files, and which way, come from <code>gamedb.json</code>.
+ * Nds4j applies the XOR for a scanned NCGR. Which files, and which way, come from the game DB.
  */
 public final class Gen4SpriteCipher
 {
@@ -25,7 +25,7 @@ public final class Gen4SpriteCipher
 
 
     /**
-     * Returns the scan direction <code>gamedb.json</code> declares for this entry
+     * Returns the scan direction the game DB declares for this entry
      * @param gameCode a <code>String</code> game code
      * @param narcPath a <code>String</code> FNT path of the NARC
      * @param entryIndex an <code>int</code> index inside the NARC

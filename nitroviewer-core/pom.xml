@@ -62,11 +62,11 @@
             <resource>
                 <directory>src/main/resources</directory>
             </resource>
-            <!-- The web app imports this same file. Java reads it for cipher direction. -->
+            <!-- The web app loads these same folders. Java reads them for cipher direction. -->
             <resource>
                 <directory>../web/src/gamedb</directory>
                 <includes>
-                    <include>gamedb.json</include>
+                    <include>**/gamedb.json</include>
                 </includes>
             </resource>
         </resources>

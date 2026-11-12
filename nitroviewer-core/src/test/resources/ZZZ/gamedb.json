@@ -1,0 +1,13 @@
+{
+  "version": 1,
+  "_source": "test family",
+  "title": "Synthetic",
+  "narcs": {
+    "/conflict.narc": {
+      "render": { "scanDirection": "front-to-back" },
+      "cipher": { "indexMod": 5, "indexRem": 4, "scanDirection": "back-to-front" },
+      "entries": { "4": { "scanDirection": "front-to-back" } }
+    },
+    "/other.narc": { "render": { "scanDirection": "front-to-back" } }
+  }
+}
