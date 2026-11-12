@@ -174,7 +174,7 @@ def collect_functions(root):
     for source_root in SOURCE_ROOTS:
         argv.extend(['--source-root', source_root])
 
-    files = [path for path in select_files(parse_args(argv)) if included(path, root)]
+    files = kept(select_files(parse_args(argv)), root)
     relatives = [relative(path, root) for path in files]
     bundle = load_bundle(root)
     bundle.bind_sources(relatives)
@@ -188,6 +188,31 @@ def collect_functions(root):
 
     rows.sort(key=lambda row: (row['path'], row['namespace'], row['name'], row['start']))
     return rows
+
+def kept(paths, root):
+    """
+    The paths that are neither in a generated tree nor ignored by git
+    """
+    paths = [path for path in paths if included(path, root)]
+    skipped = ignored(paths, root)
+    return [path for path in paths if relative(path, root) not in skipped]
+
+def ignored(paths, root):
+    """
+    Relative names of the paths that .gitignore excludes, such as a bundled worklet
+    """
+    result = subprocess.run(
+        ['git', '-C', str(root), 'check-ignore', '-z', '--stdin'],
+        input='\0'.join(relative(path, root) for path in paths),
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    if result.returncode > 1:  # 1 means nothing matched
+        message = result.stderr.strip() or 'git check-ignore failed'
+        raise RuntimeError(message)
+
+    return {name for name in result.stdout.split('\0') if name}
 
 def included(path, root):
     """
@@ -240,7 +265,7 @@ def collect_pairs(root, functions):
         argv.extend(['--source-root', source_root])
 
     options = parse_args(argv)
-    files = [path for path in select_files(options) if included(path, root)]
+    files = kept(select_files(options), root)
     entries, warnings = scan_files(files, root, options.min_lines, options.min_nodes)
     for warning in warnings:
         print('dryer: %s' % warning)
