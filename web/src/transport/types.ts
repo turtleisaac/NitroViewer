@@ -392,12 +392,12 @@ export interface NitroViewerClient {
     dryRun: boolean,
     pngBytes: Uint8Array
   ): Promise<{ ok: boolean; unmatched: number; cellIndex: number; paletteRebuilt: boolean; dryRun: boolean }>;
-  /** Replace an NCLR's colors from an image (swatch strip / indexed PNG / any image). Count preserved. */
+  /** Replace an NCLR's colors from an image, by cell for an exported swatch grid. Count preserved. */
   importPalette(
     handle: number,
     nclr: ResourceRef,
     imageBytes: Uint8Array
-  ): Promise<{ ok: boolean; colors: number; unique: number }>;
+  ): Promise<{ ok: boolean; colors: number; unique: number; bySwatch: boolean }>;
   /** Re-encode a Wavefront OBJ mesh (UTF-8 bytes) over an NSBMD (untextured). Returns the mesh stats. */
   importObj(
     handle: number,

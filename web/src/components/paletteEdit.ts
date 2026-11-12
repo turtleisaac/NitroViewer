@@ -111,7 +111,7 @@ export async function importPaletteFile(
   dirty: boolean,
   confirmReplace: () => boolean,
   ref: ResourceRef,
-  importPalette: (ref: ResourceRef, bytes: Uint8Array) => Promise<{ unique: number; colors: number }>,
+  importPalette: (ref: ResourceRef, bytes: Uint8Array) => Promise<{ unique: number; colors: number; bySwatch: boolean }>,
   setBusy: (busy: boolean) => void
 ) {
   if (dirty && !confirmReplace()) return;
@@ -119,7 +119,7 @@ export async function importPaletteFile(
   try {
     const bytes = new Uint8Array(await file.arrayBuffer());
     const res = await importPalette(ref, bytes);
-    if (res.unique < res.colors)
+    if (!res.bySwatch && res.unique < res.colors)
       console.info(`Palette import: ${res.unique} unique colors → padded to ${res.colors}.`);
   } catch (e) {
     alert("Palette import failed: " + (e as Error).message);

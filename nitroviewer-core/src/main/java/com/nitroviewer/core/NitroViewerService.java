@@ -220,12 +220,11 @@ public interface NitroViewerService
     String importPng(int romHandle, int ncgrContainer, int ncgrId, int nclrContainer, int nclrId, int paletteIndex, int tilesWidth, boolean rebuildPalette, boolean dryRun, boolean scanFrontToBack, byte[] pngBytes);
 
     /**
-     * Replace an NCLR's colors from an image (a swatch strip, an indexed PNG's palette, or any image's
-     * colors in raster order). The NCLR's color COUNT is preserved — the image's first-seen unique
-     * colors fill the palette, padded with black or truncated to fit — so the paired NCGR's indices stay
-     * valid. Use {@link IndexColorModel} entries directly when the PNG is indexed.
+     * Replace an NCLR's colors from an image. The NCLR's color COUNT is preserved so the paired NCGR's
+     * indices stay valid. A 16-column grid of solid square swatches (the viewer's own export) is read one
+     * cell per index; any other image supplies its first-seen unique colors, padded with black.
      *
-     * @return {"ok":true,"colors":int,"unique":int} | {"ok":false,"error":str}
+     * @return {"ok":true,"colors":int,"unique":int,"bySwatch":bool} | {"ok":false,"error":str}
      */
     String importPalette(int romHandle, int nclrContainer, int nclrId, byte[] imageBytes);
 

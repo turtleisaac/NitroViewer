@@ -1030,39 +1030,17 @@ public final class CheerpjFacade implements NitroViewerService
             if (imageBytes == null)
                 throw new IllegalArgumentException("no bytes");
             NintendoDsRom rom = rom(romHandle);
-            Palette existing = new Palette(resolve(rom, nclrContainer, nclrId), 0);
-            int count = existing.getColors().length;
+            int count = new Palette(resolve(rom, nclrContainer, nclrId), 0).getColors().length;
 
             BufferedImage src = ImageIO.read(new java.io.ByteArrayInputStream(imageBytes));
             if (src == null)
                 throw new IllegalArgumentException("Could not decode the imported file as an image.");
 
-            // Collect the image's colors in first-seen raster order (dedup on RGB). An indexed PNG's
-            // IndexColorModel is honoured naturally: distinct entries appear as distinct pixel colors.
-            java.util.LinkedHashSet<Integer> uniq = new java.util.LinkedHashSet<>();
-            outer: for (int y = 0; y < src.getHeight(); y++)
-                for (int x = 0; x < src.getWidth(); x++)
-                {
-                    uniq.add(src.getRGB(x, y) & 0xFFFFFF);
-                    if (uniq.size() >= count)
-                        break outer;
-                }
-
-            // Preserve the palette's length so the paired NCGR's indices stay valid: fill from the image,
-            // pad the tail with black, truncate the excess.
-            Color[] cols = new Color[count];
-            int i = 0;
-            for (int rgb : uniq)
-            {
-                if (i >= count)
-                    break;
-                cols[i++] = new Color(rgb);
-            }
-            while (i < count)
-                cols[i++] = Color.BLACK;
-
-            writeResource(romHandle, nclrContainer, nclrId, new Palette(cols).save());
-            return "{\"ok\":true,\"colors\":" + count + ",\"unique\":" + uniq.size() + "}";
+            // The palette keeps its length so the paired NCGR's indices stay valid. A swatch grid is read
+            // by position, so repeated colors keep their indices.
+            PaletteSwatch read = PaletteSwatch.read(src, count);
+            writeResource(romHandle, nclrContainer, nclrId, new Palette(read.colors).save());
+            return "{\"ok\":true,\"colors\":" + count + ",\"unique\":" + read.unique + ",\"bySwatch\":" + read.bySwatch + "}";
         }
         catch (Throwable t)
         {
