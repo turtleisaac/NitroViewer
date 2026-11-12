@@ -1,5 +1,7 @@
 // Foldered game DB. A family file is the shared wildcard. A language file is the exact-code override.
 
+import { familyModules, languageModules } from "./folders";
+
 const FAMILY_PATH = /(?:^|\/)([A-Za-z0-9]{3})\/gamedb\.json$/;
 const LANGUAGE_PATH = /(?:^|\/)([A-Za-z0-9]{3})\/([A-Za-z0-9])\/gamedb\.json$/;
 
@@ -17,16 +19,10 @@ export function deepMerge(base: unknown, override: unknown): unknown {
 
   const merged: Record<string, unknown> = { ...base };
   for (const key of Object.keys(override)) {
-    merged[key] = mergeField(base[key], override[key]);
+    merged[key] = deepMerge(base[key], override[key]);
   }
 
   return merged;
-}
-
-function mergeField(base: unknown, override: unknown): unknown {
-  if (base === undefined) return override;
-
-  return deepMerge(base, override);
 }
 
 /** Game fields from one file. `version` and `_source` stay on the file, not the entry. */
@@ -132,21 +128,11 @@ export function languageKey(path: string): string | null {
   return `${match[1].toUpperCase()}/${match[2].toUpperCase()}`;
 }
 
-const familyModules = import.meta.glob("./*/gamedb.json", {
-  eager: true,
-  import: "default",
-});
-
-const languageModules = import.meta.glob("./*/*/gamedb.json", {
-  eager: true,
-  import: "default",
-});
-
 export function loadGameDb(): LoadedDb {
   return assemble(modulesBy(familyModules, familyPrefix), modulesBy(languageModules, languageKey));
 }
 
-function modulesBy(
+export function modulesBy(
   modules: Record<string, unknown>,
   keyOf: (path: string) => string | null,
 ): Record<string, unknown> {

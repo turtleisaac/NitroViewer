@@ -63,6 +63,33 @@ describe("cipher direction precedence", () => {
     expect(dir("ZZZJ", 4)).toBe("front-to-back");
     expect(resolveRenderHintsIn(conflictDb, "ZZZJ", "/conflict.narc", 9)?.scanned).toBe(true);
   });
+
+  it("skips a negative index, ciphers every entry when there is no modulus, and ignores a non-positive modulus", () => {
+    const source = {
+      version: 1,
+      games: {
+        CPUE: {
+          title: "Exact",
+          narcs: {
+            "/every.narc": { cipher: { scanDirection: "back-to-front" as const } },
+            "/none.narc": {
+              render: { scanDirection: "front-to-back" as const },
+              cipher: { indexMod: -5, scanDirection: "back-to-front" as const },
+            },
+            "/zero.narc": {
+              render: { scanDirection: "front-to-back" as const },
+              cipher: { indexMod: 0, scanDirection: "back-to-front" as const },
+            },
+          },
+        },
+      },
+    };
+
+    expect(resolveRenderHintsIn(source, "CPUE", "/every.narc", 0)?.scanned).toBe(true);
+    expect(resolveRenderHintsIn(source, "CPUE", "/every.narc", -1)).toBeNull();
+    expect(resolveRenderHintsIn(source, "CPUE", "/none.narc", 0)?.scanDirection).toBe("front-to-back");
+    expect(resolveRenderHintsIn(source, "CPUE", "/zero.narc", 0)?.scanDirection).toBe("front-to-back");
+  });
 });
 
 describe("resolveRenderHints", () => {
@@ -91,6 +118,7 @@ describe("resolveNarcInfo", () => {
   });
   it("returns null when the NARC isn't in the manifest", () => {
     expect(resolveNarcInfo("CPUE", "/whatever.narc")).toBeNull();
+    expect(resolveNarcInfo("ABCD", "/whatever.narc")).toBeNull();
   });
 });
 

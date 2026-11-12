@@ -6,6 +6,7 @@ import {
   gameBody,
   languageKey,
   loadGameDb,
+  modulesBy,
   winningKey,
 } from "./load";
 
@@ -128,7 +129,12 @@ describe("assemble", () => {
   it("ignores a file that is not a game object", () => {
     const db = assemble(
       { CPU: "nope", IPK: { title: "HeartGold" } },
-      { CPU: { title: "bad id" }, "NOPE/EE": { title: "bad letter" }, "IPK/E": "nope" },
+      {
+        CPU: { title: "bad id" },
+        "NOPE/E": { title: "long prefix" },
+        "CPU/EE": { title: "long letter" },
+        "IPK/E": "nope",
+      },
     );
 
     expect(db.version).toBe(1);
@@ -229,11 +235,18 @@ describe("shipped families", () => {
 describe("folder paths", () => {
   it("reads a family prefix and a language letter", () => {
     expect(familyPrefix("./CPU/gamedb.json")).toBe("CPU");
+    expect(familyPrefix("CPU/gamedb.json")).toBe("CPU");
     expect(familyPrefix("./cpu/gamedb.json")).toBe("CPU");
     expect(familyPrefix("./CPU/E/gamedb.json")).toBeNull();
+    expect(familyPrefix("CPU/gamedb.json.bak")).toBeNull();
     expect(languageKey("./CPU/E/gamedb.json")).toBe("CPU/E");
+    expect(languageKey("CPU/E/gamedb.json")).toBe("CPU/E");
     expect(languageKey("./cpu/e/gamedb.json")).toBe("CPU/E");
     expect(languageKey("./CPU/gamedb.json")).toBeNull();
     expect(languageKey("./CPU/EE/gamedb.json")).toBeNull();
+    expect(languageKey("CPU/E/gamedb.json.bak")).toBeNull();
+    expect(modulesBy({ "CPU/gamedb.json": { title: "P" }, "nope.json": { title: "x" } }, familyPrefix)).toEqual({
+      CPU: { title: "P" },
+    });
   });
 });
