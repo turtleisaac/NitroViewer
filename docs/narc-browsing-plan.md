@@ -127,8 +127,73 @@ Small PRs, each one passing the gates:
 2. The drawer and cycling.
 3. Tabs for nested NARCs.
 4. Bookmarks.
+5. Group mode, once the drawer and the grid are in place.
 
 Split a step further if a smaller cut shows up while doing the work.
+
+## Group mode (later)
+
+List mode is the grid above, one cell per subfile. Group mode is a second layout of that grid, switched
+with a List/Group toggle. It uses the associations the game DB already has. `HANDOFF.md` §8 is the
+write-up. The code is `web/src/state/grouping.ts` and `web/src/gamedb/gamedb.json`.
+
+`resolveSpriteUnit` loads the NARC's `grouping` and `groupUnit` returns one `SpriteUnit` for the clicked
+index. A grouping is `lockstep` or `interleaved`, plus an `order` of formats. Members share the open
+NARC's container. Trainer archives use `["NCGR", "NCLR", "NCER", "NANR", "NCGR"]`. Battle sprites use four
+`NCGR` and two `NCLR`. A repeated format keeps a single slot: the first one, then the clicked file for its
+own role. `nextSpritePair` in `spriteViewerLogic.ts` takes that unit, then `pickSibling` in `pairing.ts`.
+`nextSpritePair` has no row in the CRAP baseline.
+
+Nothing maps a file back to every group that contains it. `groupUnit` answers one index with one unit.
+`NarcEntryDef.sets` is typed `unknown[]` and nothing reads it. §8 describes cross-NARC sets (a model and
+its texture in different archives) and a `resolveUnit` function; §9 says that resolver is still unbuilt.
+The only `sets` data is the Platinum `/arc/manene.narc` stub (NSBMD + NSBCA, `align: by-name`). Java
+`GameDb` reads scan direction (`frontToBack`, `scanDirection`) and does not group files.
+
+Group mode asks `groupUnit` for every unit in the open NARC, then builds the missing file-to-groups index.
+A shared palette, NCER, NANR, or texture is a member of each unit that names it.
+
+A group cell shows a preview, the member count, and a name when the manifest has one. A unit has no name
+today. The NARC has a `role`, from `resolveNarcInfo`. With no unit name, the cell shows the formats and
+the index span.
+
+A file that sits in several cells gets a shared-file badge. Hovering that file highlights every group
+cell that contains it.
+
+Files in no unit go in an Ungrouped section, as single cells, and open the way a list cell opens. A NARC
+with no `grouping` stays on the list.
+
+A group click opens the drawer on that group. A sprite unit uses `SpriteViewer`. A model set uses
+`ModelViewer` once the §8 sets resolver exists. The drawer lists the members, and choosing one opens that
+file. Left and Right cycle groups.
+
+A group bookmark stores the NARC path and the member indexes, keyed by `romInfo.gameCode`, with no ROM
+bytes. The List/Group choice is one localStorage value, stored the same way as the drawer height
+(`nitroviewer.treeWidth`).
+
+These functions are where the change belongs. Split and test what it touches. Baseline CRAP:
+
+| Function | Path | CRAP |
+| --- | --- | --- |
+| `NarcBrowser` | `web/src/components/NarcBrowser.tsx` | 930 |
+| `groupUnit` | `web/src/state/grouping.ts` | 10.6592 |
+| `resolveSpriteUnit` | `web/src/state/grouping.ts` | 3 |
+| `SpriteViewer` | `web/src/components/SpriteViewer.tsx` | 23256 |
+| `ModelViewer` | `web/src/components/ModelViewer.tsx` | 5557.6802 |
+| `InspectorPane` | `web/src/components/InspectorPane.tsx` | 702 |
+| `TreePane` | `web/src/components/TreePane.tsx` | 240 |
+| `pickSibling` | `web/src/state/pairing.ts` | 5.0488 |
+
+`pickAnimByName` (3) and `pickNearestAfter` (3), both in `pairing.ts`, are the model-name fallback. Group
+mode uses them only when a model group has no `sets` entry.
+
+Open questions:
+
+- Whether a NARC the manifest does not group stays as the list, or `pickSibling` invents groups for it.
+- Whether cross-NARC sets belong on this toggle. A model and its texture are often in different NARCs, so
+  that cell waits on the §8 resolver.
+- How a bookmark names a group when members are shared and the DB has no unit id.
+- What the preview shows for a group that has no composite viewer.
 
 ## Open questions
 
