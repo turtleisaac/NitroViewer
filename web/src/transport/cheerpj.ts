@@ -697,7 +697,7 @@ export class CheerpjTransport implements NitroViewerClient {
     handle: number,
     nclr: ResourceRef,
     imageBytes: Uint8Array
-  ): Promise<{ ok: boolean; colors: number; unique: number }> {
+  ): Promise<{ ok: boolean; colors: number; unique: number; bySwatch: boolean }> {
     const signed = new Int8Array(imageBytes.buffer, imageBytes.byteOffset, imageBytes.byteLength);
     return this.enqueue(async () =>
       unwrap(await this.f.importPalette(handle, nclr.container, nclr.id, signed))

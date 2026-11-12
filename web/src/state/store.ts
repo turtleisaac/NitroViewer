@@ -122,7 +122,7 @@ interface AppState {
     bytes: Uint8Array
   ) => Promise<PngImportResult>;
   saveRom: () => Promise<void>;
-  importPalette: (nclr: ResourceRef, bytes: Uint8Array) => Promise<{ colors: number; unique: number }>;
+  importPalette: (nclr: ResourceRef, bytes: Uint8Array) => Promise<{ colors: number; unique: number; bySwatch: boolean }>;
   setPaletteColors: (nclr: ResourceRef, colors: string[]) => Promise<{ colors: number; changed: number }>;
   setNcgrPixels: (
     ncgr: ResourceRef,

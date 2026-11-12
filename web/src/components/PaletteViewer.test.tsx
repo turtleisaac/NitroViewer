@@ -19,7 +19,7 @@ describe("PaletteViewer", () => {
 
   it("edits a swatch and saves or cancels", async () => {
     const setPaletteColors = vi.fn(() => Promise.resolve({ colors: 2, changed: 1 }));
-    const importPalette = vi.fn(async () => ({ unique: 2, colors: 2 }));
+    const importPalette = vi.fn(async () => ({ unique: 2, colors: 2, bySwatch: false }));
     useStore.setState({
       romHandle: 1,
       editVersion: 1,
