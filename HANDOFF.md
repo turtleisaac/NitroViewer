@@ -630,6 +630,8 @@ manifest stub" dev action. The **D/P battle-sprite scan direction** fix already 
 (`editVersion` re-decodes every viewer after any import). Remaining: the NANR import edits the frame's *cell*
 (cell-sized image), not the transformed frame canvas — functional but slightly indirect.
 
+**NARC browsing, cycling, and bookmarks:** [docs/narc-browsing-plan.md](docs/narc-browsing-plan.md).
+
 **Tech debt — mobile/iOS header crowding.** The write-half controls added to the top bar (Undo/Redo,
 Save ROM, dirty badge, status) have made the header cramped on narrow screens and worsened the already-shaky
 iOS layout. Needs a responsive pass: collapse Undo/Redo to icon-only (or an overflow/"⋯" menu) below a
