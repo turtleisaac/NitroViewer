@@ -2,6 +2,15 @@ import { useEffect, useRef, useState } from "react";
 import { useStore } from "../state/store";
 import { refKey, type NarcEntry, type ResourceRef } from "../transport";
 import { base64ToBytes, download, exportFileName } from "../util";
+import {
+  acceptsDrop,
+  DRAG_MIME,
+  getCachedDragOut,
+  overwriteWithDraggedFile,
+  overwriteWithOsFile,
+  prepareDragOutBlob,
+  type DragPayload,
+} from "./dnd";
 
 export function NarcBrowser() {
   const selection = useStore((s) => s.selection)!;
@@ -13,6 +22,10 @@ export function NarcBrowser() {
   const importNarcZip = useStore((s) => s.importNarcZip);
   const narcs = useStore((s) => s.narcs);
   const editVersion = useStore((s) => s.editVersion);
+  const windowId = useStore((s) => s.windowId);
+  const narcPathOf = useStore((s) => s.narcPathOf);
+  const dragHoverKey = useStore((s) => s.dragHoverKey);
+  const setDragHoverKey = useStore((s) => s.setDragHoverKey);
   const [state, setState] = useState<{ narcHandle: number; entries: NarcEntry[] } | null>(null);
   const [err, setErr] = useState<string>();
   const [busy, setBusy] = useState<number | null>(null); // index currently exporting/importing
@@ -54,6 +67,12 @@ export function NarcBrowser() {
 
   // Read entries from the store so a per-entry import (which re-lists the NARC) refreshes the grid.
   const entries = narcs[state.narcHandle]?.entries ?? state.entries;
+  const narcPath = narcPathOf(state.narcHandle) ?? selection.name;
+
+  // A display "location" for each entry: NARCs are index-addressed, not name-addressed, so there's no
+  // real filename to hang a path off — narcPath (above) is the containing NARC's own FNT path for a
+  // top-level NARC, falling back to its selection name for a nested NARC.
+  const entryPath = (index: number) => `${narcPath}#${index}`;
 
   const exportEntry = async (e: NarcEntry) => {
     setBusy(e.index);
@@ -125,39 +144,86 @@ export function NarcBrowser() {
         </span>
       </div>
       <div className="narc-grid">
-        {entries.map((e) => (
-          <div key={e.index} className="narc-item">
-            <button
-              className="narc-open"
-              onClick={() => void select({ container: state.narcHandle, id: e.index }, `${selection.name} : #${e.index}`)}
+        {entries.map((e) => {
+          const ref = { container: state.narcHandle, id: e.index };
+          const path = entryPath(e.index);
+          const dragHover = dragHoverKey === refKey(ref);
+          return (
+            <div
+              key={e.index}
+              className={"narc-item" + (dragHover ? " drag-hover" : "")}
+              title={path}
+              draggable={windowId != null}
+              onDragStart={(ev) => {
+                if (windowId == null) return;
+                ev.dataTransfer.effectAllowed = "copy";
+                const payload: DragPayload = { sourceWindowId: windowId, ref, path };
+                ev.dataTransfer.setData(DRAG_MIME, JSON.stringify(payload));
+                const cached = getCachedDragOut(ref);
+                if (cached) {
+                  ev.dataTransfer.setData("DownloadURL", `application/octet-stream:${cached.filename}:${cached.url}`);
+                }
+                prepareDragOutBlob(ref, `#${e.index}`); // primes the cache for next time either way
+              }}
+              onDragOver={(ev) => {
+                if (!acceptsDrop(ev)) return;
+                ev.preventDefault();
+                ev.dataTransfer.dropEffect = "copy";
+              }}
+              onDragEnter={(ev) => {
+                if (!acceptsDrop(ev)) return;
+                ev.preventDefault();
+                setDragHoverKey(refKey(ref));
+              }}
+              onDragLeave={(ev) => {
+                if (ev.currentTarget.contains(ev.relatedTarget as Node | null)) return;
+                if (useStore.getState().dragHoverKey === refKey(ref)) setDragHoverKey(null);
+              }}
+              onDrop={(ev) => {
+                if (!acceptsDrop(ev)) return;
+                ev.preventDefault();
+                setDragHoverKey(null);
+                if (ev.dataTransfer.types.includes(DRAG_MIME)) {
+                  const raw = ev.dataTransfer.getData(DRAG_MIME);
+                  if (raw) void overwriteWithDraggedFile(JSON.parse(raw) as DragPayload, ref, path);
+                  return;
+                }
+                const osFile = ev.dataTransfer.files[0];
+                if (osFile) void overwriteWithOsFile(osFile, ref, path, e.format);
+              }}
             >
-              <span className="narc-idx">#{e.index}</span>
-              <span className={"badge" + (e.format ? " badge--fmt" : "")}>{e.format || "raw"}</span>
-              <span className="narc-size">{e.size}B</span>
-            </button>
-            <span className="narc-actions">
               <button
-                className="icon-btn"
-                title="Extract this file (decompressed)"
-                disabled={busy != null}
-                onClick={() => void exportEntry(e)}
+                className="narc-open"
+                onClick={() => void select({ container: state.narcHandle, id: e.index }, `${selection.name} : #${e.index}`)}
               >
-                {busy === e.index ? "…" : "↓"}
+                <span className="narc-idx">#{e.index}</span>
+                <span className={"badge" + (e.format ? " badge--fmt" : "")}>{e.format || "raw"}</span>
+                <span className="narc-size">{e.size}B</span>
               </button>
-              <button
-                className="icon-btn"
-                title="Replace this file's bytes"
-                disabled={busy != null}
-                onClick={() => {
-                  importTarget.current = { container: state.narcHandle, id: e.index };
-                  importRef.current?.click();
-                }}
-              >
-                ↑
-              </button>
-            </span>
-          </div>
-        ))}
+              <span className="narc-actions">
+                <button
+                  className="icon-btn"
+                  title="Extract this file (decompressed)"
+                  disabled={busy != null}
+                  onClick={() => void exportEntry(e)}
+                >
+                  {busy === e.index ? "…" : "↓"}
+                </button>
+                <button
+                  className="icon-btn"
+                  title="Replace this file's bytes"
+                  disabled={busy != null}
+                  onClick={() => {
+                    importTarget.current = { container: state.narcHandle, id: e.index };
+                    importRef.current?.click();
+                  }}
+                >
+                  ↑
+                </button>
+              </span>
+            </div>
+          );
+        })}
       </div>
       <input
         ref={importRef}

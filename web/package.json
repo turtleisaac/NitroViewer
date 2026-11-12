@@ -49,6 +49,14 @@
     },
     "artifactName": "${productName}-${version}-${os}-${arch}.${ext}",
     "icon": "electron/icon.png",
+    "fileAssociations": [
+      {
+        "ext": ["nds", "srl"],
+        "name": "Nintendo DS ROM",
+        "description": "Nintendo DS ROM image",
+        "role": "Editor"
+      }
+    ],
     "mac": {
       "category": "public.app-category.developer-tools",
       "hardenedRuntime": true,

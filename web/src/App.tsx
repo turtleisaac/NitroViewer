@@ -45,6 +45,48 @@ export function App() {
     void boot();
   }, [boot]);
 
+  // This window was opened via the OS (double-click/"Open With"/dropped on the dock icon on a
+  // .nds/.srl, or a second launch on Windows/Linux handed to us via second-instance) — open that ROM
+  // once CheerpJ has actually finished booting.
+  useEffect(() => {
+    if (!booted) return;
+    const path = window.nitroviewer?.startupFilePath;
+    if (!path) return;
+    void (async () => {
+      const res = await window.nitroviewer?.readFile(path);
+      if (!res) return;
+      if (!res.ok) {
+        alert(`Could not open "${path}": ${res.error}`);
+        return;
+      }
+      const bytes = res.bytes instanceof Uint8Array ? res.bytes : new Uint8Array(res.bytes);
+      await useStore.getState().openRomBytes(res.name, bytes);
+    })();
+  }, [booted]);
+
+  // This window's id, used to tag files it drags out so the target window's drop handler knows
+  // which window's CheerpJ session to ask for the bytes (see requestDraggedFile below).
+  useEffect(() => {
+    window.nitroviewer?.getWindowId().then((id) => useStore.getState().setWindowId(id));
+  }, []);
+
+  // Serve raw bytes for a file (ROM-level or a NARC sub-file) another window is dragging from THIS
+  // window. The dragged ResourceRef crosses via HTML5 DataTransfer and is valid directly in this
+  // window's own session (container/id, no lookup needed) — the bytes are fetched here, on demand,
+  // once the drop is confirmed, so an unconfirmed or cancelled drag never touches the ROM.
+  useEffect(() => {
+    return window.nitroviewer?.onProvideDraggedFile(async ({ requestId, ref }) => {
+      const st = useStore.getState();
+      try {
+        if (st.romHandle == null) throw new Error("No ROM open in this window.");
+        const r = await st.client.exportRaw(st.romHandle, ref);
+        window.nitroviewer?.replyDraggedFile({ requestId, ok: true, base64: r.base64 });
+      } catch (err) {
+        window.nitroviewer?.replyDraggedFile({ requestId, ok: false, error: (err as Error).message });
+      }
+    });
+  }, []);
+
   // Drag the divider to resize the file browser column (desktop only). clientX is measured from the
   // viewport's left edge, which is where the column starts, so it maps directly to the column width.
   useEffect(() => {
@@ -95,6 +137,11 @@ export function App() {
       );
     }
     return true;
+  }
+
+  async function onNewWindowClick() {
+    const result = await window.nitroviewer?.newWindow();
+    if (result && !result.ok) console.error("Failed to open new window:", result.error);
   }
 
   async function onOpenClick(at: "top" | "empty") {
@@ -228,6 +275,15 @@ export function App() {
                 {saving ? "Saving…" : "Save ROM"}
               </button>
             </>
+          )}
+          {window.nitroviewer?.newWindow && (
+            <button
+              className="btn"
+              title="Open a new NitroViewer window to compare ROMs side by side"
+              onClick={() => void onNewWindowClick()}
+            >
+              New Window
+            </button>
           )}
           <div className="open-wrap" ref={topOpenRef}>
             <button

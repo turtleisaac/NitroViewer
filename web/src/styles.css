@@ -118,6 +118,7 @@ body { background: var(--bg); color: var(--text); font-size: 13px; }
 }
 .tree-row:hover { background: var(--bg-2); }
 .tree-row.selected { background: #24304f; color: #fff; }
+.tree-row.drag-hover { outline: 2px solid var(--accent); outline-offset: -2px; background: var(--bg-2); }
 .tree-row.folder { position: relative; }
 .tree-extract {
   position: absolute; right: 5px; top: 50%; transform: translateY(-50%);
@@ -185,6 +186,7 @@ body { background: var(--bg); color: var(--text); font-size: 13px; }
   color: var(--text); transition: border-color .12s, background .12s;
 }
 .narc-item:hover { border-color: var(--accent); background: var(--bg-2); }
+.narc-item.drag-hover { outline: 2px solid var(--accent); outline-offset: -2px; background: var(--bg-2); }
 .narc-open {
   display: flex; flex-direction: column; align-items: flex-start; gap: 5px;
   background: none; border: 0; padding: 9px 10px; cursor: pointer; text-align: left; color: inherit; width: 100%;

@@ -5,10 +5,21 @@
 
 const fs = require("fs");
 const path = require("path");
-const { app, BrowserWindow, dialog, ipcMain, net, shell } = require("electron");
+const { app, BrowserWindow, dialog, ipcMain, net, session, shell } = require("electron");
 const { startServer, cheerpjDir } = require("./serve.cjs");
 
-let mainWindow = null;
+// Every open window shares the one static server (it's read-only, so concurrent
+// GET/HEAD from multiple renderers is safe) but NOT the one Chromium profile: the
+// first window keeps the app's default persistent session (preserves the CheerpJ
+// cache across restarts), while every window after that gets its own uniquely
+// named in-memory session. Named partitions without a "persist:" prefix are
+// isolated, disk-free sessions, so side-by-side windows can never race on the same
+// on-disk IndexedDB/LevelDB files — that race (not port clashes; the local server
+// already binds an ephemeral port per launch) is the actual danger of naively
+// dropping the single-instance lock.
+const windows = new Set();
+let lastFocusedWindow = null;
+let windowsCreated = 0;
 let server = null;
 let origin = null;
 
@@ -21,7 +32,21 @@ function iconPath() {
   return path.join(__dirname, "icon.png");
 }
 
-async function createWindow() {
+const ROM_EXTENSIONS = new Set([".nds", ".srl"]);
+const OPEN_PATH_ARG_PREFIX = "--nitroviewer-open-path=";
+
+function isRomPath(p) {
+  return typeof p === "string" && ROM_EXTENSIONS.has(path.extname(p).toLowerCase());
+}
+
+// Windows/Linux hand the double-clicked/dragged-onto-the-icon file to us as a plain CLI arg (both at
+// cold start via process.argv and, if we're already running, via second-instance's argv) — macOS uses
+// the 'open-file' event instead, so this never matches on mac.
+function romPathFromArgv(argv) {
+  return argv.find((a) => isRomPath(a)) ?? null;
+}
+
+async function createWindow(openPath) {
   const root = webRoot();
   if (!fs.existsSync(path.join(root, "index.html"))) {
     dialog.showErrorBox(
@@ -46,6 +71,9 @@ async function createWindow() {
     origin = started.url;
   }
 
+  const partition = windowsCreated === 0 ? null : `nitroviewer-extra-${windowsCreated}`;
+  windowsCreated += 1;
+
   const win = new BrowserWindow({
     width: 1280,
     height: 800,
@@ -62,9 +90,17 @@ async function createWindow() {
       contextIsolation: true,
       sandbox: true,
       spellcheck: false,
+      ...(partition ? { session: session.fromPartition(partition) } : {}),
+      // Handed to the renderer's own process.argv (readable from the sandboxed preload script) rather
+      // than pushed over IPC after load — avoids a race against the renderer's listener not being
+      // registered yet; the renderer reads this once it's actually ready to open a ROM (booted).
+      ...(openPath ? { additionalArguments: [OPEN_PATH_ARG_PREFIX + openPath] } : {}),
     },
   });
-  mainWindow = win;
+  windows.add(win);
+  win.on("focus", () => {
+    lastFocusedWindow = win;
+  });
 
   win.once("ready-to-show", () => {
     win.show();
@@ -75,11 +111,16 @@ async function createWindow() {
     }
   });
   win.on("closed", () => {
-    if (mainWindow === win) mainWindow = null;
+    windows.delete(win);
+    if (lastFocusedWindow === win) lastFocusedWindow = null;
   });
-  win.on("page-title-updated", (event) => {
+  // The renderer sets document.title to "NitroViewer — <ROM name>" once a ROM is
+  // open, so side-by-side windows are distinguishable in the OS window list; any
+  // other title (e.g. the long static <title> from index.html) collapses back to
+  // the plain app name.
+  win.on("page-title-updated", (event, title) => {
     event.preventDefault();
-    win.setTitle("NitroViewer");
+    win.setTitle(title.startsWith("NitroViewer — ") ? title : "NitroViewer");
   });
 
   win.webContents.setWindowOpenHandler(({ url }) => {
@@ -289,25 +330,115 @@ ipcMain.handle("nitroviewer:pick-open", async (event) => {
   }
 });
 
+// Reads a ROM the OS handed us by path — a file association double-click/"Open With"/dock-icon drop
+// (this window's own startupFilePath, read from process.argv by preload.cjs) — into the same
+// {name, bytes} shape pickOpenDialog's single-file branch returns, so the renderer's existing
+// openRomBytes path handles it identically either way.
+ipcMain.handle("nitroviewer:read-file", (event, filePath) => {
+  try {
+    return { ok: true, name: path.basename(filePath), bytes: fs.readFileSync(filePath) };
+  } catch (err) {
+    return { ok: false, error: String(err && err.message ? err.message : err) };
+  }
+});
+
+ipcMain.handle("nitroviewer:new-window", async () => {
+  try {
+    await createWindow();
+    return { ok: true };
+  } catch (err) {
+    return { ok: false, error: String(err && err.message ? err.message : err) };
+  }
+});
+
+ipcMain.handle("nitroviewer:get-window-id", (event) => {
+  const win = BrowserWindow.fromWebContents(event.sender);
+  return win ? win.id : null;
+});
+
+// Cross-window drag-and-drop of a ROM file or NARC sub-file: the target window's <div> drop handler
+// already has the dropped file's ResourceRef (from the HTML5 DataTransfer payload set at dragstart),
+// but the actual bytes live only in the source window's renderer (its own CheerpJ/Nds4j session).
+// This relay bridges the request to that renderer and back, since two renderer processes can't share
+// memory directly. Keyed by requestId rather than a per-request channel name to keep the IPC
+// surface fixed and easy to reason about.
+const pendingDragReplies = new Map();
+
+ipcMain.on("nitroviewer:dragged-file-reply", (event, payload) => {
+  const pending = pendingDragReplies.get(payload.requestId);
+  if (pending) pending.finish(payload);
+});
+
+ipcMain.handle("nitroviewer:request-dragged-file", (event, { sourceWindowId, ref }) => {
+  const sourceWin = [...windows].find((w) => w.id === sourceWindowId && !w.isDestroyed());
+  if (!sourceWin) return Promise.resolve({ ok: false, error: "Source window is no longer open." });
+
+  const requestId = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+  return new Promise((resolve) => {
+    const finish = (result) => {
+      pendingDragReplies.delete(requestId);
+      clearTimeout(timer);
+      sourceWin.removeListener("closed", onClosed);
+      resolve(result);
+    };
+    const timer = setTimeout(
+      () => finish({ ok: false, error: "Timed out waiting for the source window to respond." }),
+      10000
+    );
+    const onClosed = () => finish({ ok: false, error: "Source window closed before completing the transfer." });
+    sourceWin.once("closed", onClosed);
+    pendingDragReplies.set(requestId, { finish });
+    sourceWin.webContents.send("nitroviewer:provide-dragged-file", { requestId, ref });
+  });
+});
+
 app.commandLine.appendSwitch("js-flags", "--max-old-space-size=4096");
 app.setName("NitroViewer");
+
+// macOS delivers a double-click/"Open With"/dock-icon-drop on an associated file via 'open-file' —
+// registered as early as possible (Electron's own recommendation) so a cold-start launch-by-file
+// isn't missed. If we're not ready yet, stash it for the first createWindow() below; if we're already
+// running, macOS routes 'open-file' straight to this process (no second OS process, so
+// requestSingleInstanceLock never even enters into it on mac) — open it in a new window.
+let pendingOpenPath = null;
+
+app.on("open-file", (event, filePath) => {
+  event.preventDefault();
+  if (!app.isReady()) {
+    pendingOpenPath = filePath;
+    return;
+  }
+  createWindow(filePath).catch((err) => console.error(err));
+});
 
 const gotLock = app.requestSingleInstanceLock();
 if (!gotLock) {
   app.quit();
 } else {
-  app.on("second-instance", () => {
-    if (!mainWindow) return;
-    if (mainWindow.isMinimized()) mainWindow.restore();
-    mainWindow.focus();
+  app.on("second-instance", (event, argv) => {
+    // Windows/Linux have no 'open-file' event: double-clicking another ROM launches a second OS
+    // process, which loses the lock and hands its argv to this one via this event instead.
+    const openPath = romPathFromArgv(argv);
+    if (openPath) {
+      createWindow(openPath).catch((err) => console.error(err));
+      return;
+    }
+    const target = lastFocusedWindow && !lastFocusedWindow.isDestroyed() ? lastFocusedWindow : [...windows][0];
+    if (!target) return;
+    if (target.isMinimized()) target.restore();
+    target.focus();
   });
-  app.whenReady().then(() => createWindow().catch((err) => {
-    console.error(err);
-    dialog.showErrorBox("NitroViewer", String(err && err.stack ? err.stack : err));
-    app.quit();
-  }));
+  app.whenReady().then(() => {
+    const openPath = pendingOpenPath ?? romPathFromArgv(process.argv);
+    pendingOpenPath = null;
+    createWindow(openPath ?? undefined).catch((err) => {
+      console.error(err);
+      dialog.showErrorBox("NitroViewer", String(err && err.stack ? err.stack : err));
+      app.quit();
+    });
+  });
   app.on("activate", () => {
-    if (BrowserWindow.getAllWindows().length === 0) {
+    if (windows.size === 0) {
       createWindow().catch((err) => console.error(err));
     }
   });

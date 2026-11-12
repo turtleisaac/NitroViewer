@@ -65,6 +65,13 @@ interface AppState {
   navOpen: boolean; // tree drawer open (only affects narrow screens)
   treeCollapsed: boolean; // file browser hidden on desktop (wide screens)
   treeWidth: number; // file browser column width in px on desktop (drag-resizable)
+  windowId: number | null; // this Electron window's id, for cross-window drag-and-drop
+  dragHoverKey: string | null; // refKey of the row currently under a cross-window file drag, for highlight
+  // A PNG dropped on an NCGR tree/NARC row: the drop handler selects the NCGR (mounting SpriteViewer)
+  // and stashes the bytes here rather than importing directly, so SpriteViewer's own onPngChosen path
+  // runs it through the exact same palette-pairing + dry-run/match-vs-rebuild prompts as a manual
+  // "Import PNG…" — see the pendingPngImport-consuming effect in SpriteViewer.tsx.
+  pendingPngImport: { ref: ResourceRef; bytes: Uint8Array } | null;
   revealPath: string | null; // folder path the tree should scroll into view
   revealTick: number; // bumped on each reveal so re-revealing the same folder still scrolls
   narcScroll: Record<number, number>; // narcHandle -> inspector scrollTop, so "back" restores the spot
@@ -95,6 +102,9 @@ interface AppState {
   setNavOpen: (open: boolean) => void;
   setTreeCollapsed: (collapsed: boolean) => void;
   setTreeWidth: (width: number) => void;
+  setWindowId: (id: number | null) => void;
+  setDragHoverKey: (key: string | null) => void;
+  setPendingPngImport: (v: { ref: ResourceRef; bytes: Uint8Array } | null) => void;
   revealFolder: (folderPath: string) => void;
   setNarcScroll: (narcHandle: number, top: number) => void;
   setPairingOverride: (key: string, partial: PairOverride) => void;
@@ -294,6 +304,9 @@ async function commitOpenRom(
 ) {
   const { client } = get();
   const [romInfo, tree] = await Promise.all([client.getRomInfo(handle), client.listTree(handle)]);
+  if (typeof document !== "undefined") {
+    document.title = `NitroViewer — ${romInfo.title.trim() || displayName}`;
+  }
   set({
     romHandle: handle,
     romInfo,
@@ -399,6 +412,9 @@ export const useStore = create<AppState>((set, get) => ({
   navOpen: false,
   treeCollapsed: loadTreeCollapsed(),
   treeWidth: loadTreeWidth(),
+  windowId: null,
+  dragHoverKey: null,
+  pendingPngImport: null,
   revealPath: null,
   revealTick: 0,
   narcScroll: {},
@@ -442,6 +458,12 @@ export const useStore = create<AppState>((set, get) => ({
   },
 
   setNavOpen: (open) => set({ navOpen: open }),
+
+  setWindowId: (id) => set({ windowId: id }),
+
+  setDragHoverKey: (key) => set({ dragHoverKey: key }),
+
+  setPendingPngImport: (v) => set({ pendingPngImport: v }),
 
   setTreeCollapsed: (collapsed) => {
     if (typeof localStorage !== "undefined") localStorage.setItem(TREE_COLLAPSED_KEY, collapsed ? "1" : "0");

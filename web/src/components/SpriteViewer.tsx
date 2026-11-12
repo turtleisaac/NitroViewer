@@ -117,6 +117,10 @@ export function SpriteViewer() {
   const ncers = useMemo(() => items.filter((i) => i.format === "NCER"), [items]);
 
   const [pair, setPair] = useState<{ ncgr?: ResourceRef; nclr?: ResourceRef; ncer?: ResourceRef }>({});
+  // Which selKey `pair` was last computed for — pair itself can't say "not settled yet" vs. "settled,
+  // genuinely no sibling" (both look like an undefined field), so pendingPngImport's consumer (below)
+  // needs this to know when it's actually safe to read pair.nclr instead of racing the auto-pair effect.
+  const [pairedForKey, setPairedForKey] = useState<string | null>(null);
   const [transparent, setTransparent] = useState(true);
   const [tilesWidth, setTilesWidth] = useState(0);
   const [scanFrontToBack, setScanFrontToBack] = useState(true); // scanned-NCGR direction (D/P = false)
@@ -163,6 +167,7 @@ export function SpriteViewer() {
       nclr: saved.nclr ?? unit?.nclr ?? pick(nclrs),
       ncer: saved.ncer ?? unit?.ncer ?? pick(ncers),
     });
+    setPairedForKey(selKey);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selKey, items]);
 
@@ -296,16 +301,17 @@ export function SpriteViewer() {
     download(`${base}.png`, base64ToBytes(image.png.split(",")[1]), "image/png");
   };
 
-  // Import an image over this NCGR. Dry-run first: if every pixel fits the current palette, apply the
+  // Import PNG bytes over this NCGR. Dry-run first: if every pixel fits the current palette, apply the
   // match immediately; otherwise surface the match-vs-rebuild choice with the unmatched-pixel count.
-  const onPngChosen = async (file: File) => {
+  // Shared by the manual file-picker (onPngChosen) and a PNG dropped on this NCGR's tree/NARC row
+  // (pendingPngImport, consumed below) — same prompts and rules either way.
+  const importPngBytes = async (bytes: Uint8Array) => {
     if (!pair.nclr) {
       alert("Pick a palette (NCLR) first — the import needs one to match colors against.");
       return;
     }
     setImpBusy(true);
     try {
-      const bytes = new Uint8Array(await file.arrayBuffer());
       const dry = await importPng(selection.ref, pair.nclr, paletteIndex, tilesWidth, false, true, bytes);
       if (dry.unmatched === 0) {
         await importPng(selection.ref, pair.nclr, paletteIndex, tilesWidth, false, false, bytes);
@@ -318,6 +324,25 @@ export function SpriteViewer() {
       setImpBusy(false);
     }
   };
+
+  const onPngChosen = async (file: File) => {
+    await importPngBytes(new Uint8Array(await file.arrayBuffer()));
+  };
+
+  // A PNG was dropped directly on this NCGR's row in the tree/NARC browser (dnd.ts, overwriteWithOsFile)
+  // instead of picked via the file input. Wait for pairedForKey to catch up to selKey — pair.nclr is
+  // only trustworthy once the auto-pair effect above has actually run for THIS selection, since a
+  // fresh selection briefly still shows the previous file's (or the default empty) pair.
+  const pendingPngImport = useStore((s) => s.pendingPngImport);
+  const setPendingPngImport = useStore((s) => s.setPendingPngImport);
+  useEffect(() => {
+    if (fmt !== "NCGR" || pairedForKey !== selKey) return;
+    if (!pendingPngImport || refKey(pendingPngImport.ref) !== selKey) return;
+    const bytes = pendingPngImport.bytes;
+    setPendingPngImport(null);
+    void importPngBytes(bytes);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [fmt, selKey, pairedForKey, pendingPngImport]);
 
   // Import a background image over this NSCR — decomposes it into the paired NCGR tileset + this tilemap
   // (and the NCLR when rebuilding). Dry-run first: if every color fits, apply the match; else prompt.
