@@ -1,0 +1,6 @@
+{
+  "narcs": {
+    "/conflict.narc": { "render": { "tileWidth": 32 } },
+    "/added.narc": { "render": { "scanDirection": "back-to-front" } }
+  }
+}

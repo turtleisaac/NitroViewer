@@ -58,7 +58,7 @@ and Save ROM. What's left (asset encoders, the per-game manifest, polish) is sna
   theoretical), for **Play and seeking too**, skipping the WAV render entirely. Export WAV still always
   renders (inherent to exporting audio) and warns first for a demanding sequence. See §9 for the details
   and the open follow-ups.
-- **Game DB (§8) — built:** `state/grouping.ts` + `gamedb/gamedb.json`, manifest-first with `pairing.ts`
+- **Game DB (§8) — built:** `state/grouping.ts` + `gamedb/<PREFIX>/gamedb.json` (language overrides in `<PREFIX>/<L>/`), manifest-first with `pairing.ts`
   fallback: a **"◆ Game DB" badge**, render hints, and declared groupings, sourced from PokEditor-Core's
   sprite-NARC layouts. Drives model↔NSBCA pairing **by clip name** and the **D/P battle-sprite scan
   direction** fix (they decode as garbled static otherwise).
@@ -394,7 +394,7 @@ Right now the facade doesn't store that link.
 - `web/src/`
   - `transport/{types,cheerpj,index}.ts` — client interface + CheerpJ transport.
   - `state/store.ts` — zustand store (dirty/undo/redo, all `import*` actions); `state/pairing.ts` (+ by-name
-    anim pairing); **`state/grouping.ts` + `gamedb/gamedb.json`** — the game DB (§8); `*.test.ts` for both.
+    anim pairing); **`state/grouping.ts` + `gamedb/<PREFIX>/gamedb.json`** — the game DB (§8); `*.test.ts` for both.
   - `components/` — `InspectorPane` (format→viewer router + header Import/Export), `SpriteViewer`
     (NCGR/NSCR/NCER/NANR view **+ import**), `PaletteViewer`, `TextureViewer`, `ModelViewer` (3D + tracks +
     OBJ import + grid), `ParticleViewer`, `NarcBrowser` (per-entry + folder-zip), `TreePane` (search + folder
@@ -428,7 +428,7 @@ The whole point: **clicking a NANR resolves to exactly the NCGR + NCLR + NCER (a
 load — no guessing.**
 
 ### Where it lives / how it plugs in
-- Frontend data: `web/src/gamedb/*.json` (one file per game, or a bundled `gamedb.json`), loaded at boot
+- Frontend data: `web/src/gamedb/<PREFIX>/gamedb.json`, plus `web/src/gamedb/<PREFIX>/<L>/gamedb.json` when a language differs, loaded at boot
   and cached. It's pure data behind the transport, so an HTTP backend could serve it later unchanged.
 - A resolver — `web/src/state/grouping.ts` — exposes `resolveUnit(gameCode, narcPath, ref): AssetUnit | null`.
   The store consults it in `select()` / the viewers' auto-pair effects **before** `pairing.ts`. When it
@@ -560,7 +560,7 @@ palette import, ✅ raw extract/replace of any file (`exportFile`), ✅ whole-NA
   folder extract uses base64-in-JSON — fine for subtrees, heavy for a full 100 MB+ ROM).
 
 **✅ Per-game asset manifest / "game DB" (§8) — built.** `state/grouping.ts` (`resolveGame`/`resolveNarcInfo`/
-`resolveRenderHints`/`resolveSpriteUnit`+`groupUnit`) + `gamedb/gamedb.json`, keyed by game code with `*`
+`resolveRenderHints`/`resolveSpriteUnit`+`groupUnit`) + `gamedb/<PREFIX>/gamedb.json`, keyed by game code with `*`
 wildcards. **Manifest-first, `pairing.ts` heuristic-fallback.** Wired into SpriteViewer: a **"◆ Game DB"
 badge**, render hints (transparent/scanned/tileWidth/paletteIndex) seed the view, and declared groupings
 resolve the sibling unit. Seeded with Platinum trainer/pokemon sprite NARCs (`grouping.test.ts` covers the

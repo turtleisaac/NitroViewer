@@ -7,18 +7,21 @@ package com.nitroviewer.core;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.node.ObjectNode;
 
 import java.io.IOException;
 import java.io.InputStream;
+import java.util.HashMap;
 import java.util.Iterator;
+import java.util.Map;
 
 /**
- * The shipped <code>gamedb.json</code>. One file, read by the web app and by this jar.
+ * Family and language game-db files. The web app reads the same folders.
  */
 final class GameDb
 {
     private static final ObjectMapper MAPPER = new ObjectMapper();
-    private static JsonNode db;
+    private static final Map<String, JsonNode> FILES = new HashMap<String, JsonNode>();
 
 
     /** Not instantiated. */
@@ -27,16 +30,17 @@ final class GameDb
     }
 
 
-    /**
-     * Returns the scan direction <code>gamedb.json</code> declares for this entry
-     * @param gameCode a <code>String</code> game code
-     * @param narcPath a <code>String</code> FNT path, already normalised
-     * @param entryIndex an <code>int</code> index inside the NARC
-     * @return <code>Boolean.TRUE</code> for front-to-back, <code>Boolean.FALSE</code> for back-to-front, or <code>null</code> when the DB has no direction
-     */
+    /** Scan direction for one entry, from the family file plus a language override. */
     static Boolean frontToBack(String gameCode, String narcPath, int entryIndex)
     {
-        return frontToBack(load(), gameCode, narcPath, entryIndex);
+        return frontToBack(documentOrEmpty(gameCode), gameCode, narcPath, entryIndex);
+    }
+
+
+    /** Scan direction after merging one family document with one language document. */
+    static Boolean frontToBackFiles(String familyJson, String languageJson, String gameCode, String narcPath, int entryIndex)
+    {
+        return frontToBack(filesOrEmpty(familyJson, languageJson, gameCode), gameCode, narcPath, entryIndex);
     }
 
 
@@ -187,41 +191,215 @@ final class GameDb
     }
 
 
-    /** Loads <code>/gamedb.json</code> once. */
-    private static JsonNode load()
+    private static JsonNode documentOrEmpty(String gameCode)
     {
-        if (db != null)
-            return db;
+        JsonNode root = mergedDocument(gameCode);
+        if (root != null)
+            return root;
 
+        return MAPPER.createObjectNode();
+    }
+
+
+    private static JsonNode filesOrEmpty(String familyJson, String languageJson, String gameCode)
+    {
+        if (gameCode == null)
+            return MAPPER.createObjectNode();
+
+        JsonNode root = documentFor(gameCode.toUpperCase(), readFile(familyJson), readFile(languageJson));
+        if (root != null)
+            return root;
+
+        return MAPPER.createObjectNode();
+    }
+
+
+    private static JsonNode readFile(String json)
+    {
+        if (json == null)
+            return null;
+
+        return gameBody(read(json));
+    }
+
+
+    private static JsonNode mergedDocument(String gameCode)
+    {
+        if (gameCode == null)
+            return null;
+
+        String code = gameCode.toUpperCase();
+        if (code.length() < 3)
+            return null;
+
+        return documentFor(code, familyNode(code), languageFor(code));
+    }
+
+
+    private static JsonNode languageFor(String code)
+    {
+        if (code.length() != 4)
+            return null;
+
+        return languageNode(code);
+    }
+
+
+    private static JsonNode familyNode(String code)
+    {
+        return gameBody(readResource("/" + code.substring(0, 3) + "/gamedb.json"));
+    }
+
+
+    private static JsonNode languageNode(String code)
+    {
+        String path = "/" + code.substring(0, 3) + "/" + code.charAt(3) + "/gamedb.json";
+        return gameBody(readResource(path));
+    }
+
+
+    private static JsonNode documentFor(String code, JsonNode family, JsonNode language)
+    {
+        if (code.length() < 3)
+            return null;
+
+        JsonNode exact = exactFrom(code, family, language);
+        if (family == null && exact == null)
+            return null;
+
+        ObjectNode root = MAPPER.createObjectNode();
+        ObjectNode games = root.putObject("games");
+        putFamily(games, code, family);
+        putExact(games, code, exact);
+
+        return root;
+    }
+
+
+    private static JsonNode exactFrom(String code, JsonNode family, JsonNode language)
+    {
+        if (code.length() != 4 || language == null)
+            return null;
+        if (family == null)
+            return language;
+
+        return deepMerge(family, language);
+    }
+
+
+    private static void putFamily(ObjectNode games, String code, JsonNode family)
+    {
+        if (family == null)
+            return;
+
+        games.set(code.substring(0, 3) + "*", family);
+    }
+
+
+    private static void putExact(ObjectNode games, String code, JsonNode exact)
+    {
+        if (exact == null)
+            return;
+
+        games.set(code, exact);
+    }
+
+
+    private static JsonNode gameBody(JsonNode file)
+    {
+        if (file == null || !file.isObject())
+            return null;
+
+        ObjectNode body = file.deepCopy();
+        body.remove("version");
+        body.remove("_source");
+
+        return body;
+    }
+
+
+    private static JsonNode deepMerge(JsonNode base, JsonNode override)
+    {
+        if (!base.isObject() || !override.isObject())
+            return override;
+
+        ObjectNode out = base.deepCopy();
+        Iterator<String> names = override.fieldNames();
+        while (names.hasNext())
+            copyField(out, base, override, names.next());
+
+        return out;
+    }
+
+
+    private static void copyField(ObjectNode out, JsonNode base, JsonNode override, String key)
+    {
+        JsonNode left = base.get(key);
+        JsonNode right = override.get(key);
+
+        if (left == null)
+            out.set(key, right);
+        else
+            out.set(key, deepMerge(left, right));
+    }
+
+
+    private static JsonNode readResource(String path)
+    {
         synchronized (GameDb.class)
         {
-            if (db != null)
-                return db;
+            if (FILES.containsKey(path))
+                return FILES.get(path);
 
-            InputStream in = GameDb.class.getResourceAsStream("/gamedb.json");
-            if (in == null)
-                throw new IllegalStateException("gamedb.json is not in the jar");
-            try
-            {
-                db = MAPPER.readTree(in);
-                if (db == null || !db.isObject())
-                    throw new IllegalStateException("gamedb.json is not an object");
-                return db;
-            }
-            catch (IOException e)
-            {
-                throw new IllegalStateException("could not read gamedb.json", e);
-            }
-            finally
-            {
-                try
-                {
-                    in.close();
-                }
-                catch (IOException ignored)
-                {}
-            }
+            JsonNode node = openResource(path);
+            FILES.put(path, node);
+            return node;
         }
+    }
+
+
+    private static JsonNode openResource(String path)
+    {
+        InputStream in = GameDb.class.getResourceAsStream(path);
+        if (in == null)
+            return null;
+
+        try
+        {
+            return readTree(in);
+        }
+        finally
+        {
+            close(in);
+        }
+    }
+
+
+    private static JsonNode readTree(InputStream in)
+    {
+        try
+        {
+            JsonNode node = MAPPER.readTree(in);
+            if (!node.isObject())
+                throw new IllegalStateException("gamedb.json is not an object");
+
+            return node;
+        }
+        catch (IOException e)
+        {
+            throw new IllegalStateException("could not read gamedb.json", e);
+        }
+    }
+
+
+    private static void close(InputStream in)
+    {
+        try
+        {
+            in.close();
+        }
+        catch (IOException ignored)
+        {}
     }
 
 

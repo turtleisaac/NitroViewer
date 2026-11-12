@@ -1,0 +1,59 @@
+{
+  "version": 1,
+  "_source": "Layouts/paths verified against PokEditor-Core (formats/pokemon_sprites/PokemonSpriteParser + gamedata/GameFiles) and the retail ROMs. Cipher directions follow DSPRE SpriteScrambling.",
+  "title": "Pokémon Platinum",
+  "narcs": {
+    "/poketool/pokegra/pl_pokegra.narc": {
+      "role": "pokemon-battle-sprites",
+      "comment": "494 species × 6 files: femaleBack, maleBack, femaleFront, maleFront, palette, shinyPalette. Each NCGR is 160×80 = two 80×80 idle-animation frames (correct, not doubled). Pt/HG/SS scan front-to-back, which the decoder already does — no render fix needed here.",
+      "grouping": { "strategy": "interleaved", "order": ["NCGR", "NCGR", "NCGR", "NCGR", "NCLR", "NCLR"] },
+      "render": { "scanDirection": "front-to-back" }
+    },
+    "/poketool/pokegra/pl_otherpoke.narc": {
+      "role": "pokemon-alt-sprites",
+      "comment": "Cipher walks front-to-back.",
+      "render": { "scanDirection": "front-to-back" }
+    },
+    "/poketool/pokegra/pokegra.narc": {
+      "role": "pokemon-battle-sprites-dp-copy",
+      "comment": "Diamond copy. Cipher walks back-to-front.",
+      "grouping": { "strategy": "interleaved", "order": ["NCGR", "NCGR", "NCGR", "NCGR", "NCLR", "NCLR"] },
+      "render": { "scanDirection": "back-to-front" }
+    },
+    "/poketool/pokegra/otherpoke.narc": {
+      "role": "pokemon-alt-sprites-dp-copy",
+      "comment": "Diamond copy. Cipher walks back-to-front.",
+      "render": { "scanDirection": "back-to-front" }
+    },
+    "/poketool/icongra/pl_poke_icon.narc": {
+      "role": "party-icons",
+      "comment": "7 leading files, then one 32×32 4bpp icon per species; palettes shared via an arm9 table.",
+      "render": { "tileWidth": 32, "bitDepth": 4 }
+    },
+    "/poketool/trgra/trfgra.narc": {
+      "role": "trainer-front-sprites",
+      "comment": "Five files per class. File 4, the scan, is ciphered front-to-back.",
+      "grouping": { "strategy": "interleaved", "order": ["NCGR", "NCLR", "NCER", "NANR", "NCGR"] },
+      "render": { "transparent": true },
+      "cipher": { "indexMod": 5, "indexRem": 4, "scanDirection": "front-to-back" }
+    },
+    "/poketool/trgra/trbgra.narc": {
+      "role": "trainer-back-sprites",
+      "comment": "Five files per class. File 4, the scan, is ciphered front-to-back.",
+      "grouping": { "strategy": "interleaved", "order": ["NCGR", "NCLR", "NCER", "NANR", "NCGR"] },
+      "render": { "transparent": true },
+      "cipher": { "indexMod": 5, "indexRem": 4, "scanDirection": "front-to-back" }
+    },
+    "/arc/manene.narc": {
+      "role": "field-model-set",
+      "sets": [
+        {
+          "role": "model-set",
+          "align": "by-name",
+          "members": { "model": { "format": "NSBMD" }, "anim": { "format": "NSBCA" } },
+          "render": { "unlit": true }
+        }
+      ]
+    }
+  }
+}

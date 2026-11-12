@@ -1,0 +1,28 @@
+{
+  "version": 1,
+  "_source": "Layouts/paths verified against PokEditor-Core (formats/pokemon_sprites/PokemonSpriteParser + gamedata/GameFiles) and the retail ROMs. Cipher directions follow DSPRE SpriteScrambling.",
+  "title": "Pokémon SoulSilver",
+  "narcs": {
+    "/a/0/0/4": {
+      "role": "pokemon-battle-sprites",
+      "grouping": { "strategy": "interleaved", "order": ["NCGR", "NCGR", "NCGR", "NCGR", "NCLR", "NCLR"] },
+      "render": { "scanned": true, "scanDirection": "front-to-back" }
+    },
+    "/a/1/1/4": { "role": "pokemon-alt-sprites", "render": { "scanDirection": "front-to-back" } },
+    "/pbr/pokegra.narc": { "role": "pokemon-battle-sprites-dp-copy", "render": { "scanDirection": "back-to-front" } },
+    "/pbr/otherpoke.narc": { "role": "pokemon-alt-sprites-dp-copy", "render": { "scanDirection": "back-to-front" } },
+    "/a/0/2/0": { "role": "party-icons", "render": { "tileWidth": 32, "bitDepth": 4 } },
+    "/a/0/5/8": {
+      "role": "trainer-front-sprites",
+      "grouping": { "strategy": "interleaved", "order": ["NCGR", "NCLR", "NCER", "NANR", "NCGR"] },
+      "render": { "transparent": true },
+      "cipher": { "indexMod": 5, "indexRem": 4, "scanDirection": "back-to-front" }
+    },
+    "/a/0/0/6": {
+      "role": "trainer-back-sprites",
+      "grouping": { "strategy": "interleaved", "order": ["NCGR", "NCLR", "NCER", "NANR", "NCGR"] },
+      "render": { "transparent": true },
+      "cipher": { "indexMod": 5, "indexRem": 4, "scanDirection": "back-to-front" }
+    }
+  }
+}

@@ -51,12 +51,13 @@ if [[ "$run_java" -eq 1 ]]; then
   prepare_nds4j "$root"
   while IFS= read -r pom; do
     echo "PIT: $pom"
+    # pitest reads target/classes and does not compile on its own.
     if [[ "$mode" == "changed" ]]; then
       joined="$(IFS=,; echo "${java_globs[*]}")"
-      mvn -B -ntp -f "$pom" "${MVN_NDS4J[@]}" org.pitest:pitest-maven:mutationCoverage \
+      mvn -B -ntp -f "$pom" "${MVN_NDS4J[@]}" test-compile org.pitest:pitest-maven:mutationCoverage \
         -DtargetClasses="$joined"
     else
-      mvn -B -ntp -f "$pom" "${MVN_NDS4J[@]}" org.pitest:pitest-maven:mutationCoverage
+      mvn -B -ntp -f "$pom" "${MVN_NDS4J[@]}" test-compile org.pitest:pitest-maven:mutationCoverage
     fi
   done < <(maven_poms "$root")
 fi

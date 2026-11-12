@@ -1,0 +1,26 @@
+{
+  "version": 1,
+  "_source": "Layouts/paths verified against PokEditor-Core (formats/pokemon_sprites/PokemonSpriteParser + gamedata/GameFiles) and the retail ROMs. Cipher directions follow DSPRE SpriteScrambling.",
+  "title": "Pokémon Pearl",
+  "narcs": {
+    "/poketool/pokegra/pokegra.narc": {
+      "role": "pokemon-battle-sprites",
+      "comment": "D/P scan back-to-front (see Diamond note) — needs scanDirection wired into decodeNcgr to render.",
+      "grouping": { "strategy": "interleaved", "order": ["NCGR", "NCGR", "NCGR", "NCGR", "NCLR", "NCLR"] },
+      "render": { "scanDirection": "back-to-front" }
+    },
+    "/poketool/pokegra/otherpoke.narc": { "role": "pokemon-alt-sprites", "render": { "scanDirection": "back-to-front" } },
+    "/poketool/trgra/trfgra.narc": {
+      "role": "trainer-front-sprites",
+      "grouping": { "strategy": "interleaved", "order": ["NCGR", "NCLR"] },
+      "render": { "transparent": true },
+      "cipher": { "indexMod": 2, "indexRem": 0, "scanDirection": "back-to-front" }
+    },
+    "/poketool/trgra/trbgra.narc": {
+      "role": "trainer-back-sprites",
+      "grouping": { "strategy": "interleaved", "order": ["NCGR", "NCLR"] },
+      "render": { "transparent": true },
+      "cipher": { "indexMod": 2, "indexRem": 0, "scanDirection": "back-to-front" }
+    }
+  }
+}
