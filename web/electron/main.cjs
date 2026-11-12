@@ -229,12 +229,26 @@ function walkFolder(dir, prefix, out) {
   }
 }
 
+// Mirrors NintendoDsRom.looksLikeUnpackedRom / DsRomUnpacked.isLayout: whether `dir` IS an unpacked
+// ROM root itself, as opposed to a folder that merely CONTAINS one (a "PokEditor project" rom/
+// folder, or one extra wrapping folder — both of which CheerpjFacade.findUnpackedRoot tolerates on
+// open). Only report `path` for save-in-place when this holds, so a later Save ROM never guesses
+// wrong and writes into the wrong directory — it just falls back to downloading instead.
+function looksLikeUnpackedRomRoot(dir) {
+  if (fs.existsSync(path.join(dir, "header.bin"))) return true;
+  if (fs.existsSync(path.join(dir, "config.yaml"))) return true;
+  if (!fs.existsSync(path.join(dir, "header.yaml"))) return false;
+  return fs.existsSync(path.join(dir, "files")) || fs.existsSync(path.join(dir, "arm9", "arm9.bin"));
+}
+
 function packPickedPath(picked) {
   const stat = fs.statSync(picked);
   if (stat.isDirectory()) {
     const files = [];
     walkFolder(picked, path.basename(picked), files);
-    return { kind: "folder", name: path.basename(picked), files };
+    const result = { kind: "folder", name: path.basename(picked), files };
+    if (looksLikeUnpackedRomRoot(picked)) result.path = picked;
+    return result;
   }
   return { kind: "file", name: path.basename(picked), bytes: fs.readFileSync(picked) };
 }
@@ -286,6 +300,28 @@ ipcMain.handle("nitroviewer:pick-open", async (event) => {
     return await pickOpenDialog(win);
   } catch (err) {
     return { canceled: true, error: String(err && err.message ? err.message : err) };
+  }
+});
+
+// Writes a freshly-serialized unpacked-ROM tree (from CheerpjFacade.saveUnpackedRom, unzipped in the
+// renderer) back into the real folder the user opened. Only overwrites/creates the given files —
+// never deletes anything else already in dirPath (see the plan's "non-destructive by default" note).
+ipcMain.handle("nitroviewer:write-unpacked", (event, { dirPath, files }) => {
+  try {
+    const root = path.resolve(dirPath) + path.sep;
+    let count = 0;
+    for (const f of files || []) {
+      const full = path.resolve(dirPath, f.path);
+      // Belt and suspenders: these paths originate from our own zip, but never trust a cross-process
+      // payload to stay inside dirPath without checking.
+      if (!full.startsWith(root)) throw new Error("illegal path in write-unpacked payload: " + f.path);
+      fs.mkdirSync(path.dirname(full), { recursive: true });
+      fs.writeFileSync(full, Buffer.from(f.data));
+      count++;
+    }
+    return { ok: true, count };
+  } catch (err) {
+    return { ok: false, error: String(err && err.message ? err.message : err) };
   }
 });
 

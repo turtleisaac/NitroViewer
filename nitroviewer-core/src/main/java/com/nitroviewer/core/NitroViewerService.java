@@ -33,9 +33,11 @@ public interface NitroViewerService
      * {@code overlay/}), a <a href="https://github.com/AetiasHax/ds-rom">ds-rom</a> extract
      * ({@code config.yaml}, {@code header.yaml}, {@code files/}, {@code arm9/arm9.bin}), a PokEditor
      * project ({@code rom/}), and a ZIP with one extra top-level folder. {@code len} echoes the
-     * received ZIP byte length, matching {@link #openRom}.
+     * received ZIP byte length, matching {@link #openRom}. {@code layout} is {@code "ndstool"} or
+     * {@code "dsrom"} — which of the two layouts was actually detected — so a later
+     * {@link #saveUnpackedRom} can write back in the same one.
      *
-     * @return {"ok":true,"handle":int,"len":int} | {"ok":false,"error":str,"len":int}
+     * @return {"ok":true,"handle":int,"len":int,"layout":str} | {"ok":false,"error":str,"len":int}
      */
     String openUnpackedRom(byte[] zipBytes);
 
@@ -195,6 +197,16 @@ public interface NitroViewerService
 
     /** @return the message from the most recent {@link #saveRom} failure, or "" if none. */
     String lastError();
+
+    /**
+     * Serialise the (possibly edited) ROM back out as an unpacked-folder tree, in the same layout
+     * ({@code "ndstool"} or {@code "dsrom"}, from {@link #openUnpackedRom}'s response) it was opened
+     * as. Returns a STORED (uncompressed) ZIP of that tree as a raw {@code byte[]} — same "one big
+     * binary, not JSON/base64" convention as {@link #saveRom} — for the frontend to unzip and write
+     * back into the folder the user originally opened.
+     * @return the ZIP bytes, or an empty array on failure (call {@link #lastError()} for the message)
+     */
+    byte[] saveUnpackedRom(int romHandle, String layout);
 
     /**
      * Import a PNG (or any {@link javax.imageio.ImageIO}-decodable image) over an existing NCGR sprite,

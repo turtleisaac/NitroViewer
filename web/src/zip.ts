@@ -144,3 +144,34 @@ export function zipStore(files: ZipFile[]): Uint8Array {
   ]);
   return concat([...locals, ...centrals, eocd]);
 }
+
+/**
+ * Read back a STORED (method 0) ZIP — the mirror of {@link zipStore}, and the only kind
+ * {@code CheerpjFacade.saveUnpackedRom}'s {@code zipDirectoryStored} produces. Since every entry's
+ * size/CRC is always known upfront (never streamed), this walks local file headers directly with no
+ * need for the central directory; it stops at the first non-local-header signature (the central
+ * directory that follows the last entry). Throws on a DEFLATEd entry or a CRC mismatch — this only
+ * ever reads zips this same codebase just produced, so either means real corruption.
+ */
+export function unzipStore(bytes: Uint8Array): ZipFile[] {
+  const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+  const files: ZipFile[] = [];
+  let offset = 0;
+  while (offset + 30 <= bytes.length && view.getUint32(offset, true) === 0x04034b50) {
+    const method = view.getUint16(offset + 8, true);
+    const crc = view.getUint32(offset + 14, true);
+    const compressedSize = view.getUint32(offset + 18, true);
+    const size = view.getUint32(offset + 22, true);
+    const nameLen = view.getUint16(offset + 26, true);
+    const extraLen = view.getUint16(offset + 28, true);
+    if (method !== 0) throw new Error("unzipStore: only STORED (uncompressed) zip entries are supported");
+    const nameStart = offset + 30;
+    const dataStart = nameStart + nameLen + extraLen;
+    const path = new TextDecoder().decode(bytes.subarray(nameStart, nameStart + nameLen));
+    const data = bytes.slice(dataStart, dataStart + size);
+    if (crc32(data) >>> 0 !== crc >>> 0) throw new Error(`unzipStore: CRC mismatch for ${path}`);
+    files.push({ path, data });
+    offset = dataStart + compressedSize;
+  }
+  return files;
+}

@@ -14,7 +14,7 @@ import {
   type TreeFolder,
 } from "../transport";
 import { base64ToBytes, download } from "../util";
-import { isSkippableUnpackedPath, zipStore } from "../zip";
+import { isSkippableUnpackedPath, unzipStore, zipStore } from "../zip";
 
 export interface ResourceItem {
   ref: ResourceRef;
@@ -54,6 +54,12 @@ interface AppState {
   romName: string;
   tree: TreeFolder | null;
   expanded: Set<string>;
+
+  // Set only when the open ROM came from an unpacked folder AND we know its real filesystem
+  // location (Electron's native folder picker) — lets Save ROM write back in place instead of
+  // downloading a fresh .nds. Layout is which of the two unpacked-folder formats it was opened as.
+  unpackedOrigin: { dirPath: string } | null;
+  unpackedLayout: "ndstool" | "dsrom" | null;
 
   narcs: Record<number, { ref: ResourceRef; entries: NarcEntry[] }>; // by narcHandle; ref = opened-from
   narcByRef: Record<string, number>; // refKey(opened-from) -> narcHandle (dedupes re-opens, incl. nested)
@@ -102,7 +108,12 @@ interface AppState {
   openRomBytes: (name: string, bytes: Uint8Array) => Promise<void>;
   /** Load via Nds4j {@code NintendoDsRom.fromUnpacked} (ndstool or ds-rom extract) from a folder picker. */
   openUnpackedFolder: (files: FileList | File[]) => Promise<void>;
-  openUnpackedEntries: (label: string, files: { path: string; data: Uint8Array }[]) => Promise<void>;
+  /** `origin` is only known for Electron's native folder picker; it enables Save ROM's write-in-place path. */
+  openUnpackedEntries: (
+    label: string,
+    files: { path: string; data: Uint8Array }[],
+    origin?: { dirPath: string }
+  ) => Promise<void>;
   toggleFolder: (path: string) => void;
   select: (ref: ResourceRef, name: string) => Promise<void>;
   ensureNarc: (ref: ResourceRef) => Promise<{ narcHandle: number; entries: NarcEntry[] }>;
@@ -300,6 +311,8 @@ async function commitOpenRom(
     tree,
     romName: displayName,
     expanded: new Set<string>(["/"]),
+    unpackedOrigin: null,
+    unpackedLayout: null,
     narcs: {},
     narcByRef: {},
     formats: {},
@@ -388,6 +401,8 @@ export const useStore = create<AppState>((set, get) => ({
   romName: "",
   tree: null,
   expanded: new Set<string>(["/"]),
+  unpackedOrigin: null,
+  unpackedLayout: null,
 
   narcs: {},
   narcByRef: {},
@@ -524,7 +539,7 @@ export const useStore = create<AppState>((set, get) => ({
     await get().openUnpackedEntries(unpackedFolderLabel(files), packed);
   },
 
-  openUnpackedEntries: async (label, packed) => {
+  openUnpackedEntries: async (label, packed, origin) => {
     if (!confirmDiscardDraft(get)) return;
     const { client } = get();
     const files = packed.filter((f) => !isSkippableUnpackedPath(f.path));
@@ -535,8 +550,9 @@ export const useStore = create<AppState>((set, get) => ({
     set({ loading: true, status: `Loading unpacked ROM ${label}…` });
     try {
       const zip = zipStore(files);
-      const { handle } = await client.openUnpackedRom(zip);
+      const { handle, layout } = await client.openUnpackedRom(zip);
       await commitOpenRom(get, set, handle, label);
+      set({ unpackedLayout: layout, unpackedOrigin: origin ?? null });
     } catch (e) {
       console.error("[openUnpackedFolder]", e);
       const msg = e instanceof Error ? e.message : (e as { message?: string })?.message ?? String(e);
@@ -787,14 +803,22 @@ export const useStore = create<AppState>((set, get) => ({
         window.alert("Save or cancel your palette/sprite edits before saving the ROM.");
       return;
     }
-    const { client, romHandle, romName } = get();
+    const { client, romHandle, romName, unpackedOrigin, unpackedLayout } = get();
     if (romHandle == null) throw new Error("no ROM open");
-    set({ saving: true, status: "Saving ROM…" });
+    set({ saving: true, status: unpackedOrigin ? "Saving to folder…" : "Saving ROM…" });
     try {
-      const bytes = await client.saveRom(romHandle);
-      const name = romName || "edited.nds";
-      download(name.replace(/(\.nds)?$/i, ".nds"), bytes);
-      set({ dirty: false, status: `Saved ${name} · ${bytes.length.toLocaleString()} B` });
+      if (unpackedOrigin) {
+        const zip = await client.saveUnpackedRom(romHandle, unpackedLayout ?? "ndstool");
+        const entries = unzipStore(zip);
+        const res = await window.nitroviewer?.writeUnpacked(unpackedOrigin.dirPath, entries);
+        if (!res || !res.ok) throw new Error(res?.error || "writeUnpacked failed");
+        set({ dirty: false, status: `Saved ${entries.length} files to ${romName}` });
+      } else {
+        const bytes = await client.saveRom(romHandle);
+        const name = romName || "edited.nds";
+        download(name.replace(/(\.nds)?$/i, ".nds"), bytes);
+        set({ dirty: false, status: `Saved ${name} · ${bytes.length.toLocaleString()} B` });
+      }
     } catch (e) {
       set({ status: "Save failed: " + (e as Error).message });
       throw e;

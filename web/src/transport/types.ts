@@ -251,9 +251,11 @@ export interface NitroViewerClient {
   openRom(bytes: Uint8Array): Promise<{ handle: number; len: number }>;
   /**
    * Open a ROM from an Nds4j unpacked-folder tree packed as a ZIP
-   * (`NintendoDsRom.fromUnpacked`). Same return as {@link openRom}.
+   * (`NintendoDsRom.fromUnpacked`). Same return as {@link openRom}, plus which of the two
+   * unpacked-folder layouts was detected, so a later {@link saveUnpackedRom} can write back in
+   * the same one.
    */
-  openUnpackedRom(zipBytes: Uint8Array): Promise<{ handle: number; len: number }>;
+  openUnpackedRom(zipBytes: Uint8Array): Promise<{ handle: number; len: number; layout: "ndstool" | "dsrom" }>;
   getRomInfo(handle: number): Promise<RomInfo>;
   /** The ROM's icon/title banner (icon PNG + per-language titles), or `{present:false}` if it has none. */
   getBanner(handle: number): Promise<BannerInfo>;
@@ -348,6 +350,11 @@ export interface NitroViewerClient {
   importRaw(handle: number, ref: ResourceRef, bytes: Uint8Array): Promise<{ size: number }>;
   /** Serialise the (edited) ROM to a complete .nds image. */
   saveRom(handle: number): Promise<Uint8Array>;
+  /**
+   * Serialise the (edited) ROM back out as an unpacked-folder tree, in the given layout (from
+   * {@link openUnpackedRom}'s response). Returns a STORED (uncompressed) ZIP of that tree.
+   */
+  saveUnpackedRom(handle: number, layout: "ndstool" | "dsrom"): Promise<Uint8Array>;
   /**
    * Import a background image over an NSCR, decomposing it back into the NCGR tileset + NSCR tilemap
    * (and a new NCLR when rebuildPalette). dedupFlips shares mirrored tiles; numSubPalettes<=0 derives the

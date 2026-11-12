@@ -9,6 +9,7 @@ import io.github.turtleisaac.nds4j.Fnt;
 import io.github.turtleisaac.nds4j.IconBanner;
 import io.github.turtleisaac.nds4j.Narc;
 import io.github.turtleisaac.nds4j.NintendoDsRom;
+import io.github.turtleisaac.nds4j.framework.Buffer;
 import io.github.turtleisaac.nds4j.framework.NitroLz;
 import io.github.turtleisaac.nds4j.g3d.GltfExporter;
 import io.github.turtleisaac.nds4j.g3d.MaterialColorAnimationSet;
@@ -52,6 +53,7 @@ import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Base64;
+import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
@@ -114,10 +116,11 @@ public final class CheerpjFacade implements NitroViewerService
             scratch = unpackedScratchDir(handle);
             extractZip(zipBytes, scratch);
             File root = findUnpackedRoot(scratch);
-            if (new File(root, NintendoDsRom.UNPACKED_FILENAMES.HEADER.getName()).isFile())
-                ensureUnpackedSectionDirs(root);
+            boolean ndstool = new File(root, NintendoDsRom.UNPACKED_FILENAMES.HEADER.getName()).isFile();
+            if (ndstool) ensureUnpackedSectionDirs(root);
             roms.put(handle, NintendoDsRom.fromUnpacked(root));
-            return "{\"ok\":true,\"handle\":" + handle + ",\"len\":" + len + "}";
+            String layout = ndstool ? "ndstool" : "dsrom";
+            return "{\"ok\":true,\"handle\":" + handle + ",\"len\":" + len + ",\"layout\":" + jstr(layout) + "}";
         }
         catch (Throwable t)
         {
@@ -725,6 +728,54 @@ public final class CheerpjFacade implements NitroViewerService
             throw new IllegalStateException("could not create " + data.getAbsolutePath());
     }
 
+    /**
+     * Scratch dir for one {@link #saveUnpackedRom} write — deleted if stale, but NOT created:
+     * {@code NintendoDsRom.unpack}/{@code unpackDsRom} refuse to write into a dir that already
+     * exists and is non-empty, and create it themselves otherwise.
+     */
+    private static File unpackedOutScratchDir(int handle)
+    {
+        File dir = new File(System.getProperty("java.io.tmpdir", "/tmp"), "nv-unpacked-out-" + handle);
+        if (dir.exists()) deleteRecursively(dir);
+        return dir;
+    }
+
+    /** Zips every file under {@code dir} (STORED, i.e. uncompressed) with paths relative to it. */
+    private static byte[] zipDirectoryStored(File dir) throws IOException
+    {
+        ByteArrayOutputStream baos = new ByteArrayOutputStream();
+        java.util.zip.ZipOutputStream zip = new java.util.zip.ZipOutputStream(baos);
+        zipDirectoryStored(zip, dir, "");
+        zip.close();
+        return baos.toByteArray();
+    }
+
+    private static void zipDirectoryStored(java.util.zip.ZipOutputStream zip, File dir, String prefix) throws IOException
+    {
+        File[] kids = dir.listFiles();
+        if (kids == null) return;
+        Arrays.sort(kids, Comparator.comparing(File::getName));
+        for (File kid : kids)
+        {
+            if (kid.isDirectory())
+            {
+                zipDirectoryStored(zip, kid, prefix + kid.getName() + "/");
+                continue;
+            }
+            byte[] data = Buffer.readFile(kid.getAbsolutePath());
+            java.util.zip.CRC32 crc = new java.util.zip.CRC32();
+            crc.update(data);
+            java.util.zip.ZipEntry entry = new java.util.zip.ZipEntry(prefix + kid.getName());
+            entry.setMethod(java.util.zip.ZipEntry.STORED);
+            entry.setSize(data.length);
+            entry.setCompressedSize(data.length);
+            entry.setCrc(crc.getValue());
+            zip.putNextEntry(entry);
+            zip.write(data);
+            zip.closeEntry();
+        }
+    }
+
     private static void deleteRecursively(File file)
     {
         if (file == null || !file.exists()) return;
@@ -1245,6 +1296,31 @@ public final class CheerpjFacade implements NitroViewerService
     public String lastError()
     {
         return lastError;
+    }
+
+    @Override
+    public byte[] saveUnpackedRom(int romHandle, String layout)
+    {
+        File scratch = null;
+        try
+        {
+            NintendoDsRom rom = rom(romHandle);
+            scratch = unpackedOutScratchDir(romHandle);
+            if ("dsrom".equals(layout)) rom.unpackDsRom(scratch);
+            else rom.unpack(scratch);
+            byte[] out = zipDirectoryStored(scratch);
+            lastError = "";
+            return out;
+        }
+        catch (Throwable t)
+        {
+            lastError = describe(t);
+            return new byte[0];
+        }
+        finally
+        {
+            if (scratch != null) deleteRecursively(scratch);
+        }
     }
 
     // --- 3D (static models) ------------------------------------------------------------------

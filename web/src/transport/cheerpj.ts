@@ -47,7 +47,7 @@ const APP_DIR = typeof location !== "undefined" ? location.pathname.replace(/[^/
 // Cache-bust the jar URLs so a rebuilt/redeployed jar isn't shadowed by CheerpJ's URL-keyed jar cache
 // (which otherwise loads a stale class — an old facade method is silently missing → NoSuchMethodError).
 // Dev changes every load (jars change constantly); prod uses a fixed version, bumped when a jar changes.
-const JAR_VERSION = import.meta.env.DEV ? String(Date.now()) : "7";
+const JAR_VERSION = import.meta.env.DEV ? String(Date.now()) : "8";
 const jar = (name: string) => `/app${APP_DIR}jars/${name}?v=${JAR_VERSION}`;
 const CLASSPATH = `${jar("nitroviewer-core.jar")}:${jar("Nds4j.jar")}`;
 
@@ -113,12 +113,12 @@ export class CheerpjTransport implements NitroViewerClient {
     });
   }
 
-  openUnpackedRom(zipBytes: Uint8Array): Promise<{ handle: number; len: number }> {
+  openUnpackedRom(zipBytes: Uint8Array): Promise<{ handle: number; len: number; layout: "ndstool" | "dsrom" }> {
     const signed = new Int8Array(zipBytes.buffer, zipBytes.byteOffset, zipBytes.byteLength);
     return this.enqueue(async () => {
       const res = JSON.parse(await this.f.openUnpackedRom(signed));
       if (!res.ok) throw new Error(res.error || "openUnpackedRom failed");
-      return { handle: res.handle as number, len: res.len as number };
+      return { handle: res.handle as number, len: res.len as number, layout: res.layout as "ndstool" | "dsrom" };
     });
   }
 
@@ -443,6 +443,18 @@ export class CheerpjTransport implements NitroViewerClient {
       if (!out || out.length === 0) {
         const msg: string = await this.f.lastError();
         throw new Error(msg || "saveRom produced no data");
+      }
+      return new Uint8Array(out.buffer, out.byteOffset, out.byteLength);
+    });
+  }
+
+  saveUnpackedRom(handle: number, layout: "ndstool" | "dsrom"): Promise<Uint8Array> {
+    return this.enqueue(async () => {
+      // Same "one big binary, empty array = failure" contract as saveRom.
+      const out: Int8Array = await this.f.saveUnpackedRom(handle, layout);
+      if (!out || out.length === 0) {
+        const msg: string = await this.f.lastError();
+        throw new Error(msg || "saveUnpackedRom produced no data");
       }
       return new Uint8Array(out.buffer, out.byteOffset, out.byteLength);
     });

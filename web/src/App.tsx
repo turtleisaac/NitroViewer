@@ -23,6 +23,7 @@ export function App() {
   const dirty = useStore((s) => s.dirty);
   const saving = useStore((s) => s.saving);
   const saveRom = useStore((s) => s.saveRom);
+  const unpackedOrigin = useStore((s) => s.unpackedOrigin);
   const undo = useStore((s) => s.undo);
   const redo = useStore((s) => s.redo);
   const editorDirty = useStore((s) => s.editorDirty);
@@ -91,7 +92,8 @@ export function App() {
         result.files.map((f) => ({
           path: f.path,
           data: f.data instanceof Uint8Array ? f.data : new Uint8Array(f.data),
-        }))
+        })),
+        result.path ? { dirPath: result.path } : undefined
       );
     }
     return true;
@@ -222,7 +224,13 @@ export function App() {
               <button
                 className="btn btn--save"
                 disabled={saving || !dirty}
-                title={dirty ? "Download the edited .nds" : "No edits to save"}
+                title={
+                  dirty
+                    ? unpackedOrigin
+                      ? "Save changes back to the unpacked folder"
+                      : "Download the edited .nds"
+                    : "No edits to save"
+                }
                 onClick={() => void saveRom()}
               >
                 {saving ? "Saving…" : "Save ROM"}
