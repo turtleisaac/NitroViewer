@@ -358,7 +358,7 @@ export function requireTiles(ncgr: ResourceRef | undefined, nclr: ResourceRef | 
   return { ncgr, nclr };
 }
 
-const TILESET_BANNER = "The selected tileset isn't compatible with this cell or animation. Pick a different tileset.";
+const TILESET_BANNER = "The selected tileset isn't compatible with this cell or animation. Pick a different tileset (NCGR).";
 const PALETTE_BANNER = "The selected palette isn't compatible with this cell or animation. Pick a different palette.";
 const CELLS_BANNER = "The selected cells aren't compatible with this cell or animation. Pick a different cell file.";
 

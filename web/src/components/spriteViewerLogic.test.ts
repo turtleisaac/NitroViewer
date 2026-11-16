@@ -140,7 +140,7 @@ describe("sprite viewer logic", () => {
 
   it("turns a companion error code into a banner", () => {
     expect(shownSpriteError("incompatible-tileset")).toContain("isn't compatible");
-    expect(shownSpriteError("incompatible-tileset")).toContain("tileset");
+    expect(shownSpriteError("incompatible-tileset")).toContain("Pick a different tileset (NCGR).");
     expect(shownSpriteError("incompatible-palette")).toContain("palette");
     expect(shownSpriteError("incompatible-cells")).toContain("cells");
     expect(shownSpriteError("ArithmeticException")).toBe("ArithmeticException");

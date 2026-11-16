@@ -134,7 +134,7 @@ describe("SpriteViewer", () => {
     act(() => { root?.render(createElement(SpriteViewer)); });
     for (let i = 0; i < 8; i++) await act(async () => { await Promise.resolve(); });
 
-    expect(host.textContent).toContain("The selected tileset isn't compatible with this cell or animation. Pick a different tileset.");
+    expect(host.textContent).toContain("The selected tileset isn't compatible with this cell or animation. Pick a different tileset (NCGR).");
     expect(host.textContent).not.toContain("NegativeArraySizeException");
     expect(host.textContent).not.toContain("ArrayIndexOutOfBounds");
   });
