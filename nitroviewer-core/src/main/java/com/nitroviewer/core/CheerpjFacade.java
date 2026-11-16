@@ -22,6 +22,7 @@ import io.github.turtleisaac.nds4j.g3d.TextureSet;
 import io.github.turtleisaac.nds4j.g3d.VisibilityAnimationSet;
 import io.github.turtleisaac.nds4j.images.CellAnimation;
 import io.github.turtleisaac.nds4j.images.CellBank;
+import io.github.turtleisaac.nds4j.images.IncompatibleCompanionException;
 import io.github.turtleisaac.nds4j.images.IndexedImage;
 import io.github.turtleisaac.nds4j.images.MultiCellAnimation;
 import io.github.turtleisaac.nds4j.images.MultiCellBank;
@@ -2870,7 +2871,30 @@ public final class CheerpjFacade implements NitroViewerService
 
     private static String err(Throwable t)
     {
+        String code = companionCode(t);
+        if (code != null)
+            return "{\"error\":" + jstr(code) + ",\"code\":" + jstr(code) + "}";
+
         return "{\"error\":" + jstr(describe(t)) + "}";
+    }
+
+    private static String companionCode(Throwable t)
+    {
+        if (!(t instanceof IncompatibleCompanionException))
+            return null;
+
+        return codeOf(((IncompatibleCompanionException) t).getKind());
+    }
+
+    private static String codeOf(IncompatibleCompanionException.Kind kind)
+    {
+        if (kind == IncompatibleCompanionException.Kind.NCGR)
+            return "incompatible-tileset";
+
+        if (kind == IncompatibleCompanionException.Kind.NCLR)
+            return "incompatible-palette";
+
+        return "incompatible-cells";
     }
 
     /** Encode a Java string as a JSON string literal (quotes + minimal escaping). null -&gt; "null". */

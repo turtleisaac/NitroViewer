@@ -20,6 +20,7 @@ import {
   pairBlock,
   pendingText,
   requireNanr,
+  shownSpriteError,
   requireNclr,
   requireTiles,
   roleSuffix,
@@ -135,5 +136,13 @@ describe("sprite viewer logic", () => {
     await expect(decodeSprite("NOPE", { ncgr: async () => { throw new Error("x"); }, nscr: async () => { throw new Error("x"); }, ncer: async () => { throw new Error("x"); }, nanr: async () => { throw new Error("x"); } })).rejects.toThrow(/Unsupported/);
     const image = { width: 1, height: 1, png: "data:image/png,xx" };
     await expect(decodeSprite("NCGR", { ncgr: async () => image, nscr: async () => image, ncer: async () => image, nanr: async () => image })).resolves.toBe(image);
+  });
+
+  it("turns a companion error code into a banner", () => {
+    expect(shownSpriteError("incompatible-tileset")).toContain("isn't compatible");
+    expect(shownSpriteError("incompatible-tileset")).toContain("tileset");
+    expect(shownSpriteError("incompatible-palette")).toContain("palette");
+    expect(shownSpriteError("incompatible-cells")).toContain("cells");
+    expect(shownSpriteError("ArithmeticException")).toBe("ArithmeticException");
   });
 });

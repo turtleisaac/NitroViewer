@@ -104,4 +104,38 @@ describe("SpriteViewer", () => {
     expect(handlers.ncgr).toHaveBeenCalled();
     void frames;
   });
+
+  it("shows a tileset banner instead of a raw exception", async () => {
+    useStore.setState({
+      romHandle: 1,
+      selection: { ref: { container: 2, id: 66 }, name: "#66", format: "NANR", compressed: false, size: 824 },
+      romSiblings: [],
+      narcs: {
+        2: {
+          ref: { container: -1, id: 249 },
+          entries: [
+            { index: 39, size: 320, format: "NCGR" },
+            { index: 59, size: 552, format: "NCLR" },
+            { index: 65, size: 244, format: "NCER" },
+            { index: 66, size: 824, format: "NANR" },
+          ],
+        },
+      },
+      editVersion: 0,
+      client: {
+        ...useStore.getState().client,
+        decodeNanrMeta: async () => ({ animations: [{ frames: 1 }, { frames: 24 }, { frames: 2 }, { frames: 1 }] }),
+        decodeNanr: async () => { throw new Error("incompatible-tileset"); },
+      },
+    });
+    host = document.createElement("div");
+    document.body.appendChild(host);
+    root = createRoot(host);
+    act(() => { root?.render(createElement(SpriteViewer)); });
+    for (let i = 0; i < 8; i++) await act(async () => { await Promise.resolve(); });
+
+    expect(host.textContent).toContain("The selected tileset isn't compatible with this cell or animation. Pick a different tileset.");
+    expect(host.textContent).not.toContain("NegativeArraySizeException");
+    expect(host.textContent).not.toContain("ArrayIndexOutOfBounds");
+  });
 });

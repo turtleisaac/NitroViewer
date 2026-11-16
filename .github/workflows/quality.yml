@@ -22,7 +22,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           repository: turtleisaac/Nds4j
-          ref: main
+          ref: incompatible-sprite-bounds
           path: Nds4j
 
       - uses: actions/setup-java@v4
