@@ -1,7 +1,8 @@
 name: Web lint
 
-# TypeScript/TSX lint for the web app. The Pages deploy also runs this script;
-# this workflow is what covers pull requests and pushes that do not deploy.
+# TypeScript/TSX lint and typecheck for the web app. The Pages deploy runs
+# lint and the production build. This workflow covers pull requests and
+# pushes that do not deploy.
 on:
   push:
     branches: ['**']
@@ -13,7 +14,7 @@ concurrency:
 
 jobs:
   lint:
-    name: ESLint
+    name: ESLint and typecheck
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -28,4 +29,9 @@ jobs:
         working-directory: web
         run: |
           npm ci
+
           npm run lint
+
+      - name: Typecheck
+        working-directory: web
+        run: npm run typecheck
