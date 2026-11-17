@@ -17,8 +17,9 @@ prepare_nds4j() {
     return 1
   fi
 
+  # Nds4j's own CI checks its formatting.
   echo "Installing Nds4j from $dir"
-  mvn -B -ntp -f "$dir/pom.xml" -DskipTests install
+  mvn -B -ntp -f "$dir/pom.xml" -DskipTests -Dspotless.check.skip=true install
 
   local version
   version="$(mvn -B -ntp -q -f "$dir/pom.xml" help:evaluate -Dexpression=project.version -DforceStdout | tail -n 1 | tr -d '[:space:]')"

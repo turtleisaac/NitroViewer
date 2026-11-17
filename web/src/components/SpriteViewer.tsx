@@ -22,6 +22,7 @@ import {
   peersOf,
   pendingText,
   requireNanr,
+  shownSpriteError,
   requireNclr,
   requireTiles,
   roleSuffix,
@@ -237,7 +238,9 @@ export async function decodeInto(
     setSubPalettes(image.subPalettes ?? 1);
   } catch (err) {
     if (!alive()) return;
-    setError((err as Error).message);
+
+    const message = err instanceof Error ? err.message : "Could not decode";
+    setError(shownSpriteError(message));
     setImage(null);
   } finally {
     if (alive()) setBusy(false);

@@ -358,6 +358,18 @@ export function requireTiles(ncgr: ResourceRef | undefined, nclr: ResourceRef | 
   return { ncgr, nclr };
 }
 
+const TILESET_BANNER = "The selected tileset isn't compatible with this cell or animation. Pick a different NCGR file.";
+const PALETTE_BANNER = "The selected palette isn't compatible with this cell or animation. Pick a different palette.";
+const CELLS_BANNER = "The selected cells aren't compatible with this cell or animation. Pick a different cell file.";
+
+/** Banner text for a companion error code, or the original message. */
+export function shownSpriteError(message: string): string {
+  if (message === "incompatible-tileset") return TILESET_BANNER;
+  if (message === "incompatible-palette") return PALETTE_BANNER;
+  if (message === "incompatible-cells") return CELLS_BANNER;
+  return message;
+}
+
 /** Require a full animation stack. */
 export function requireNanr(ncer: ResourceRef | undefined, ncgr: ResourceRef | undefined, nclr: ResourceRef | undefined): { ncer: ResourceRef; ncgr: ResourceRef; nclr: ResourceRef } {
   if (!ncer || !ncgr || !nclr) throw new Error("An animation needs NCER + NCGR + NCLR.");
