@@ -37,10 +37,16 @@ export interface SpriteUnit {
 export type FormatRole = Lowercase<KnownFormat>;
 
 /** One hand-specified unit. A role is one member index, or a list when several files share it. */
-export type ExplicitMember = Partial<Record<FormatRole, number | number[]>>;
+export type ExplicitMember = Partial<Record<FormatRole, number | number[]>> & {
+  /** Optional display name. It is not a file role. */
+  label?: string;
+};
 
 /** Every file an explicit unit names, with each role expanded to a list of refs. */
-export type ExplicitUnit = Partial<Record<FormatRole, ResourceRef[]>>;
+export type ExplicitUnit = Partial<Record<FormatRole, ResourceRef[]>> & {
+  /** Display name from the manifest unit, when it has one. */
+  label?: string;
+};
 
 /** Grouping for one NARC. Indexes listed in `units` resolve before a stride. */
 export interface GroupingSpec {
@@ -212,14 +218,14 @@ function unitIssues(unit: unknown, index: number): string[] {
     return [`unit ${index} is not an object`];
   }
 
-  // A unit with no roles groups nothing.
-  const keys = Object.keys(unit);
+  // The label is display text. The other keys are files.
+  const issues = labelIssues(unit.label, index);
+  const keys = memberKeys(unit);
 
   if (keys.length === 0) {
-    return [`unit ${index} has no members`];
+    issues.push(`unit ${index} has no members`);
+    return issues;
   }
-
-  const issues: string[] = [];
 
   for (const key of keys) {
     const issue = roleIssue(key, unit[key], index);
@@ -230,6 +236,38 @@ function unitIssues(unit: unknown, index: number): string[] {
   }
 
   return issues;
+}
+
+/** Role keys on a unit. The label is not a file. */
+function memberKeys(unit: Record<string, unknown>): string[] {
+  const keys: string[] = [];
+
+  for (const key of Object.keys(unit)) {
+    if (key === "label") {
+      continue;
+    }
+
+    keys.push(key);
+  }
+
+  return keys;
+}
+
+/** Problems with an optional label. Empty when the label is absent or usable text. */
+function labelIssues(value: unknown, index: number): string[] {
+  if (value === undefined) {
+    return [];
+  }
+
+  if (typeof value !== "string") {
+    return [`unit ${index} label is not text`];
+  }
+
+  if (value.trim() === "") {
+    return [`unit ${index} label is blank`];
+  }
+
+  return [];
 }
 
 /** One bad role or index, or null when the pair is usable. */
@@ -382,7 +420,7 @@ export function explicitUnitsIn(
   return grouping.units;
 }
 
-/** Full explicit unit for `id`, or null when no valid unit lists it. */
+/** Full explicit unit for `id`, or null when no valid unit lists it. The unit keeps its label. */
 export function resolveExplicitUnit(
   gameCode: string | undefined,
   narcPath: string | null,
@@ -390,6 +428,30 @@ export function resolveExplicitUnit(
   id: number,
 ): ExplicitUnit | null {
   return resolveExplicitUnitIn(db, gameCode, narcPath, container, id);
+}
+
+/** Display text of the first explicit unit that lists `id`, or null. */
+export function resolveExplicitLabel(
+  gameCode: string | undefined,
+  narcPath: string | null,
+  id: number,
+): string | null {
+  // The container is unused. A label is text on the unit, not a file ref.
+  const unit = resolveExplicitUnit(gameCode, narcPath, 0, id);
+  return labelOf(unit);
+}
+
+/** The unit's label, or null when the unit or the text is absent. */
+export function labelOf(unit: ExplicitUnit | null): string | null {
+  if (unit === null) {
+    return null;
+  }
+
+  if (unit.label === undefined) {
+    return null;
+  }
+
+  return unit.label;
 }
 
 /** Full explicit unit from one document. Stride groupings are not expanded. */
@@ -540,6 +602,11 @@ function firstSpriteRefs(files: ExplicitUnit): SpriteUnit {
 /** Every role on an explicit unit, each expanded to refs in this container. */
 function fileUnitFrom(unit: ExplicitMember, container: number): ExplicitUnit {
   const out: ExplicitUnit = {};
+
+  // Display text stays with the expanded files.
+  if (unit.label !== undefined) {
+    out.label = unit.label;
+  }
 
   for (const role of FORMAT_ROLES) {
     const indexes = memberIndexes(unit[role as FormatRole]);

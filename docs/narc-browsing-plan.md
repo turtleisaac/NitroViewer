@@ -153,9 +153,8 @@ The only `sets` data is the Platinum `/arc/manene.narc` stub (NSBMD + NSBCA, `al
 Group mode asks `groupUnit` for every unit in the open NARC, then builds the missing file-to-groups index.
 A shared palette, NCER, NANR, or texture is a member of each unit that names it.
 
-A group cell shows a preview, the member count, and a name when the manifest has one. A unit has no name
-today. The NARC has a `role`, from `resolveNarcInfo`. With no unit name, the cell shows the formats and
-the index span.
+A group cell shows a preview, the member count, and the unit `label` when the manifest sets one. The NARC
+has a `role`, from `resolveNarcInfo`. With no unit label, the cell shows the formats and the index span.
 
 A file that sits in several cells gets a shared-file badge. Hovering that file highlights every group
 cell that contains it.

@@ -23,12 +23,13 @@ import {
   pendingText,
   requireNanr,
   shownSpriteError,
+  gameDbBadgeText,
   requireNclr,
   requireTiles,
-  roleSuffix,
   runSpriteImport,
   showImporter,
   showSpriteEditor,
+  selectedUnitLabel,
   spriteDepKey,
   spriteResources,
   spriteViewSeed,
@@ -285,14 +286,34 @@ function changePair(key: "ncgr" | "nclr" | "ncer", ref: ResourceRef, setPair: Di
   setOverride(selKey, { [key]: ref });
 }
 
+/** Game-db line for the open file, including its explicit unit label when the manifest names one. */
 function GameDbBadge({ info }: { info: { title: string; role?: string } | null }) {
   if (!info) return null;
+
   return (
     <div className="gamedb-badge" title="Grouping and render hints came from the game DB, not a heuristic">
-      Game DB · {info.title}
-      {roleSuffix(info.role)}
+      {gameDbBadgeText(info.title, info.role, openUnitLabel())}
     </div>
   );
+}
+
+/** Label of the explicit unit for the file the store has open. */
+function openUnitLabel(): string | null {
+  const state = useStore.getState();
+  const selection = state.selection;
+  if (selection === null) return null;
+
+  // Game code and path come from the open ROM and the NARC that holds this file.
+  let gameCode: string | undefined;
+
+  if (state.romInfo === null) {
+    gameCode = undefined;
+  } else {
+    gameCode = state.romInfo.gameCode;
+  }
+
+  const narcPath = state.narcPathOf(selection.ref.container);
+  return selectedUnitLabel(selection, gameCode, narcPath);
 }
 
 /** A sibling picker that hides itself when `show` is false. */

@@ -1,6 +1,6 @@
 import type { ResourceItem } from "../state/store";
 import { pickSibling } from "../state/pairing";
-import { resolveRenderHints, resolveSpriteUnit, type RenderHints, type SpriteUnit } from "../state/grouping";
+import { resolveExplicitLabel, resolveRenderHints, resolveSpriteUnit, type RenderHints, type SpriteUnit } from "../state/grouping";
 import { refKey, type DecodedImage, type ResourceRef } from "../transport";
 import { formatsOf, resourcesInContainer, type NarcListing } from "./viewerShared";
 
@@ -164,6 +164,31 @@ export function tilesFromPx(raw: string): number {
 export function roleSuffix(role: string | undefined): string {
   if (!role) return "";
   return ` · ${role.replace(/-/g, " ")}`;
+}
+
+/** Game-db badge line. A unit label is appended when the open file has one. */
+export function gameDbBadgeText(title: string, role: string | undefined, label: string | null): string {
+  const base = `Game DB · ${title}${roleSuffix(role)}`;
+
+  // The narc line stands alone when this file has no unit name.
+  if (label === null) {
+    return base;
+  }
+
+  return `${base} · ${label}`;
+}
+
+/** Label of the explicit unit for a selected file, or null when nothing is selected. */
+export function selectedUnitLabel(
+  selection: { ref: { id: number } } | null,
+  gameCode: string | undefined,
+  narcPath: string | null,
+): string | null {
+  if (selection === null) {
+    return null;
+  }
+
+  return resolveExplicitLabel(gameCode, narcPath, selection.ref.id);
 }
 
 /** Formats that can import a PNG. */
