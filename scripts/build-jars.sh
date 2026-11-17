@@ -9,8 +9,9 @@ here="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 # Nds4j source lives beside this repo by default; CI can override with NDS4J_DIR.
 nds4j="$(cd "${NDS4J_DIR:-$here/../Nds4j}" && pwd)"
 
+# Nds4j's own CI checks its formatting.
 echo "==> Installing Nds4j (main) from $nds4j"
-mvn -q -f "$nds4j/pom.xml" -DskipTests install
+mvn -q -f "$nds4j/pom.xml" -DskipTests -Dspotless.check.skip=true install
 
 # Read Nds4j's own declared version rather than hardcoding it: it has drifted from
 # nitroviewer-core's pinned dependency before (1.0.0 vs 1.1.0-SNAPSHOT), which silently

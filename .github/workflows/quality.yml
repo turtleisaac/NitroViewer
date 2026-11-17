@@ -23,7 +23,6 @@ jobs:
         with:
           repository: turtleisaac/Nds4j
           ref: incompatible-sprite-bounds
-          fetch-depth: 0
           path: Nds4j
 
       - uses: actions/setup-java@v4
