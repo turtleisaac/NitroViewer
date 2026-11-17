@@ -135,7 +135,7 @@ for the website. `npm run electron` after `npm run build` + vendor runs the unpa
 - **Desktop release:** publishing a GitHub Release (or `workflow_dispatch`) runs
   `.github/workflows/release-desktop.yml` — macOS (arm64+x64 dmg/zip), Windows (x64+arm64 nsis/zip),
   and Linux (x64 AppImage/deb/tar.gz), CheerpJ vendored, plus `SHA256SUMS`. Version comes from the
-  tag (`v0.1.0` → `0.1.0`). macOS is signed/notarized when `CSC_LINK` + `APPLE_*` secrets are set.
+  tag (`v0.2.0` → `0.2.0`). macOS is signed/notarized when `CSC_LINK` + `APPLE_*` secrets are set.
   Packaged apps prompt (Download / Later) if GitHub Releases has a newer tag; they do not auto-download.
 - **Preview a prod build at domain-root** (CheerpJ needs `/app`=origin root): `python3 scripts/serve-static.py
   web/dist 8080`.
