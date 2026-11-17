@@ -219,13 +219,13 @@ function unitIssues(unit: unknown, index: number): string[] {
   }
 
   // The label is display text. The other keys are files.
-  const issues = labelIssues(unit.label, index);
   const keys = memberKeys(unit);
 
   if (keys.length === 0) {
-    issues.push(`unit ${index} has no members`);
-    return issues;
+    return [`unit ${index} has no members`];
   }
+
+  const issues: string[] = [];
 
   for (const key of keys) {
     const issue = roleIssue(key, unit[key], index);
@@ -253,21 +253,17 @@ function memberKeys(unit: Record<string, unknown>): string[] {
   return keys;
 }
 
-/** Problems with an optional label. Empty when the label is absent or usable text. */
-function labelIssues(value: unknown, index: number): string[] {
-  if (value === undefined) {
-    return [];
-  }
-
+/** Non-blank display text, or null when the value cannot be shown. */
+function usableLabel(value: unknown): string | null {
   if (typeof value !== "string") {
-    return [`unit ${index} label is not text`];
+    return null;
   }
 
   if (value.trim() === "") {
-    return [`unit ${index} label is blank`];
+    return null;
   }
 
-  return [];
+  return value;
 }
 
 /** One bad role or index, or null when the pair is usable. */
@@ -447,11 +443,7 @@ export function labelOf(unit: ExplicitUnit | null): string | null {
     return null;
   }
 
-  if (unit.label === undefined) {
-    return null;
-  }
-
-  return unit.label;
+  return usableLabel(unit.label);
 }
 
 /** Full explicit unit from one document. Stride groupings are not expanded. */
@@ -603,9 +595,11 @@ function firstSpriteRefs(files: ExplicitUnit): SpriteUnit {
 function fileUnitFrom(unit: ExplicitMember, container: number): ExplicitUnit {
   const out: ExplicitUnit = {};
 
-  // Display text stays with the expanded files.
-  if (unit.label !== undefined) {
-    out.label = unit.label;
+  // Display text stays with the expanded files when it can be shown.
+  const label = usableLabel(unit.label);
+
+  if (label !== null) {
+    out.label = label;
   }
 
   for (const role of FORMAT_ROLES) {

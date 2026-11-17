@@ -308,24 +308,74 @@ describe("explicit units", () => {
     expect(explicitIssues([{ nscr: ["2"] }], "explicit")).toEqual(["unit 0 nscr is not a whole number"]);
   });
 
-  it("accepts a text label and rejects a blank or non-text label", () => {
+  it("keeps the files when the label is blank or not text", () => {
     expect(explicitIssues([{ label: "Oak", ncgr: 1 }], "explicit")).toEqual([]);
     expect(explicitIssues([{ label: " Oak ", nclr: 0 }], "explicit")).toEqual([]);
-    expect(explicitIssues([{ label: "", ncgr: 1 }], "explicit")).toEqual(["unit 0 label is blank"]);
-    expect(explicitIssues([{ label: "   ", ncgr: 1 }], "explicit")).toEqual(["unit 0 label is blank"]);
-    expect(explicitIssues([{ label: 1, ncgr: 1 }], "explicit")).toEqual(["unit 0 label is not text"]);
-    expect(explicitIssues([{ label: null, ncgr: 1 }], "explicit")).toEqual(["unit 0 label is not text"]);
-    expect(explicitIssues([{ label: true, ncgr: 1 }], "explicit")).toEqual(["unit 0 label is not text"]);
-    expect(explicitIssues([{ label: { text: "Oak" }, ncgr: 1 }], "explicit")).toEqual([
-      "unit 0 label is not text",
-    ]);
+    expect(explicitIssues([{ label: "", ncgr: 1 }], "explicit")).toEqual([]);
+    expect(explicitIssues([{ label: "   ", ncgr: 1 }], "explicit")).toEqual([]);
+    expect(explicitIssues([{ label: 1, ncgr: 1 }], "explicit")).toEqual([]);
+    expect(explicitIssues([{ label: null, ncgr: 1 }], "explicit")).toEqual([]);
+    expect(explicitIssues([{ label: true, ncgr: 1 }], "explicit")).toEqual([]);
+    expect(explicitIssues([{ label: { text: "Oak" }, ncgr: 1 }], "explicit")).toEqual([]);
+    expect(explicitIssues([{ label: ["Oak"], ncgr: 1 }], "explicit")).toEqual([]);
     expect(explicitIssues([{ label: "Oak" }], "explicit")).toEqual(["unit 0 has no members"]);
-    expect(explicitIssues([{ label: 1 }], "explicit")).toEqual([
-      "unit 0 label is not text",
-      "unit 0 has no members",
-    ]);
+    expect(explicitIssues([{ label: 1 }], "explicit")).toEqual(["unit 0 has no members"]);
+    expect(explicitIssues([{ label: "" }], "explicit")).toEqual(["unit 0 has no members"]);
     expect(explicitIssues([{ label: "Oak", foo: 1 }], "explicit")).toEqual(["unit 0 has unknown role foo"]);
     expect(explicitIssues([{ label: "Oak", ncgr: -1 }], "explicit")).toEqual(["unit 0 ncgr is negative"]);
+  });
+
+  it("pairs a unit whose label is blank or not text, with no label on the result", () => {
+    const labels: Array<string | number | boolean | null | string[] | { text: string }> = [
+      "",
+      "   ",
+      1,
+      null,
+      true,
+      ["Oak"],
+      { text: "Oak" },
+    ];
+
+    for (const label of labels) {
+      const units = [{ label: label as unknown as string, ncgr: 4, nclr: 2 }];
+      const source = narcDb({ strategy: "explicit", units });
+      const resolved = resolveExplicitUnitIn(source, "ZZZE", "/intro", 7, 4);
+
+      expect(resolved).toEqual({
+        ncgr: [{ container: 7, id: 4 }],
+        nclr: [{ container: 7, id: 2 }],
+      });
+      expect(resolved).not.toHaveProperty("label");
+      expect(labelOf(resolved)).toBeNull();
+      expect(groupUnit({ strategy: "explicit", units }, [], 4, 7)).toEqual({
+        ncgr: { container: 7, id: 4 },
+        nclr: { container: 7, id: 2 },
+      });
+    }
+
+    const blank = narcDb({
+      strategy: "interleaved",
+      order: ["NCGR", "NCLR", "NCER", "NANR"],
+      units: [{ label: "", ncgr: 0, nclr: 1 }],
+    });
+    const entries: EntryLike[] = [
+      { index: 0, format: "NCGR" },
+      { index: 1, format: "NCLR" },
+      { index: 2, format: "NCER" },
+      { index: 3, format: "NANR" },
+    ];
+
+    expect(resolveSpriteUnitIn(blank, "ZZZE", "/intro", 8, entries, 0)).toEqual({
+      ncgr: { container: 8, id: 0 },
+      nclr: { container: 8, id: 1 },
+    });
+    expect(labelOf(resolveExplicitUnitIn(blank, "ZZZE", "/intro", 8, 0))).toBeNull();
+    expect(resolveSpriteUnitIn(blank, "ZZZE", "/intro", 8, entries, 2)).toEqual({
+      ncgr: { container: 8, id: 0 },
+      nclr: { container: 8, id: 1 },
+      ncer: { container: 8, id: 2 },
+      nanr: { container: 8, id: 3 },
+    });
   });
 
   it("rejects an empty unit, a non-object, a non-list, and a missing explicit list", () => {
@@ -539,13 +589,10 @@ describe("resolveSpriteUnitIn", () => {
     expect(labelOf(null)).toBeNull();
     expect(labelOf({})).toBeNull();
     expect(labelOf({ label: "Oak" })).toBe("Oak");
-    const blank = narcDb({
-      strategy: "interleaved",
-      order: ["NCGR", "NCLR", "NCER", "NANR"],
-      units: [{ label: "", ncgr: 0, nclr: 1 }],
-    });
-    expect(resolveExplicitUnitIn(blank, "ZZZE", "/intro", 8, 0)).toBeNull();
-    expect(resolveSpriteUnitIn(blank, "ZZZE", "/intro", 8, entries, 0)).toBeNull();
+    expect(labelOf({ label: " Oak " })).toBe(" Oak ");
+    expect(labelOf({ label: "" })).toBeNull();
+    expect(labelOf({ label: "   " })).toBeNull();
+    expect(labelOf({ label: 1 as unknown as string })).toBeNull();
     expect(resolveExplicitUnit("ZZZE", "/intro", 8, 0)).toBeNull();
     expect(resolveSpriteUnitIn(models, "ZZZE", "/intro", 8, entries, 0)).toEqual({});
   });
