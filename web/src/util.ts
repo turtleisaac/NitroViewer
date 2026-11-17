@@ -1,11 +1,23 @@
-// Nitro format → file extension, for naming extracted files like Tinke (numbered/nameless entries get the
-// format's extension; a resource that already carries a real FNT filename with an extension keeps it).
-const FORMAT_EXT: Record<string, string> = {
-  NARC: "narc", NCGR: "ncgr", NCLR: "nclr", NSCR: "nscr", NCER: "ncer", NANR: "nanr",
-  NSBMD: "nsbmd", NSBTX: "nsbtx", NSBCA: "nsbca", NSBTP: "nsbtp", NSBTA: "nsbta",
-  NSBVA: "nsbva", NSBMA: "nsbma", SPA: "spa",
-  SDAT: "sdat", SSEQ: "sseq", SSAR: "ssar", SBNK: "sbnk", SWAR: "swar", SWAV: "swav", STRM: "strm",
-};
+// Names returned by CheerpjFacade.formatOf. The extension is the lower-case name.
+export const KNOWN_FORMATS = [
+  "NARC", "NCGR", "NCLR", "NSCR", "NCER", "NANR", "NFTR", "BMG", "NMCR", "NMAR",
+  "NSBMD", "NSBTX", "NSBCA", "NSBTP", "NSBTA", "NSBVA", "NSBMA", "SPA",
+  "SDAT", "SSEQ", "SSAR", "SBNK", "SWAR", "SWAV", "STRM",
+] as const;
+
+export type KnownFormat = (typeof KNOWN_FORMATS)[number];
+
+/** Lower-case role keys for an explicit unit, one per formatOf name. */
+export const FORMAT_ROLES: string[] = [];
+
+// The download extension is the same lower-case name.
+const FORMAT_EXT: Record<string, string> = {};
+
+for (const format of KNOWN_FORMATS) {
+  const role = format.toLowerCase();
+  FORMAT_ROLES.push(role);
+  FORMAT_EXT[format] = role;
+}
 
 /** A download filename for an extracted file: keeps a real FNT name (with extension), else `<base>.<ext>`. */
 export function exportFileName(name: string, format: string): string {

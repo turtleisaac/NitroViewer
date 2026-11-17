@@ -1,5 +1,6 @@
+import { resolveExplicitUnit, type ExplicitUnit } from "../state/grouping";
 import { pickAnimByName } from "../state/pairing";
-import type { ResourceItem } from "../state/store";
+import { useStore, type ResourceItem } from "../state/store";
 import { refKey, type ResourceRef } from "../transport";
 
 /** Model name at `index`, or empty when the set has not loaded. */
@@ -8,14 +9,66 @@ export function modelNameAt(info: { models: string[] } | null, index: number): s
   return name ?? "";
 }
 
-/** NSBCA chosen by clip name, or null when nothing pairs. */
+/** Explicit NSBCA when the unit names one, otherwise the heuristic choice. */
+export function chosenNsbca(unit: ExplicitUnit | null, fallback: ResourceRef | null): ResourceRef | null {
+  // No unit, or a unit that does not name an animation, keeps the heuristic.
+  if (unit === null) {
+    return fallback;
+  }
+
+  const listed = unit.nsbca;
+
+  if (listed === undefined) {
+    return fallback;
+  }
+
+  if (listed.length === 0) {
+    return fallback;
+  }
+
+  return listed[0];
+}
+
+/** Explicit NSBCA for the open file, then the clip-name choice. */
 export function pairedNsbca(
   items: ResourceItem[],
   names: Record<string, string[]>,
   modelName: string,
   selfId: number,
+  unit: ExplicitUnit | null = openExplicitUnit(),
 ): ResourceRef | null {
-  return pickAnimByName(items, names, modelName, selfId) ?? null;
+  // Name match, then nearest index. Missing both leaves the slot empty.
+  const named = pickAnimByName(items, names, modelName, selfId);
+  let heuristic: ResourceRef | null = null;
+
+  if (named !== undefined) {
+    heuristic = named;
+  }
+
+  return chosenNsbca(unit, heuristic);
+}
+
+/** Explicit unit for the file the store has open, or null. */
+function openExplicitUnit(): ExplicitUnit | null {
+  const state = useStore.getState();
+  const selection = state.selection;
+
+  if (selection === null) {
+    return null;
+  }
+
+  // The ROM header may not be loaded yet.
+  let gameCode: string | undefined;
+
+  if (state.romInfo === null) {
+    gameCode = undefined;
+  } else {
+    gameCode = state.romInfo.gameCode;
+  }
+
+  const narcPath = state.narcPathOf(selection.ref.container);
+
+  return resolveExplicitUnit(gameCode, narcPath, selection.ref.container, selection.ref.id);
 }
 
 /** Key that changes when the model or the loaded NSBCA clip names change. */

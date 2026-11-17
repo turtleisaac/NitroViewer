@@ -17,7 +17,7 @@ There is no formatter. Do not run Prettier, and do not reformat a file you are n
 
 ## Layout
 
-Two-space indent, double quotes, semicolons, LF, a final newline, no tabs. `{` stays on the same line as the function, hook, or control statement (`function f() {`, `if (x) {`). A one-line `if (x) return;` is fine. Space after `if`, `for`, `while`, `switch`, and `catch`.
+Two-space indent, double quotes, semicolons, LF, a final newline, no tabs. `{` stays on the same line as the function, hook, or control statement (`function f() {`, `if (x) {`). A one-line guard such as `if (!x) return;` or `continue;` is fine, but any `if` with real work in its body gets braces on its own lines. Code should read like a person wrote it: no nested or chained ternaries, and no packing several conditions or side effects into one expression. Name the intermediate results. Space after `if`, `for`, `while`, `switch`, and `catch`.
 
 ## Blank lines
 
@@ -30,6 +30,10 @@ A braced block gets one blank line after it before the next statement, unless it
 A braceless one-line `if` or loop follows those grouping rules and may skip the blank. Tiny guards stay together. A chain of `if` / `return` stays together, and the fallback `return` gets a blank line above it. Put a blank line before a `return`, unless it is the only line in its block or it follows one or two short statements.
 
 A chained call, a JSX return, or an object literal counts as one statement. In a Playwright or Vitest test, arrange, act, and assert are steps, and consecutive `expect`s stay together.
+
+## Comments
+
+Every function gets a short TSDoc comment. Each chunk of code inside a function, a blank-line-separated step that is not obvious, gets a short single-line `//` comment above it saying what that step does. Keep comments short. Do not restate the code line by line.
 
 ## Types and promises
 

@@ -14,10 +14,20 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
+/** Merge objects key by key. Arrays and scalars replace, so a language `units` list replaces the family list. */
 export function deepMerge(base: unknown, override: unknown): unknown {
-  if (!isRecord(base) || !isRecord(override)) return override;
+  // A list or a scalar replaces the family value.
+  if (!isRecord(base)) {
+    return override;
+  }
 
+  if (!isRecord(override)) {
+    return override;
+  }
+
+  // Each language key overwrites that same key on the family.
   const merged: Record<string, unknown> = { ...base };
+
   for (const key of Object.keys(override)) {
     merged[key] = deepMerge(base[key], override[key]);
   }

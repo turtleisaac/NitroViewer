@@ -116,6 +116,80 @@ describe("assemble", () => {
     });
   });
 
+  it("replaces a language file's explicit unit list and keeps the rest of the NARC", () => {
+    const db = assemble(
+      {
+        ZZZ: {
+          version: 1,
+          title: "Synthetic",
+          narcs: {
+            "/intro": {
+              role: "intro",
+              grouping: {
+                strategy: "explicit",
+                units: [
+                  { nclr: 63, ncgr: 64, ncer: 65, nanr: 66 },
+                  { ncgr: 70, nclr: 63 },
+                ],
+              },
+            },
+            "/keep": { role: "other" },
+          },
+        },
+      },
+      {
+        "ZZZ/E": {
+          narcs: {
+            "/intro": {
+              grouping: {
+                units: [{ nclr: 9, ncgr: 8 }],
+              },
+            },
+          },
+        },
+      },
+    );
+
+    expect(db.games["ZZZE"]).toEqual({
+      title: "Synthetic",
+      narcs: {
+        "/intro": {
+          role: "intro",
+          grouping: {
+            strategy: "explicit",
+            units: [{ nclr: 9, ncgr: 8 }],
+          },
+        },
+        "/keep": { role: "other" },
+      },
+    });
+  });
+
+  it("keeps a family stride when a language file only adds an explicit unit list", () => {
+    const db = assemble(
+      {
+        ZZZ: {
+          title: "Synthetic",
+          narcs: { "/a": { grouping: { strategy: "interleaved", order: ["NCGR", "NCLR"] } } },
+        },
+      },
+      { "ZZZ/J": { narcs: { "/a": { grouping: { units: [{ ncgr: 4, nclr: 1 }] } } } } },
+    );
+
+    expect(db.games["ZZZJ"]).toEqual({
+      title: "Synthetic",
+      narcs: {
+        "/a": {
+          grouping: {
+            strategy: "interleaved",
+            order: ["NCGR", "NCLR"],
+            units: [{ ncgr: 4, nclr: 1 }],
+          },
+        },
+      },
+    });
+  });
+
   it("keeps a language-only entry off the other letters", () => {
     const db = assemble({}, { "ADA/J": { title: "Diamond", narcs: { "/p": { role: "x" } } } });
 
