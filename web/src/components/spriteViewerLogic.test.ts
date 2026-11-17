@@ -2,6 +2,7 @@
 /* eslint-disable @typescript-eslint/require-await -- the stubs only hand back a value */
 import { describe, expect, it, vi } from "vitest";
 import type { ResourceItem } from "../state/store";
+import { groupUnit } from "../state/grouping";
 import {
   applyPendingKind,
   bothRefs,
@@ -17,6 +18,7 @@ import {
   nanrPlaying,
   ncgrBlock,
   nextSpritePair,
+  pairedRefs,
   pairBlock,
   pendingText,
   requireNanr,
@@ -43,6 +45,7 @@ const item = (id: number, format: string): ResourceItem => ({ ref: ref(id), labe
 describe("sprite viewer logic", () => {
   it("pairs, seeds, and describes controls", () => {
     expect(savedOrUnit(ref(1), ref(2), ref(3))).toEqual(ref(1));
+    expect(savedOrUnit(undefined, ref(9), ref(3))).toEqual(ref(9));
     expect(savedOrUnit(undefined, undefined, ref(3))).toEqual(ref(3));
     expect(unitSlot(null, "ncgr")).toBeUndefined();
     expect(unitSlot({ ncgr: ref(4) }, "ncgr")).toEqual(ref(4));
@@ -52,6 +55,18 @@ describe("sprite viewer logic", () => {
       peers: [item(1, "NCGR")], ncgrs: [item(1, "NCGR")], nclrs: [item(2, "NCLR")], ncers: [item(3, "NCER")],
     });
     expect(pair.nclr).toEqual(ref(2));
+    const explicit = groupUnit(
+      { strategy: "explicit", units: [{ nclr: 63, ncgr: 64, ncer: 65, nanr: 66 }] },
+      [],
+      66,
+      1,
+    );
+    expect(pairedRefs({}, explicit, { ncgr: ref(1), nclr: ref(2), ncer: ref(3) })).toEqual({
+      ncgr: ref(64),
+      nclr: ref(63),
+      ncer: ref(65),
+    });
+    expect(pairedRefs({ nclr: ref(9) }, explicit, { nclr: ref(2) }).nclr).toEqual(ref(9));
     expect(itemsKeyOf(items)).toContain("NCLR");
     expect(hintedTileCount(null)).toBe(0);
     expect(hintedTileCount({ tileWidth: 16 })).toBe(2);

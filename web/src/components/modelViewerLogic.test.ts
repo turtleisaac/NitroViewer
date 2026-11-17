@@ -11,6 +11,7 @@ import {
   modelNameAt,
   modelOptionLabel,
   nsbcaLabel,
+  chosenNsbca,
   pairedNsbca,
   pickObjFile,
   pickTexFile,
@@ -55,6 +56,18 @@ describe("model viewer choices", () => {
     expect(nsbcaLabel(anim, { "1:3": [] })).toBe("NSBCA walk");
     expect(nsbcaLabel(anim, { "1:3": ["manene"] })).toBe("manene (walk)");
     expect(pairedNsbca([], {}, "body", 1)).toBeNull();
+    const fallback = { container: 1, id: 9 };
+    const first = { container: 1, id: 2 };
+    const second = { container: 1, id: 3 };
+    expect(chosenNsbca(null, fallback)).toEqual(fallback);
+    expect(chosenNsbca({}, fallback)).toEqual(fallback);
+    expect(chosenNsbca({ nsbca: [] }, fallback)).toEqual(fallback);
+    expect(chosenNsbca({ nsbca: [first, second] }, fallback)).toEqual(first);
+    const near = item(9, "NSBCA", "near");
+    const named = item(4, "NSBCA", "body");
+    const names = { "1:4": ["body_walk"] };
+    expect(pairedNsbca([near, named], names, "body", 9)).toEqual(named.ref);
+    expect(pairedNsbca([near, named], names, "body", 9, { nsbca: [near.ref] })).toEqual(near.ref);
     expect(showPlayback([], null, null, null)).toBe(false);
     expect(showPlayback(["a"], null, null, null)).toBe(true);
     expect(showPlayback([], { container: 1, id: 1 }, null, null)).toBe(true);

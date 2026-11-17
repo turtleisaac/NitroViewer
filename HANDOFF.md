@@ -471,8 +471,25 @@ load — no guessing.**
 - **`lockstep`** — equal-length runs of each format in a stated `order`; unit i aligns the i-th of each.
   (The common Pokémon layout: a block of NCLR, then NCGR, then NCER, then NANR.)
 - **`interleaved`** — entries repeat a fixed pattern per unit, e.g. `["NCLR","NCGR","NCER","NANR"]`.
-- **`explicit`** — an array of units with exact indices: `[{ "nclr":1, "ncgr":19, "ncer":32, "nanr":43 }]`.
-- **`model-set`** — 3D: pair NSBMD with its NSBTX/NSBCA/tracks (declared, replacing `pickNearestAfter`).
+- **`explicit`** — exact member indexes on a NARC:
+
+  ```json
+  "grouping": {
+    "strategy": "explicit",
+    "units": [
+      { "nclr": 63, "ncgr": 64, "ncer": 65, "nanr": 66 },
+      { "ncgr": 70, "nclr": 63 },
+      { "nsbmd": 0, "nsbtx": [1, 7], "nsbca": [2, 3], "nsbta": 4, "nsbtp": 5, "nsbma": 6, "nsbva": 8 }
+    ]
+  }
+  ```
+
+  A role key is a lower-case name from `CheerpjFacade.formatOf` (`web/src/util.ts` `KNOWN_FORMATS`): `ncgr`, `nscr`, `nsbmd`, `nsbtx`, `nsbca`, and the rest of that list. Any role may be omitted. A value is one index, or an array when one model has several textures or animations. Sprite auto-pairing uses the first index of `ncgr` / `nclr` / `ncer` / `nanr`. The same index may be named by more than one unit, or by two roles of one unit. Unknown keys are rejected.
+
+  A clicked index that appears in `units` uses the **first unit in the array**. When the NARC also declares `lockstep` or `interleaved`, a listed index uses the explicit unit and an unlisted index uses the stride. `strategy: "explicit"` ignores `order`. `explicitUnitsContaining` lists every unit that includes the index, under any role, in declaration order. `resolveExplicitUnit` returns that unit with every role expanded to refs. A bad role, a negative index, an empty list, or any other malformed explicit list rejects that NARC's grouping.
+
+  A language file's `grouping.units` array is the whole list (`deepMerge` replaces arrays). Other grouping keys merge, so a language file that only sets `units` keeps the family `strategy` and `order`.
+- **`model-set`** — intra-NARC, an NSBMD with its NSBTX and animation tracks is an `explicit` unit with those format names. Cross-NARC `sets` and the top-level `models` entry are unbuilt. The model viewer selects the unit's first NSBCA, then the name/nearest heuristic. External NSBTX and the NSBMA / NSBVA / NSBTP tracks are chosen by hand; `resolveExplicitUnit` returns them.
 
 ### Data split across NARCs (cross-NARC units)
 A unit's parts are often in **different NARCs** — e.g. models in `build_model.narc` and their textures in
@@ -504,7 +521,7 @@ three containers. Intra-NARC groupings are just the degenerate case where every 
 **Member alignments** (how a member's index is derived from the clicked unit's index `i`):
 - **`index`** — parallel archives, member index = `i` (the common case).
 - **`offset`** — member index = `i + k` (per-member constant), for archives that lead/lag.
-- **`explicit`** — a per-unit index table when there's no arithmetic relation.
+- **`explicit`** — a per-unit index table when there's no arithmetic relation. Not built. The intra-NARC `grouping.units` list above is the explicit mode that shipped; this alignment is the cross-NARC form.
 - **`by-name`** — match by the internal asset name (NSBMD material texture-names ↔ the NSBTX's texture
   names; NSBMD model name ↔ NSBCA name). Robust when archives aren't index-aligned; a good heuristic
   fallback even without a manifest.
@@ -564,14 +581,18 @@ palette import, ✅ raw extract/replace of any file (`exportFile`), ✅ whole-NA
 wildcards. **Manifest-first, `pairing.ts` heuristic-fallback.** Wired into SpriteViewer: a **"◆ Game DB"
 badge**, render hints (transparent/scanned/tileWidth/paletteIndex) seed the view, and declared groupings
 resolve the sibling unit. Seeded with Platinum trainer/pokemon sprite NARCs (`grouping.test.ts` covers the
-strategies). **Residual:** grow coverage (only render-hint entries seeded; irregular NARCs still use the
-heuristic), cross-NARC `sets` resolution (schema + resolver stubs exist; not yet consumed by ModelViewer),
+strategies). **`explicit` grouping is implemented** for every `formatOf` name (one index or a list per role;
+the first listed unit is the one used; `resolveExplicitUnit` is the full unit). ModelViewer selects the
+unit's first NSBCA, then the name heuristic. No real irregular NARC is filled in yet.
+**Residual:** grow coverage (irregular NARCs such as HGSS `a/1/2/0` still use the heuristic until a follow-up
+adds entries), cross-NARC `sets` resolution (schema + resolver stubs exist; not yet consumed by ModelViewer),
 and the "export overrides → manifest stub" dev action.
 
 **✅ Model↔NSBCA pairing — by-name.** New facade `getAnimationSetInfo` exposes NSBCA clip names; ModelViewer
 fetches them and `pickAnimByName` picks the lowest-index NSBCA whose clips share the model's base name
 ("manene" ↔ "manene_aruku"), never a neighbour's ("kami_pur"), falling back to nearest-index. The picker now
-**labels each NSBCA by its clip name**. *(Nds4j exports NSBMD as rigid **node** animation, never glTF skins —
+**labels each NSBCA by its clip name**. An explicit unit's first NSBCA is selected before that heuristic (§8).
+*(Nds4j exports NSBMD as rigid **node** animation, never glTF skins —
 no vertex-skinned models, so don't chase GPU/CPU skinning.)*
 
 **Read-side polish (§5).** ✅ **Ground grid** + Reset-view in ModelViewer (Grid toggle; grid sized to the
@@ -622,9 +643,11 @@ scanned sprites (DPPt trbgra) compose per-cell instead of the raw-bitmap fallbac
 *(Note: the NCER/NANR **write-back** that used to be listed here is DONE — §6; only the scanned-bitmap
 compose is still blocked.)*
 
-**Game DB residual.** Grow coverage per game (only render-hint/grouping entries seeded so far); cross-NARC
-`sets` resolution (schema + resolver stubs exist, not yet consumed by ModelViewer); an "export overrides →
-manifest stub" dev action. The **D/P battle-sprite scan direction** fix already ships via the game DB.
+**Game DB residual.** Explicit intra-NARC grouping covers every recognized format (§8). ModelViewer applies
+the unit's NSBCA. External textures and material tracks are chosen by hand. Real irregular entries are not
+seeded yet. Grow coverage per game; cross-NARC `sets` resolution (schema + resolver stubs exist, not yet
+consumed by ModelViewer); an "export overrides → manifest stub" dev action. The **D/P battle-sprite scan
+direction** fix already ships via the game DB.
 
 **UX niceties.** ✅ **Width (px)** control; ✅ filesystem search; ✅ hex viewer; ✅ cross-file live invalidation
 (`editVersion` re-decodes every viewer after any import). Remaining: the NANR import edits the frame's *cell*

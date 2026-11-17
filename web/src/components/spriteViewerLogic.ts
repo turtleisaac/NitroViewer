@@ -31,6 +31,15 @@ export function unitSlot(unit: SpriteUnit | null, key: "ncgr" | "nclr" | "ncer")
   return unit[key];
 }
 
+/** Saved ref, then the manifest unit, then the nearest sibling. */
+export function pairedRefs(saved: SpritePair, unit: SpriteUnit | null, picked: SpritePair): SpritePair {
+  const ncgr = savedOrUnit(saved.ncgr, unitSlot(unit, "ncgr"), picked.ncgr);
+  const nclr = savedOrUnit(saved.nclr, unitSlot(unit, "nclr"), picked.nclr);
+  const ncer = savedOrUnit(saved.ncer, unitSlot(unit, "ncer"), picked.ncer);
+
+  return { ncgr, nclr, ncer };
+}
+
 /** Pairing chosen when the selection or its container changes. */
 export function nextSpritePair(args: {
   items: ResourceItem[];
@@ -44,13 +53,14 @@ export function nextSpritePair(args: {
   nclrs: ResourceItem[];
   ncers: ResourceItem[];
 }): SpritePair {
+  // Manifest companions, then the nearest sibling of each sprite role.
   const likes = args.items.map((item) => ({ index: item.ref.id, format: item.format }));
   const unit = resolveSpriteUnit(args.gameCode, args.narcPath, args.container, likes, args.id);
-  return {
-    ncgr: savedOrUnit(args.saved.ncgr, unitSlot(unit, "ncgr"), pickSibling(args.ncgrs, args.peers, args.id)),
-    nclr: savedOrUnit(args.saved.nclr, unitSlot(unit, "nclr"), pickSibling(args.nclrs, args.peers, args.id)),
-    ncer: savedOrUnit(args.saved.ncer, unitSlot(unit, "ncer"), pickSibling(args.ncers, args.peers, args.id)),
-  };
+  const ncgr = pickSibling(args.ncgrs, args.peers, args.id);
+  const nclr = pickSibling(args.nclrs, args.peers, args.id);
+  const ncer = pickSibling(args.ncers, args.peers, args.id);
+
+  return pairedRefs(args.saved, unit, { ncgr, nclr, ncer });
 }
 
 /** Resources of one format, in container order. */
