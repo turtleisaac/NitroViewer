@@ -51,32 +51,79 @@ describe("shouldShowDonationNotice", () => {
   });
 });
 
+/** In-memory Storage backed by a map. */
+function memoryStorage(): Storage {
+  // Values written with setItem.
+  const store = new Map<string, string>();
+
+  return {
+    get length() {
+      return store.size;
+    },
+    clear() {
+      store.clear();
+    },
+    getItem(key) {
+      return store.get(key) ?? null;
+    },
+    key(index) {
+      return [...store.keys()][index] ?? null;
+    },
+    removeItem(key) {
+      store.delete(key);
+    },
+    setItem(key, value) {
+      store.set(key, value);
+    },
+  };
+}
+
+/** Storage that throws from every read and write. */
+function deniedStorage(): Storage {
+  /** Error raised when the browser has blocked local storage. */
+  function deny(): never {
+    throw new Error("denied");
+  }
+
+  return {
+    get length() {
+      return deny();
+    },
+    clear() {
+      deny();
+    },
+    getItem() {
+      return deny();
+    },
+    key() {
+      return deny();
+    },
+    removeItem() {
+      deny();
+    },
+    setItem() {
+      deny();
+    },
+  };
+}
+
 describe("donation dismissal", () => {
   it("remembers the checkbox and ignores a storage failure", () => {
-    const store = new Map<string, string>();
-    const storage = {
-      getItem: (key: string) => store.get(key) ?? null,
-      setItem: (key: string, value: string) => {
-        store.set(key, value);
-      },
-    } as Storage;
+    // A working store, plus a record of close() calls.
+    const storage = memoryStorage();
     const closed: boolean[] = [];
 
     dismissDonationNotice(false, storage, () => closed.push(true));
+
     expect(donationDismissed(storage)).toBe(false);
 
     dismissDonationNotice(true, storage, () => closed.push(true));
+
     expect(donationDismissed(storage)).toBe(true);
     expect(closed).toEqual([true, true]);
 
-    const blocked = {
-      getItem: () => {
-        throw new Error("denied");
-      },
-      setItem: () => {
-        throw new Error("denied");
-      },
-    } as Storage;
+    // Reads and writes that throw count as not dismissed.
+    const blocked = deniedStorage();
 
     expect(donationDismissed(blocked)).toBe(false);
     expect(() => dismissDonationNotice(true, blocked, () => undefined)).not.toThrow();
