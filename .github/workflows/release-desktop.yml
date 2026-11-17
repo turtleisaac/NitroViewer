@@ -1,20 +1,26 @@
 name: Release desktop apps
 
-# Publishing a GitHub Release (or running this workflow by hand) packages the
-# Electron app on macOS, Windows, and Linux and, for a real release, attaches
-# the installers + SHA256SUMS to that release. macOS is signed/notarized when
-# CSC_LINK / APPLE_* secrets are set; otherwise the build stays unsigned.
+# Publishing a GitHub Release, or running this workflow by hand, packages the
+# Electron app on macOS, Windows, and Linux. A published release attaches the
+# installers and SHA256SUMS to that release. A manual run does the same when
+# it names a tag. macOS is signed and notarized when CSC_LINK and the APPLE_*
+# secrets are set; without them the build stays unsigned.
 
 on:
   release:
     types: [published]
   workflow_dispatch:
+    inputs:
+      tag:
+        description: Release tag to check out and attach installers to
+        required: false
+        type: string
 
 permissions:
   contents: write
 
 concurrency:
-  group: desktop-release-${{ github.event.release.tag_name || github.run_id }}
+  group: desktop-release-${{ github.event.release.tag_name || inputs.tag || github.run_id }}
   cancel-in-progress: false
 
 jobs:
@@ -31,10 +37,19 @@ jobs:
             electron_args: --linux --x64
     runs-on: ${{ matrix.os }}
     steps:
+      - name: Use LF line endings
+        shell: bash
+        run: |
+          # Checkstyle reads the checkout as text and requires LF endings.
+          git config --global core.autocrlf false
+          git config --global core.eol lf
+
       - name: Checkout NitroViewer
         uses: actions/checkout@v4
         with:
           path: NitroViewer
+          # Manual runs with a tag check that tag out. Other runs check out the triggering ref.
+          ref: ${{ inputs.tag || github.ref }}
 
       - name: Checkout Nds4j
         uses: actions/checkout@v4
@@ -80,13 +95,16 @@ jobs:
         run: npm ci
 
       - name: Set version from release tag
-        if: github.event_name == 'release'
+        if: github.event_name == 'release' || inputs.tag != ''
         working-directory: NitroViewer/web
         shell: bash
+        env:
+          RELEASE_TAG: ${{ github.event.release.tag_name || inputs.tag }}
         run: |
-          TAG="${{ github.event.release.tag_name }}"
-          VERSION="${TAG#v}"
-          npm version "$VERSION" --no-git-tag-version --allow-same-version
+          # electron-builder takes the artifact version from package.json.
+          version="${RELEASE_TAG#v}"
+
+          npm version "$version" --no-git-tag-version --allow-same-version
 
       - name: Test + build SPA
         working-directory: NitroViewer/web
@@ -142,6 +160,20 @@ jobs:
             NitroViewer/release/*.deb
             NitroViewer/release/*.tar.gz
 
+      - name: Attach to the named release
+        if: github.event_name == 'workflow_dispatch' && inputs.tag != ''
+        working-directory: NitroViewer
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ inputs.tag }}
+        run: |
+          # Installers for this runner, uploaded onto the named release.
+          shopt -s nullglob
+          assets=(release/*.dmg release/*.exe release/*.zip release/*.AppImage release/*.deb release/*.tar.gz)
+
+          gh release upload "$RELEASE_TAG" "${assets[@]}" --clobber
+
   checksums:
     needs: build
     runs-on: ubuntu-latest
@@ -170,3 +202,14 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           files: dist/SHA256SUMS
+
+      - name: Attach SHA256SUMS to the named release
+        if: github.event_name == 'workflow_dispatch' && inputs.tag != ''
+        working-directory: dist
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ inputs.tag }}
+        run: |
+          # Checksums for the installers on the named release.
+          gh release upload "$RELEASE_TAG" SHA256SUMS --clobber
