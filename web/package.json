@@ -21,6 +21,7 @@
     "build": "npm run typecheck && npm run build-worklet && vite build",
     "preview": "vite preview",
     "test": "vitest run",
+    "test:gamedb": "vitest run --config vitest.gamedb.config.ts",
     "test:e2e": "playwright test",
     "coverage": "vitest run --coverage --config vitest.coverage.config.ts",
     "mutate": "stryker run",

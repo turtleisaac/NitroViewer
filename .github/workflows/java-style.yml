@@ -2,10 +2,23 @@ name: Java style
 
 # The facade is not part of the Pages deploy. This is the check that a pull
 # request's Java still matches the Eclipse profile and the newline/tab rules.
+# Game DB json is not Java, so it does not run Spotless or Checkstyle.
 on:
   push:
     branches: ['**']
+    paths:
+      - '.github/workflows/java-style.yml'
+      - 'nitroviewer-core/pom.xml'
+      - 'nitroviewer-core/config/**'
+      - 'nitroviewer-core/**'
+      - '!nitroviewer-core/**/gamedb.json'
   pull_request:
+    paths:
+      - '.github/workflows/java-style.yml'
+      - 'nitroviewer-core/pom.xml'
+      - 'nitroviewer-core/config/**'
+      - 'nitroviewer-core/**'
+      - '!nitroviewer-core/**/gamedb.json'
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}

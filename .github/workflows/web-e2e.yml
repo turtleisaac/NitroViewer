@@ -1,8 +1,28 @@
 name: Web e2e
 
 # Phone layout against a synthetic ROM. Needs the CheerpJ jars, so this is separate from lint.
+# A game DB json change, or a unit test with no app change, does not run Playwright.
 on:
   pull_request:
+    paths:
+      - '.github/workflows/web-e2e.yml'
+      - 'web/package.json'
+      - 'web/package-lock.json'
+      - 'web/playwright.config.ts'
+      - 'web/vite.config.ts'
+      - 'web/e2e/**'
+      - 'web/src/**'
+      - 'web/scripts/**'
+      - 'web/index.html'
+      - 'web/public/**'
+      - 'nitroviewer-core/pom.xml'
+      - 'nitroviewer-core/src/**'
+      - 'scripts/build-jars.sh'
+      - 'scripts/e2e-banner.mjs'
+      - '!web/src/**/*.test.ts'
+      - '!web/src/**/*.test.tsx'
+      - '!web/src/gamedb/**/gamedb.json'
+      - '!nitroviewer-core/**/gamedb.json'
   workflow_dispatch:
 
 concurrency:
