@@ -2,11 +2,23 @@ name: Web lint
 
 # TypeScript/TSX lint and typecheck for the web app. The Pages deploy runs
 # lint and the production build. This workflow covers pull requests and
-# pushes that do not deploy.
+# pushes that do not deploy. A game DB json change does not lint.
 on:
   push:
     branches: ['**']
+    paths:
+      - '.github/workflows/web-lint.yml'
+      - 'web/package.json'
+      - 'web/package-lock.json'
+      - 'web/**'
+      - '!web/src/gamedb/**/gamedb.json'
   pull_request:
+    paths:
+      - '.github/workflows/web-lint.yml'
+      - 'web/package.json'
+      - 'web/package-lock.json'
+      - 'web/**'
+      - '!web/src/gamedb/**/gamedb.json'
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}

@@ -1,10 +1,41 @@
 name: Quality gates
 
 # CRAP and dryer ratchet. Coverage is regenerated so a stale report cannot raise a score.
+# Shipped gamedb.json does not change a score. A test fixture under src/test still does.
 on:
   push:
     branches: ['**']
+    paths:
+      - '.github/workflows/quality.yml'
+      - 'nitroviewer-core/pom.xml'
+      - 'nitroviewer-core/**'
+      - 'web/package.json'
+      - 'web/package-lock.json'
+      - 'web/vitest.config.ts'
+      - 'web/vitest.coverage.config.ts'
+      - 'web/src/**'
+      - 'web/electron/**'
+      - 'web/e2e/**'
+      - 'scripts/quality/**'
+      - '.quality/**'
+      - '!web/src/gamedb/**/gamedb.json'
+      - '!nitroviewer-core/src/main/resources/**/gamedb.json'
   pull_request:
+    paths:
+      - '.github/workflows/quality.yml'
+      - 'nitroviewer-core/pom.xml'
+      - 'nitroviewer-core/**'
+      - 'web/package.json'
+      - 'web/package-lock.json'
+      - 'web/vitest.config.ts'
+      - 'web/vitest.coverage.config.ts'
+      - 'web/src/**'
+      - 'web/electron/**'
+      - 'web/e2e/**'
+      - 'scripts/quality/**'
+      - '.quality/**'
+      - '!web/src/gamedb/**/gamedb.json'
+      - '!nitroviewer-core/src/main/resources/**/gamedb.json'
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}

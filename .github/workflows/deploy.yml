@@ -7,6 +7,14 @@ name: Deploy to GitHub Pages
 on:
   push:
     branches: [main]
+    paths:
+      - '.github/workflows/deploy.yml'
+      - 'web/package.json'
+      - 'web/package-lock.json'
+      - 'web/**'
+      - 'nitroviewer-core/pom.xml'
+      - 'nitroviewer-core/**'
+      - 'scripts/build-jars.sh'
   workflow_dispatch:
 
 permissions:

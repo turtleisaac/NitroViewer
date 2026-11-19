@@ -1,8 +1,25 @@
 name: Mutation testing
 
 # Changed files on pull requests. Full run weekly and on workflow_dispatch.
+# A pull request runs this only when production code or the mutation config changes.
 on:
   pull_request:
+    paths:
+      - '.github/workflows/mutation.yml'
+      - 'nitroviewer-core/pom.xml'
+      - 'nitroviewer-core/src/main/**'
+      - 'web/package.json'
+      - 'web/package-lock.json'
+      - 'web/stryker.config.json'
+      - 'web/src/**'
+      - 'scripts/quality/**'
+      - '.quality/mutation-baseline.json'
+      - '.quality/requirements.txt'
+      - '!web/src/**/*.test.ts'
+      - '!web/src/**/*.test.tsx'
+      - '!web/src/**/*.d.ts'
+      - '!web/src/gamedb/**/gamedb.json'
+      - '!nitroviewer-core/**/gamedb.json'
   schedule:
     - cron: "0 7 * * 1"
   workflow_dispatch:
