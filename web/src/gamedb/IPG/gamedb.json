@@ -49,6 +49,43 @@
         "12": { "tileWidth": 64 },
         "17": { "tileWidth": 64 }
       }
+    },
+    "/a/2/6/2": {
+      "role": "opening-movie",
+      "comment": "Shared screens list the HeartGold palette first.",
+      "grouping": {
+        "strategy": "explicit",
+        "units": [
+          { "nclr": 0, "ncgr": 4, "nscr": [12, 14] },
+          { "nclr": 2, "ncgr": 4, "nscr": [12, 14] },
+          { "nclr": 1, "ncgr": 5, "nscr": 13 },
+          { "nclr": 3, "ncgr": 5, "nscr": 13 },
+          { "nclr": 0, "ncgr": 6, "nscr": 15 },
+          { "nclr": 1, "ncgr": 7, "nscr": [16, 17, 18] },
+          { "nclr": 23, "ncgr": 24, "ncer": 26, "nanr": 25 },
+          { "nclr": 2, "ncgr": 8, "nscr": 19 },
+          { "nclr": 3, "ncgr": 9, "nscr": [20, 21, 22] },
+          { "nclr": 27, "ncgr": 28, "ncer": 30, "nanr": 29 },
+          { "nclr": 31, "ncgr": 34, "nscr": 36 },
+          { "nclr": 32, "ncgr": 33, "nscr": [35, 37, 38] },
+          { "nclr": 77, "ncgr": 78, "ncer": 80, "nanr": 79 },
+          { "nclr": 73, "ncgr": 74, "ncer": 76, "nanr": 75 },
+          { "nsbmd": 103, "nsbca": 104, "nsbta": 105 },
+          { "nsbmd": 100, "nsbca": 101, "nsbta": 102 },
+          { "nsbmd": 97, "nsbca": 98, "nsbta": 99 },
+          { "nclr": 39, "ncgr": 40, "nscr": [42, 43, 44, 45, 46, 47, 48, 49] },
+          { "nclr": 65, "ncgr": 66, "ncer": 68, "nanr": 67 },
+          { "nclr": 69, "ncgr": 70, "ncer": 72, "nanr": 71 },
+          { "nclr": 39, "ncgr": 41, "nscr": [50, 51, 52] },
+          { "nclr": 53, "ncgr": 54, "nscr": [55, 56, 57, 58] },
+          { "nclr": 81, "ncgr": 82, "ncer": 84, "nanr": 83 },
+          { "nclr": 85, "ncgr": 86, "ncer": 88, "nanr": 87 },
+          { "nclr": 93, "ncgr": 94, "ncer": 96, "nanr": 95 },
+          { "nclr": 89, "ncgr": 90, "ncer": 92, "nanr": 91 },
+          { "nclr": 39, "ncgr": 59, "nscr": [61, 63] },
+          { "nclr": 31, "ncgr": 60, "nscr": [62, 64] }
+        ]
+      }
     }
   }
 }
