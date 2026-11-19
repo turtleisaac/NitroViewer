@@ -8,6 +8,7 @@ import {
   type NarcEntry,
   type NitroViewerClient,
   type ResourceRef,
+  type SpriteFacts,
   type PngImportResult,
   type ScreenImportResult,
   type RomInfo,
@@ -16,7 +17,7 @@ import {
 import { base64ToBytes, download } from "../util";
 import { isSkippableUnpackedPath, zipStore } from "../zip";
 
-export interface ResourceItem {
+export interface ResourceItem extends SpriteFacts {
   ref: ResourceRef;
   label: string;
   format: string;
@@ -871,6 +872,12 @@ export const useStore = create<AppState>((set, get) => ({
         ref: { container, id: e.index },
         label: `#${e.index}`,
         format: e.format,
+        depth: e.depth,
+        colors: e.colors,
+        tileBytes: e.tileBytes,
+        boundary: e.boundary,
+        maxTile: e.maxTile,
+        objects: e.objects,
       }));
     }
     return get().romSiblings;
