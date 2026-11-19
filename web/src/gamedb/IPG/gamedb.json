@@ -30,18 +30,18 @@
       "grouping": {
         "strategy": "explicit",
         "units": [
-          { "nclr": 2, "ncgr": 0, "nscr": [3, 4, 5, 6, 7, 8] },
-          { "nclr": 1, "ncgr": 0, "nscr": [3, 4, 5, 6, 7, 8] },
-          { "nclr": 11, "ncgr": 10, "nscr": 9, "ncer": 53, "nanr": 54 },
-          { "nclr": 16, "ncgr": [12, 13, 14, 15, 22, 23, 24, 25], "ncer": 55, "nanr": 56 },
-          { "nclr": [21, 11], "ncgr": [17, 18, 19, 20, 26, 27, 28, 29], "ncer": 55, "nanr": 56 },
-          { "nclr": 31, "ncgr": 32, "nscr": [43, 44, 45, 51] },
-          { "nclr": 30, "ncgr": 32, "nscr": [43, 44, 45, 51] },
-          { "nclr": 33, "ncgr": 37, "nscr": [46, 47, 48] },
-          { "nclr": 31, "ncgr": 42, "nscr": [49, 50, 52] },
-          { "nclr": 30, "ncgr": 42, "nscr": [49, 50, 52] },
-          { "nclr": 59, "ncgr": 60, "ncer": 61, "nanr": 62 },
-          { "nclr": 63, "ncgr": 64, "ncer": 65, "nanr": 66 }
+          { "label": "SoulSilver upper screen", "nclr": 2, "ncgr": 0, "nscr": [3, 4, 5, 6, 7, 8] },
+          { "label": "HeartGold upper screen", "nclr": 1, "ncgr": 0, "nscr": [3, 4, 5, 6, 7, 8] },
+          { "label": "Oak", "nclr": 11, "ncgr": 10, "nscr": 9, "ncer": 53, "nanr": 54 },
+          { "label": "Ethan", "nclr": 16, "ncgr": [12, 13, 14, 15, 22, 23, 24, 25], "ncer": 55, "nanr": 56 },
+          { "label": "Lyra", "nclr": [21, 11], "ncgr": [17, 18, 19, 20, 26, 27, 28, 29], "ncer": 55, "nanr": 56 },
+          { "label": "SoulSilver lower screen", "nclr": 31, "ncgr": 32, "nscr": [43, 44, 45, 51] },
+          { "label": "HeartGold lower screen", "nclr": 30, "ncgr": 32, "nscr": [43, 44, 45, 51] },
+          { "label": "Choice buttons", "nclr": 33, "ncgr": 37, "nscr": [46, 47, 48] },
+          { "label": "SoulSilver window frames", "nclr": 31, "ncgr": 42, "nscr": [49, 50, 52] },
+          { "label": "HeartGold window frames", "nclr": 30, "ncgr": 42, "nscr": [49, 50, 52] },
+          { "label": "Touch button", "nclr": 59, "ncgr": 60, "ncer": 61, "nanr": 62 },
+          { "label": "Marill", "nclr": 63, "ncgr": 64, "ncer": 65, "nanr": 66 }
         ]
       },
       "entries": {

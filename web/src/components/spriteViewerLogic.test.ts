@@ -26,6 +26,8 @@ import {
   requireNclr,
   requireTiles,
   roleSuffix,
+  gameDbBadgeText,
+  selectedUnitLabel,
   runSpriteImport,
   savedOrUnit,
   scanFront,
@@ -79,6 +81,16 @@ describe("sprite viewer logic", () => {
     expect(tilesFromPx("17")).toBe(2);
     expect(roleSuffix(undefined)).toBe("");
     expect(roleSuffix("battle-sprite")).toContain("battle sprite");
+    expect(gameDbBadgeText("Pokémon HeartGold", "professor-intro", null)).toBe(
+      "Game DB · Pokémon HeartGold · professor intro",
+    );
+    expect(gameDbBadgeText("Pokémon HeartGold", undefined, null)).toBe("Game DB · Pokémon HeartGold");
+    expect(gameDbBadgeText("Pokémon HeartGold", "professor-intro", "Oak")).toBe(
+      "Game DB · Pokémon HeartGold · professor intro · Oak",
+    );
+    expect(selectedUnitLabel(null, "IPKE", "/a/1/2/0")).toBeNull();
+    expect(selectedUnitLabel({ ref: { id: 10 } }, "IPKE", "/a/1/2/0")).toBe("Oak");
+    expect(selectedUnitLabel({ ref: { id: 10 } }, undefined, null)).toBeNull();
     expect(showImporter("NSCR")).toBe(true);
     expect(showImporter("NCLR")).toBe(false);
     expect(maxFrameOf([], 0)).toBe(-1);

@@ -11,6 +11,8 @@ import {
   resolveSpriteUnitIn,
   resolveExplicitUnit,
   resolveExplicitUnitIn,
+  resolveExplicitLabel,
+  labelOf,
   groupUnit,
   explicitIssues,
   explicitUnitsContaining,
@@ -306,6 +308,76 @@ describe("explicit units", () => {
     expect(explicitIssues([{ nscr: ["2"] }], "explicit")).toEqual(["unit 0 nscr is not a whole number"]);
   });
 
+  it("keeps the files when the label is blank or not text", () => {
+    expect(explicitIssues([{ label: "Oak", ncgr: 1 }], "explicit")).toEqual([]);
+    expect(explicitIssues([{ label: " Oak ", nclr: 0 }], "explicit")).toEqual([]);
+    expect(explicitIssues([{ label: "", ncgr: 1 }], "explicit")).toEqual([]);
+    expect(explicitIssues([{ label: "   ", ncgr: 1 }], "explicit")).toEqual([]);
+    expect(explicitIssues([{ label: 1, ncgr: 1 }], "explicit")).toEqual([]);
+    expect(explicitIssues([{ label: null, ncgr: 1 }], "explicit")).toEqual([]);
+    expect(explicitIssues([{ label: true, ncgr: 1 }], "explicit")).toEqual([]);
+    expect(explicitIssues([{ label: { text: "Oak" }, ncgr: 1 }], "explicit")).toEqual([]);
+    expect(explicitIssues([{ label: ["Oak"], ncgr: 1 }], "explicit")).toEqual([]);
+    expect(explicitIssues([{ label: "Oak" }], "explicit")).toEqual(["unit 0 has no members"]);
+    expect(explicitIssues([{ label: 1 }], "explicit")).toEqual(["unit 0 has no members"]);
+    expect(explicitIssues([{ label: "" }], "explicit")).toEqual(["unit 0 has no members"]);
+    expect(explicitIssues([{ label: "Oak", foo: 1 }], "explicit")).toEqual(["unit 0 has unknown role foo"]);
+    expect(explicitIssues([{ label: "Oak", ncgr: -1 }], "explicit")).toEqual(["unit 0 ncgr is negative"]);
+  });
+
+  it("pairs a unit whose label is blank or not text, with no label on the result", () => {
+    const labels: Array<string | number | boolean | null | string[] | { text: string }> = [
+      "",
+      "   ",
+      1,
+      null,
+      true,
+      ["Oak"],
+      { text: "Oak" },
+    ];
+
+    for (const label of labels) {
+      const units = [{ label: label as unknown as string, ncgr: 4, nclr: 2 }];
+      const source = narcDb({ strategy: "explicit", units });
+      const resolved = resolveExplicitUnitIn(source, "ZZZE", "/intro", 7, 4);
+
+      expect(resolved).toEqual({
+        ncgr: [{ container: 7, id: 4 }],
+        nclr: [{ container: 7, id: 2 }],
+      });
+      expect(resolved).not.toHaveProperty("label");
+      expect(labelOf(resolved)).toBeNull();
+      expect(groupUnit({ strategy: "explicit", units }, [], 4, 7)).toEqual({
+        ncgr: { container: 7, id: 4 },
+        nclr: { container: 7, id: 2 },
+      });
+    }
+
+    const blank = narcDb({
+      strategy: "interleaved",
+      order: ["NCGR", "NCLR", "NCER", "NANR"],
+      units: [{ label: "", ncgr: 0, nclr: 1 }],
+    });
+    const entries: EntryLike[] = [
+      { index: 0, format: "NCGR" },
+      { index: 1, format: "NCLR" },
+      { index: 2, format: "NCER" },
+      { index: 3, format: "NANR" },
+    ];
+
+    expect(resolveSpriteUnitIn(blank, "ZZZE", "/intro", 8, entries, 0)).toEqual({
+      ncgr: { container: 8, id: 0 },
+      nclr: { container: 8, id: 1 },
+    });
+    expect(labelOf(resolveExplicitUnitIn(blank, "ZZZE", "/intro", 8, 0))).toBeNull();
+    expect(resolveSpriteUnitIn(blank, "ZZZE", "/intro", 8, entries, 2)).toEqual({
+      ncgr: { container: 8, id: 0 },
+      nclr: { container: 8, id: 1 },
+      ncer: { container: 8, id: 2 },
+      nanr: { container: 8, id: 3 },
+    });
+  });
+
   it("rejects an empty unit, a non-object, a non-list, and a missing explicit list", () => {
     expect(explicitIssues([{}], "explicit")).toEqual(["unit 0 has no members"]);
     expect(explicitIssues([null], "explicit")).toEqual(["unit 0 is not an object"]);
@@ -491,14 +563,36 @@ describe("resolveSpriteUnitIn", () => {
       strategy: "explicit",
       units: [{ nsbmd: 0, nsbtx: [1, 7], nsbca: [2, 3], nscr: 6 }],
     });
-    expect(resolveExplicitUnitIn(models, "ZZZE", "/intro", 8, 3)).toEqual({
+    const plain = resolveExplicitUnitIn(models, "ZZZE", "/intro", 8, 3);
+    expect(plain).toEqual({
       nsbmd: [{ container: 8, id: 0 }],
       nsbtx: [{ container: 8, id: 1 }, { container: 8, id: 7 }],
       nsbca: [{ container: 8, id: 2 }, { container: 8, id: 3 }],
       nscr: [{ container: 8, id: 6 }],
     });
+    expect(plain).not.toHaveProperty("label");
     expect(resolveExplicitUnitIn(models, "ZZZE", "/intro", 8, 7)?.nsbtx?.[1]).toEqual({ container: 8, id: 7 });
     expect(resolveExplicitUnitIn(models, "ZZZE", "/intro", 8, 4)).toBeNull();
+    const named = narcDb({
+      strategy: "explicit",
+      units: [
+        { label: "Ethan", ncer: 55, ncgr: 12 },
+        { label: "Lyra", ncer: 55, ncgr: 17 },
+      ],
+    });
+    expect(resolveExplicitUnitIn(named, "ZZZE", "/intro", 8, 55)).toEqual({
+      label: "Ethan",
+      ncer: [{ container: 8, id: 55 }],
+      ncgr: [{ container: 8, id: 12 }],
+    });
+    expect(resolveExplicitUnitIn(named, "ZZZE", "/intro", 8, 17)?.label).toBe("Lyra");
+    expect(labelOf(null)).toBeNull();
+    expect(labelOf({})).toBeNull();
+    expect(labelOf({ label: "Oak" })).toBe("Oak");
+    expect(labelOf({ label: " Oak " })).toBe(" Oak ");
+    expect(labelOf({ label: "" })).toBeNull();
+    expect(labelOf({ label: "   " })).toBeNull();
+    expect(labelOf({ label: 1 as unknown as string })).toBeNull();
     expect(resolveExplicitUnit("ZZZE", "/intro", 8, 0)).toBeNull();
     expect(resolveSpriteUnitIn(models, "ZZZE", "/intro", 8, entries, 0)).toEqual({});
   });
@@ -545,5 +639,54 @@ describe("resolveSpriteUnitIn", () => {
     const empty = narcDb({ strategy: "explicit", units: [] });
     expect(explicitUnitsIn(empty, "ZZZE", "/intro")).toEqual([]);
     expect(resolveSpriteUnitIn(empty, "ZZZE", "/intro", 8, entries, 0)).toBeNull();
+  });
+});
+
+describe("professor intro labels", () => {
+  it("names each HeartGold unit", () => {
+    expect(resolveExplicitLabel("IPKE", "/a/1/2/0", 0)).toBe("HeartGold upper screen");
+    expect(resolveExplicitLabel("IPKE", "/a/1/2/0", 2)).toBe("SoulSilver upper screen");
+    expect(resolveExplicitLabel("IPKE", "/a/1/2/0", 10)).toBe("Oak");
+    expect(resolveExplicitLabel("IPKE", "/a/1/2/0", 9)).toBe("Oak");
+    expect(resolveExplicitLabel("IPKE", "/a/1/2/0", 53)).toBe("Oak");
+    expect(resolveExplicitLabel("IPKE", "/a/1/2/0", 12)).toBe("Ethan");
+    expect(resolveExplicitLabel("IPKE", "/a/1/2/0", 25)).toBe("Ethan");
+    expect(resolveExplicitLabel("IPKE", "/a/1/2/0", 55)).toBe("Ethan");
+    expect(resolveExplicitLabel("IPKE", "/a/1/2/0", 17)).toBe("Lyra");
+    expect(resolveExplicitLabel("IPKE", "/a/1/2/0", 29)).toBe("Lyra");
+    expect(resolveExplicitLabel("IPKE", "/a/1/2/0", 21)).toBe("Lyra");
+    expect(resolveExplicitLabel("IPKE", "/a/1/2/0", 32)).toBe("HeartGold lower screen");
+    expect(resolveExplicitLabel("IPKE", "/a/1/2/0", 51)).toBe("HeartGold lower screen");
+    expect(resolveExplicitLabel("IPKE", "/a/1/2/0", 31)).toBe("SoulSilver lower screen");
+    expect(resolveExplicitLabel("IPKE", "/a/1/2/0", 37)).toBe("Choice buttons");
+    expect(resolveExplicitLabel("IPKE", "/a/1/2/0", 48)).toBe("Choice buttons");
+    expect(resolveExplicitLabel("IPKE", "/a/1/2/0", 42)).toBe("HeartGold window frames");
+    expect(resolveExplicitLabel("IPKE", "/a/1/2/0", 49)).toBe("HeartGold window frames");
+    expect(resolveExplicitLabel("IPKE", "/a/1/2/0", 60)).toBe("Touch button");
+    expect(resolveExplicitLabel("IPKE", "/a/1/2/0", 62)).toBe("Touch button");
+    expect(resolveExplicitLabel("IPKE", "/a/1/2/0", 64)).toBe("Marill");
+    expect(resolveExplicitLabel("IPKE", "/a/1/2/0", 66)).toBe("Marill");
+    expect(resolveExplicitLabel("IPKE", "/a/1/2/0", 34)).toBeNull();
+    expect(resolveExplicitLabel("NOPE", "/a/1/2/0", 10)).toBeNull();
+    expect(resolveExplicitLabel(undefined, "/a/1/2/0", 10)).toBeNull();
+    expect(resolveExplicitLabel("CPUE", "/poketool/trgra/trfgra.narc", 0)).toBeNull();
+    const marill = resolveExplicitUnit("IPKE", "/a/1/2/0", 4, 64);
+    expect(marill?.label).toBe("Marill");
+    expect(marill?.ncgr?.[0]).toEqual({ container: 4, id: 64 });
+    expect(marill?.nclr?.[0]).toEqual({ container: 4, id: 63 });
+    expect(marill?.ncer?.[0]).toEqual({ container: 4, id: 65 });
+    expect(marill?.nanr?.[0]).toEqual({ container: 4, id: 66 });
+  });
+
+  it("names the SoulSilver copy with that game's palette first", () => {
+    expect(resolveExplicitLabel("IPGE", "/a/1/2/0", 0)).toBe("SoulSilver upper screen");
+    expect(resolveExplicitLabel("IPGS", "/a/1/2/0", 1)).toBe("HeartGold upper screen");
+    expect(resolveExplicitLabel("IPGE", "/a/1/2/0", 32)).toBe("SoulSilver lower screen");
+    expect(resolveExplicitLabel("IPGE", "/a/1/2/0", 30)).toBe("HeartGold lower screen");
+    expect(resolveExplicitLabel("IPGE", "/a/1/2/0", 42)).toBe("SoulSilver window frames");
+    expect(resolveExplicitLabel("IPGE", "/a/1/2/0", 52)).toBe("SoulSilver window frames");
+    expect(resolveExplicitLabel("IPGE", "/a/1/2/0", 10)).toBe("Oak");
+    expect(resolveExplicitLabel("IPGE", "/a/1/2/0", 61)).toBe("Touch button");
+    expect(resolveExplicitLabel("IPGE", "/a/1/2/0", 63)).toBe("Marill");
   });
 });

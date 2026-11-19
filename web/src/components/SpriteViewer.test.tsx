@@ -4,6 +4,7 @@ import { act, createElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { useStore } from "../state/store";
+import { ROM_CONTAINER } from "../transport";
 import { acceptSpriteFile, applyNanrMeta, decodeInto, loadSelectionImage, pendingBytes, saveSpritePng, SpriteViewer } from "./SpriteViewer";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
@@ -137,5 +138,58 @@ describe("SpriteViewer", () => {
     expect(host.textContent).toContain("The selected tileset isn't compatible with this cell or animation. Pick a different NCGR file.");
     expect(host.textContent).not.toContain("NegativeArraySizeException");
     expect(host.textContent).not.toContain("ArrayIndexOutOfBounds");
+  });
+
+  it("shows the explicit unit label on the game DB badge", async () => {
+    useStore.setState({
+      romHandle: 1,
+      romInfo: { title: "HEARTGOLD", gameCode: "IPKE", numFiles: 8 },
+      idToPath: { 4: "/a/1/2/0" },
+      narcs: { 7: { ref: { container: ROM_CONTAINER, id: 4 }, entries: [] } },
+      selection: {
+        ref: { container: 7, id: 10 },
+        name: "oak.ncgr",
+        format: "NCGR",
+        compressed: false,
+        size: 4,
+      },
+      romSiblings: [],
+      editVersion: 0,
+      client: {
+        ...useStore.getState().client,
+        decodeNcgr: async () => image,
+        decodeNcer: async () => image,
+        decodeNscr: async () => image,
+        decodeNanr: async () => image,
+        decodeNcerMeta: async () => ({ cellCount: 1 }),
+        decodeNanrMeta: async () => ({ animations: [{ frames: 1 }] }),
+      },
+    });
+    host = document.createElement("div");
+    document.body.appendChild(host);
+    root = createRoot(host);
+    act(() => { root?.render(createElement(SpriteViewer)); });
+    for (let i = 0; i < 6; i++) await act(async () => { await Promise.resolve(); });
+
+    const oak = host.querySelector(".gamedb-badge");
+    expect(oak?.textContent).toContain("Oak");
+    expect(oak?.textContent).toContain("professor intro");
+
+    act(() => {
+      useStore.setState({
+        selection: {
+          ref: { container: 7, id: 34 },
+          name: "spare.ncgr",
+          format: "NCGR",
+          compressed: false,
+          size: 4,
+        },
+      });
+    });
+    for (let i = 0; i < 4; i++) await act(async () => { await Promise.resolve(); });
+
+    expect(host.querySelector(".gamedb-badge")?.textContent).toBe(
+      "Game DB · Pokémon HeartGold · professor intro",
+    );
   });
 });

@@ -477,16 +477,16 @@ load — no guessing.**
   "grouping": {
     "strategy": "explicit",
     "units": [
-      { "nclr": 63, "ncgr": 64, "ncer": 65, "nanr": 66 },
+      { "label": "Oak", "nclr": 63, "ncgr": 64, "ncer": 65, "nanr": 66 },
       { "ncgr": 70, "nclr": 63 },
       { "nsbmd": 0, "nsbtx": [1, 7], "nsbca": [2, 3], "nsbta": 4, "nsbtp": 5, "nsbma": 6, "nsbva": 8 }
     ]
   }
   ```
 
-  A role key is a lower-case name from `CheerpjFacade.formatOf` (`web/src/util.ts` `KNOWN_FORMATS`): `ncgr`, `nscr`, `nsbmd`, `nsbtx`, `nsbca`, and the rest of that list. Any role may be omitted. A value is one index, or an array when one model has several textures or animations. Sprite auto-pairing uses the first index of `ncgr` / `nclr` / `ncer` / `nanr`. The same index may be named by more than one unit, or by two roles of one unit. Unknown keys are rejected.
+  A role key is a lower-case name from `CheerpjFacade.formatOf` (`web/src/util.ts` `KNOWN_FORMATS`): `ncgr`, `nscr`, `nsbmd`, `nsbtx`, `nsbca`, and the rest of that list. Any role may be omitted. A value is one index, or an array when one model has several textures or animations. Sprite auto-pairing uses the first index of `ncgr` / `nclr` / `ncer` / `nanr`. The same index may be named by more than one unit, or by two roles of one unit. An optional `label` string names the unit for display. It is not a file role. A value that is not a non-blank string is omitted from the resolved unit. Unknown keys are rejected.
 
-  A clicked index that appears in `units` uses the **first unit in the array**. When the NARC also declares `lockstep` or `interleaved`, a listed index uses the explicit unit and an unlisted index uses the stride. `strategy: "explicit"` ignores `order`. `explicitUnitsContaining` lists every unit that includes the index, under any role, in declaration order. `resolveExplicitUnit` returns that unit with every role expanded to refs. A bad role, a negative index, an empty list, or any other malformed explicit list rejects that NARC's grouping.
+  A clicked index that appears in `units` uses the **first unit in the array**. When the NARC also declares `lockstep` or `interleaved`, a listed index uses the explicit unit and an unlisted index uses the stride. `strategy: "explicit"` ignores `order`. `explicitUnitsContaining` lists every unit that includes the index, under any role, in declaration order. `resolveExplicitUnit` returns that unit with every role expanded to refs, and the label when that text can be shown. A bad role, a negative index, an empty list, or any other malformed explicit list rejects that NARC's grouping.
 
   A language file's `grouping.units` array is the whole list (`deepMerge` replaces arrays). Other grouping keys merge, so a language file that only sets `units` keeps the family `strategy` and `order`.
 - **`model-set`** — intra-NARC, an NSBMD with its NSBTX and animation tracks is an `explicit` unit with those format names. Cross-NARC `sets` and the top-level `models` entry are unbuilt. The model viewer selects the unit's first NSBCA, then the name/nearest heuristic. External NSBTX and the NSBMA / NSBVA / NSBTP tracks are chosen by hand; `resolveExplicitUnit` returns them.
