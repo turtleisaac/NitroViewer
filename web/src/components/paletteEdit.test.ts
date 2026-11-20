@@ -61,13 +61,19 @@ describe("palette edits", () => {
 
   it("imports, saves, exports, and cancels", async () => {
     const setBusy = vi.fn();
-    const importPalette = vi.fn(async () => ({ unique: 1, colors: 4 }));
+    const info = vi.spyOn(console, "info").mockImplementation(() => undefined);
+    const importPalette = vi.fn(async () => ({ unique: 1, colors: 4, bySwatch: false }));
     await importPaletteFile(new File(["a"], "a.png"), true, () => false, { container: -1, id: 1 }, importPalette, setBusy);
     expect(importPalette).not.toHaveBeenCalled();
     await importPaletteFile(new File(["a"], "a.png"), false, () => true, { container: -1, id: 1 }, importPalette, setBusy);
     expect(importPalette).toHaveBeenCalled();
-    importPalette.mockResolvedValueOnce({ unique: 4, colors: 4 });
+    expect(info).toHaveBeenCalledTimes(1);
+    importPalette.mockResolvedValueOnce({ unique: 4, colors: 4, bySwatch: false });
     await importPaletteFile(new File(["a"], "a.png"), false, () => true, { container: -1, id: 1 }, importPalette, setBusy);
+    importPalette.mockResolvedValueOnce({ unique: 1, colors: 4, bySwatch: true });
+    await importPaletteFile(new File(["a"], "a.png"), false, () => true, { container: -1, id: 1 }, importPalette, setBusy);
+    expect(info).toHaveBeenCalledTimes(1);
+    info.mockRestore();
     importPalette.mockRejectedValueOnce(new Error("bad"));
     const alerted = vi.fn();
     window.alert = alerted;
