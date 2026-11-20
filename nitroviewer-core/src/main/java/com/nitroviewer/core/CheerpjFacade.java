@@ -347,7 +347,9 @@ public final class CheerpjFacade implements NitroViewerService
                 byte[] data = maybeDecompress(raw);
                 sb.append("{\"index\":").append(i)
                         .append(",\"size\":").append(raw.length)
-                        .append(",\"format\":").append(jstr(formatOf(data))).append('}');
+                        .append(",\"format\":").append(jstr(formatOf(data)));
+                SpriteFacts.append(sb, data);
+                sb.append('}');
             }
             return sb.append("]}").toString();
         }

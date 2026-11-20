@@ -46,6 +46,24 @@ class IncompatibleTilesetTest
                 .doesNotContain("incompatible-tileset");
     }
 
+    /**
+     * Listing a synthetic archive includes the tileset depth and the cell's OBJ.
+     */
+    @Test
+    @DisplayName("listNarc reports graphic header fields")
+    void listReportsFacts() throws Exception
+    {
+        CheerpjFacade facade = new CheerpjFacade();
+        int rom = open(facade, archive(4));
+        int narc = narcHandle(facade.openNarc(rom, 0));
+
+        String list = facade.listNarc(narc);
+
+        assertThat(list).contains("\"depth\":3");
+        assertThat(list).contains("\"tile\":4");
+        assertThat(list).contains("\"colors\":");
+    }
+
     @Test
     @DisplayName("tile 0 of that NCGR still decodes")
     void tileInsideTileset() throws Exception

@@ -440,7 +440,6 @@ function useSpriteSession() {
   const nclrs = useMemo(() => peersOf(items, "NCLR"), [items]);
   const ncgrs = useMemo(() => peersOf(items, "NCGR"), [items]);
   const ncers = useMemo(() => peersOf(items, "NCER"), [items]);
-  const selfPeers = useMemo(() => peersOf(items, fmt), [items, fmt]);
   const [pair, setPair] = useState<SpritePair>({});
   const [transparent, setTransparent] = useState(true);
   const [tilesWidth, setTilesWidth] = useState(0);
@@ -470,10 +469,6 @@ function useSpriteSession() {
       narcPath: gdb.narcPath,
       container,
       id: selection.ref.id,
-      peers: selfPeers,
-      ncgrs,
-      nclrs,
-      ncers,
     }));
   });
 

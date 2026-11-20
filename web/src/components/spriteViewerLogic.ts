@@ -1,5 +1,5 @@
 import type { ResourceItem } from "../state/store";
-import { pickSibling } from "../state/pairing";
+import { autoPair } from "../state/autoPair";
 import { resolveRenderHints, resolveSpriteUnit, type RenderHints, type SpriteUnit } from "../state/grouping";
 import { refKey, type DecodedImage, type ResourceRef } from "../transport";
 import { formatsOf, resourcesInContainer, type NarcListing } from "./viewerShared";
@@ -20,7 +20,7 @@ export interface PendingImport {
   kind: PendingKind;
 }
 
-/** Saved pairing, then a manifest unit, then the nearest sibling. */
+/** Saved pairing, then a manifest unit, then the automatic pair. */
 export function savedOrUnit(saved: ResourceRef | undefined, unitRef: ResourceRef | undefined, picked: ResourceRef | undefined): ResourceRef | undefined {
   return saved ?? unitRef ?? picked;
 }
@@ -31,7 +31,7 @@ export function unitSlot(unit: SpriteUnit | null, key: "ncgr" | "nclr" | "ncer")
   return unit[key];
 }
 
-/** Saved ref, then the manifest unit, then the nearest sibling. */
+/** Saved ref, then the manifest unit, then the automatic pair. */
 export function pairedRefs(saved: SpritePair, unit: SpriteUnit | null, picked: SpritePair): SpritePair {
   const ncgr = savedOrUnit(saved.ncgr, unitSlot(unit, "ncgr"), picked.ncgr);
   const nclr = savedOrUnit(saved.nclr, unitSlot(unit, "nclr"), picked.nclr);
@@ -48,19 +48,39 @@ export function nextSpritePair(args: {
   narcPath: string | null;
   container: number;
   id: number;
-  peers: ResourceItem[];
-  ncgrs: ResourceItem[];
-  nclrs: ResourceItem[];
-  ncers: ResourceItem[];
 }): SpritePair {
-  // Manifest companions, then the nearest sibling of each sprite role.
+  // A declared game-database unit wins over either automatic guess.
   const likes = args.items.map((item) => ({ index: item.ref.id, format: item.format }));
   const unit = resolveSpriteUnit(args.gameCode, args.narcPath, args.container, likes, args.id);
-  const ncgr = pickSibling(args.ncgrs, args.peers, args.id);
-  const nclr = pickSibling(args.nclrs, args.peers, args.id);
-  const ncer = pickSibling(args.ncers, args.peers, args.id);
 
-  return pairedRefs(args.saved, unit, { ncgr, nclr, ncer });
+  // Column pattern, or the nearest files that can share tiles and colors.
+  const picked = autoPair(args.items, selectedFormat(args.items, args.id), args.id);
+
+  return pairedRefs(args.saved, unit, {
+    ncgr: refAt(args.items, picked.ncgr),
+    nclr: refAt(args.items, picked.nclr),
+    ncer: refAt(args.items, picked.ncer),
+  });
+}
+
+/** Format of the selected file, or empty when it is not in the list. */
+function selectedFormat(items: ResourceItem[], id: number): string {
+  for (const item of items) {
+    if (item.ref.id === id) return item.format;
+  }
+
+  return "";
+}
+
+/** Ref for an automatic-pair index. */
+function refAt(items: ResourceItem[], id: number | undefined): ResourceRef | undefined {
+  if (id === undefined) return undefined;
+
+  for (const item of items) {
+    if (item.ref.id === id) return item.ref;
+  }
+
+  return undefined;
 }
 
 /** Resources of one format, in container order. */

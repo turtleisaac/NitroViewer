@@ -1,9 +1,9 @@
 import { useChangedKey } from "../useChangedKey";
 import type { ResourceItem } from "../state/store";
-import { refKey, type ResourceRef } from "../transport";
+import { refKey, type ResourceRef, type SpriteFacts } from "../transport";
 
 export interface NarcListing {
-  entries: { index: number; format: string }[];
+  entries: ({ index: number; format: string } & SpriteFacts)[];
 }
 
 /** Entries of the open NARC, or loose ROM siblings when the file is not in a NARC. */
@@ -19,6 +19,12 @@ export function resourcesInContainer(
     ref: { container, id: entry.index },
     label: `#${entry.index}`,
     format: entry.format,
+    depth: entry.depth,
+    colors: entry.colors,
+    tileBytes: entry.tileBytes,
+    boundary: entry.boundary,
+    maxTile: entry.maxTile,
+    objects: entry.objects,
   }));
 }
 

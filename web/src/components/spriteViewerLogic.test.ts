@@ -40,7 +40,12 @@ import {
 } from "./spriteViewerLogic";
 
 const ref = (id: number) => ({ container: 1, id });
-const item = (id: number, format: string): ResourceItem => ({ ref: ref(id), label: `#${id}`, format });
+const item = (id: number, format: string, facts: Partial<ResourceItem> = {}): ResourceItem => ({
+  ref: ref(id),
+  label: `#${id}`,
+  format,
+  ...facts,
+});
 
 describe("sprite viewer logic", () => {
   it("pairs, seeds, and describes controls", () => {
@@ -52,9 +57,25 @@ describe("sprite viewer logic", () => {
     const items = [item(1, "NCGR"), item(2, "NCLR"), item(3, "NCER")];
     const pair = nextSpritePair({
       items, saved: {}, gameCode: undefined, narcPath: null, container: 1, id: 1,
-      peers: [item(1, "NCGR")], ncgrs: [item(1, "NCGR")], nclrs: [item(2, "NCLR")], ncers: [item(3, "NCER")],
     });
     expect(pair.nclr).toEqual(ref(2));
+    const marill = [
+      item(39, "NCGR", { depth: 3, tileBytes: 100000 }),
+      item(59, "NCLR", { colors: 256 }),
+      item(63, "NCLR", { colors: 256 }),
+      item(64, "NCGR", { depth: 3, tileBytes: 32 }),
+      item(65, "NCER", { boundary: 0, objects: [{ tile: 0, wide: 4, high: 4, colors: 16 }] }),
+      item(66, "NANR"),
+    ];
+    const declared = nextSpritePair({
+      items: marill,
+      saved: {},
+      gameCode: "IPKE",
+      narcPath: "/a/1/2/0",
+      container: 1,
+      id: 66,
+    });
+    expect(declared).toEqual({ ncgr: ref(64), nclr: ref(63), ncer: ref(65) });
     const explicit = groupUnit(
       { strategy: "explicit", units: [{ nclr: 63, ncgr: 64, ncer: 65, nanr: 66 }] },
       [],

@@ -87,7 +87,7 @@ public interface NitroViewerService
      */
     String openNarcAt(int romHandle, int container, int id);
 
-    /** @return {"files":[{"index","size","format"}]} */
+    /** @return {"files":[{"index","size","format", optional graphic fields}]} */
     String listNarc(int narcHandle);
 
     /**

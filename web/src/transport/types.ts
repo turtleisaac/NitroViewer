@@ -50,7 +50,25 @@ export interface FormatInfo {
   size: number;
 }
 
-export interface NarcEntry {
+/** One enabled OBJ, in 8x8 tiles. */
+export interface OamBox {
+  tile: number;
+  wide: number;
+  high: number;
+  colors: number;
+}
+
+/** Header fields used to pair a tileset, palette, cell bank, or screen. Absent fields are skipped. */
+export interface SpriteFacts {
+  depth?: number;
+  colors?: number;
+  tileBytes?: number;
+  boundary?: number;
+  maxTile?: number;
+  objects?: OamBox[];
+}
+
+export interface NarcEntry extends SpriteFacts {
   index: number;
   size: number;
   format: string;
