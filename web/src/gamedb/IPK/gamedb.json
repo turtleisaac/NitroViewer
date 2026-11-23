@@ -101,6 +101,27 @@
         ]
       }
     },
+    "/a/0/4/6": {
+      "role": "title-screen",
+      "comment": "Shared screens list the HeartGold palette first.",
+      "grouping": {
+        "strategy": "explicit",
+        "units": [
+          { "nclr": 4, "ncgr": 3, "nscr": 0 },
+          { "nclr": 2, "ncgr": 1, "nscr": 0 },
+          { "nclr": 4, "ncgr": 15, "nscr": 17 },
+          { "nclr": 2, "ncgr": 15, "nscr": 17 },
+          { "nclr": 4, "ncgr": 34, "nscr": 35 },
+          { "nclr": 2, "ncgr": 36, "nscr": 37 },
+          { "nclr": 13 },
+          { "nclr": 14 },
+          { "nsbmd": 25, "nsbca": 26, "nsbta": 27, "nsbtp": 29, "nsbma": 28 },
+          { "nsbmd": 38, "nsbca": 39, "nsbtp": 40 },
+          { "nsbmd": 20, "nsbca": 21, "nsbta": 22, "nsbtp": 23, "nsbma": 24 },
+          { "nsbmd": 41, "nsbca": 42, "nsbtp": 43 }
+        ]
+      }
+    },
     "/a/1/0/9": {
       "role": "vs-cutin",
       "comment": "E4 backgrounds share tiles 48, cell 49, and animation 50.",
