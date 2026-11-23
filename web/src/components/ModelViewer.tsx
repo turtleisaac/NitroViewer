@@ -20,6 +20,7 @@ import {
   pickObjFile,
   pickTexFile,
 } from "./modelViewerLogic";
+import { blendedSample, nodeShown, resourceAlpha, resourceWire, shapeDraw } from "./polygonDraw";
 import { fileStem, formatsOf, refDep, resourcesInContainer, useApplyOnChange } from "./viewerShared";
 
 function describeError(err: unknown): string {
@@ -62,43 +63,261 @@ const frameOf = (timeSec: number, frameCount: number) =>
   frameCount > 0 ? Math.floor(timeSec * 30) % frameCount : 0;
 
 // Apply the loaded non-skeletal tracks at the given time. Safe to call with any subset missing.
-function applyTracks(t: Three) {
-  const time = t.trackTime;
-  if (t.matColor) {
-    const f = frameOf(time, t.matColor.frameCount);
-    for (const m of t.matColor.materials) {
-      const mats = t.materialsByName.get(m.name);
-      if (!mats) continue;
-      const alpha = m.alpha[f] ?? 1;
-      for (const mat of mats) {
-        mat.color.set(m.diffuse[f] ?? "#ffffff");
-        mat.opacity = alpha;
-        mat.transparent = mat.transparent || alpha < 1;
-      }
-    }
+function applyTracks(state: Three): void {
+  paintMaterialColors(state);
+  paintTexturePatterns(state);
+  paintShapeDraw(state);
+}
+
+// NSBMA diffuse and alpha. Alpha 0 is applied again by paintShapeDraw, which hides the mesh.
+function paintMaterialColors(state: Three): void {
+  const anim = state.matColor;
+
+  if (anim === null) {
+    return;
   }
-  if (t.texPat) {
-    const f = frameOf(time, t.texPat.anim.frameCount);
-    for (const m of t.texPat.anim.materials) {
-      const mats = t.materialsByName.get(m.name);
-      const tex = t.texPat.texCache.get(m.frames[f]);
-      if (!mats || !tex) continue;
-      for (const mat of mats) {
-        mat.map = tex;
-        mat.needsUpdate = true;
-      }
-    }
+
+  paintColorList(state, anim, frameOf(state.trackTime, anim.frameCount));
+}
+
+// One color sample per material track.
+function paintColorList(state: Three, anim: MaterialColorAnim, frame: number): void {
+  for (const track of anim.materials) {
+    paintColorTrack(state, track, frame);
   }
-  if (t.vis) {
-    const f = frameOf(time, t.vis.frameCount);
-    for (const mesh of t.meshes) {
-      const name = (mesh.material as THREE.MeshBasicMaterial).name;
-      const node = t.visNodeByMaterial.get(name);
-      if (node == null) continue;
-      const row = t.vis.visible[node];
-      if (row) mesh.visible = row[f] !== 0;
-    }
+}
+
+// Skip a track whose material is not on the model.
+function paintColorTrack(state: Three, track: MaterialColorAnim["materials"][number], frame: number): void {
+  const mats = state.materialsByName.get(track.name);
+
+  if (mats === undefined) {
+    return;
   }
+
+  paintColorMats(mats, track, frame);
+}
+
+// Write this frame's diffuse and alpha onto each material that shares the name.
+function paintColorMats(mats: THREE.MeshBasicMaterial[], track: MaterialColorAnim["materials"][number], frame: number): void {
+  const diffuse = sampleOr(track.diffuse, frame, "#ffffff");
+  const alpha = sampleOr(track.alpha, frame, 1);
+
+  for (const mat of mats) {
+    writeColor(mat, diffuse, alpha);
+  }
+}
+
+// A missing sample keeps the fallback. A stored 0 is a real blend to zero.
+function sampleOr<T>(values: T[], frame: number, fallback: T): T {
+  const value = values[frame];
+
+  if (value === undefined) {
+    return fallback;
+  }
+
+  return value;
+}
+
+// Opacity follows the blend. Translucency is only turned on, never cleared, by a color track.
+function writeColor(mat: THREE.MeshBasicMaterial, diffuse: string, alpha: number): void {
+  mat.color.set(diffuse);
+  mat.opacity = alpha;
+  markTranslucent(mat, alpha);
+}
+
+// An alpha below 1 needs a transparent material so the blend shows.
+function markTranslucent(mat: THREE.MeshBasicMaterial, alpha: number): void {
+  if (alpha < 1) {
+    mat.transparent = true;
+  }
+}
+
+// NSBTP texture swap for this frame.
+function paintTexturePatterns(state: Three): void {
+  const pat = state.texPat;
+
+  if (pat === null) {
+    return;
+  }
+
+  paintPatternList(state, pat, frameOf(state.trackTime, pat.anim.frameCount));
+}
+
+// One pattern sample per material track.
+function paintPatternList(state: Three, pat: TexPat, frame: number): void {
+  for (const track of pat.anim.materials) {
+    paintPatternTrack(state, pat, track, frame);
+  }
+}
+
+// Skip a track whose material is not on the model.
+function paintPatternTrack(state: Three, pat: TexPat, track: TexturePatternAnim["materials"][number], frame: number): void {
+  const mats = state.materialsByName.get(track.name);
+
+  if (mats === undefined) {
+    return;
+  }
+
+  assignPattern(mats, pat.texCache.get(track.frames[frame]));
+}
+
+// A frame that names no cached texture leaves the current map in place.
+function assignPattern(mats: THREE.MeshBasicMaterial[], tex: THREE.Texture | undefined): void {
+  if (tex === undefined) {
+    return;
+  }
+
+  stampPattern(mats, tex);
+}
+
+// Point every material that shares the name at this frame's texture.
+function stampPattern(mats: THREE.MeshBasicMaterial[], tex: THREE.Texture): void {
+  for (const mat of mats) {
+    mat.map = tex;
+    mat.needsUpdate = true;
+  }
+}
+
+// Hide a shape NNS would skip, and send a submitted wireframe material as edges.
+function paintShapeDraw(state: Three): void {
+  for (const mesh of state.meshes) {
+    paintOneMesh(state, mesh);
+  }
+}
+
+// Array materials are not used by the exporter. Leave them alone.
+function paintOneMesh(state: Three, mesh: THREE.Mesh): void {
+  const mat = basicMaterial(mesh);
+
+  if (mat === null) {
+    return;
+  }
+
+  commitShape(state, mesh, mat);
+}
+
+// The single material on this mesh, after makeUnlit has swapped it to MeshBasicMaterial.
+function basicMaterial(mesh: THREE.Mesh): THREE.MeshBasicMaterial | null {
+  const material = mesh.material;
+
+  if (Array.isArray(material)) {
+    return null;
+  }
+
+  return material as THREE.MeshBasicMaterial;
+}
+
+// Visibility is the node bit and the polygon-alpha skip together.
+function commitShape(state: Three, mesh: THREE.Mesh, mat: THREE.MeshBasicMaterial): void {
+  const draw = shapeDraw(
+    resourceAlpha(mesh.userData.polygonAlpha),
+    resourceWire(mesh.userData.wireframe),
+    blendedSample(state.matColor, mat.name, trackFrame(state, frameCountOf(state.matColor))),
+    nodeShown(visRows(state), visNode(state, mat.name), trackFrame(state, frameCountOf(state.vis))),
+  );
+
+  mesh.visible = draw.visible;
+  mat.wireframe = draw.wireframe;
+  liftEdges(mat, draw.wireframe);
+}
+
+// Frame count of a bound track, or null when that track is absent.
+function frameCountOf(anim: { frameCount: number } | null): number | null {
+  if (anim === null) {
+    return null;
+  }
+
+  return anim.frameCount;
+}
+
+// Frame index for a track, or 0 when the track is not bound.
+function trackFrame(state: Three, frameCount: number | null): number {
+  if (frameCount === null) {
+    return 0;
+  }
+
+  return frameOf(state.trackTime, frameCount);
+}
+
+// Visibility rows, or null when no NSBVA is bound.
+function visRows(state: Three): number[][] | null {
+  const vis = state.vis;
+
+  if (vis === null) {
+    return null;
+  }
+
+  return vis.visible;
+}
+
+// Node id stored for this material, or undefined when the rig did not name it.
+function visNode(state: Three, name: string): number | undefined {
+  return state.visNodeByMaterial.get(name);
+}
+
+// Wireframe edges are opaque. A filled material keeps the opacity the color track wrote.
+function liftEdges(mat: THREE.MeshBasicMaterial, wire: boolean): void {
+  if (!wire) {
+    return;
+  }
+
+  mat.opacity = 1;
+  mat.transparent = false;
+}
+
+// Copy polygon extras onto the mesh before makeUnlit replaces the material.
+function notePolygonExtras(root: THREE.Object3D): void {
+  root.traverse((child) => stashMesh(child));
+}
+
+// Ignore lights and other non-mesh nodes.
+function stashMesh(child: THREE.Object3D): void {
+  if (!(child instanceof THREE.Mesh)) {
+    return;
+  }
+
+  const mesh = child as THREE.Mesh<THREE.BufferGeometry, THREE.Material | THREE.Material[]>;
+  stashFromMaterial(mesh);
+}
+
+// One material per mesh. The exporter does not emit material arrays.
+function stashFromMaterial(mesh: THREE.Mesh): void {
+  const material = mesh.material;
+
+  if (Array.isArray(material)) {
+    return;
+  }
+
+  stashFields(mesh, material.userData);
+}
+
+// Missing extras read as a solid, non-wireframe material.
+function stashFields(mesh: THREE.Mesh, data: { polygonAlpha?: unknown; wireframe?: unknown } | undefined): void {
+  const extras = extrasOrEmpty(data);
+  const bag = meshBag(mesh);
+  bag.polygonAlpha = resourceAlpha(extras.polygonAlpha);
+  bag.wireframe = resourceWire(extras.wireframe);
+}
+
+// A material the loader did not give userData to still draws.
+function extrasOrEmpty(
+  data: { polygonAlpha?: unknown; wireframe?: unknown } | undefined,
+): { polygonAlpha?: unknown; wireframe?: unknown } {
+  if (data == null) {
+    return {};
+  }
+
+  return data;
+}
+
+// The mesh bag is created when a test double never set one.
+function meshBag(mesh: THREE.Mesh): Record<string, unknown> {
+  if (mesh.userData == null) {
+    mesh.userData = {};
+  }
+
+  return mesh.userData;
 }
 
 // DS models are unlit — the texture + vertex colors are the final look. glTF exports them as PBR,
@@ -349,6 +568,7 @@ function indexMeshes(state: Three, model: THREE.Object3D): void {
   state.visNodeByMaterial = new Map();
   state.trackTime = 0;
   model.traverse((object) => collectMesh(state, object));
+  applyTracks(state);
 }
 
 /** Display name of a baked glTF clip. */
@@ -390,6 +610,7 @@ function installParsedGltf(alive: boolean, args: GltfArgs, gltf: { scene: THREE.
   const state = args.three.current;
   resetMixer(state);
   clearGroup(state.root);
+  notePolygonExtras(gltf.scene);
   makeUnlit(gltf.scene);
   state.root.add(gltf.scene);
   fitCamera(gltf.scene, state.camera, state.controls);
