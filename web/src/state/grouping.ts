@@ -37,7 +37,9 @@ export interface SpriteUnit {
 export type FormatRole = Lowercase<KnownFormat>;
 
 /** One hand-specified unit. A role is one member index, or a list when several files share it. */
-export type ExplicitMember = Partial<Record<FormatRole, number | number[]>>;
+export type ExplicitMember = Partial<Record<FormatRole, number | number[]>> & {
+  playbackRate?: number;
+};
 
 /** Every file an explicit unit names, with each role expanded to a list of refs. */
 export type ExplicitUnit = Partial<Record<FormatRole, ResourceRef[]>>;
@@ -220,8 +222,21 @@ function unitIssues(unit: unknown, index: number): string[] {
   }
 
   const issues: string[] = [];
+  let roles = 0;
 
   for (const key of keys) {
+    // playbackRate is ticks per second for a preview, not a file role.
+    if (key === "playbackRate") {
+      const issue = playbackRateIssue(unit[key], index);
+
+      if (issue !== null) {
+        issues.push(issue);
+      }
+
+      continue;
+    }
+
+    roles += 1;
     const issue = roleIssue(key, unit[key], index);
 
     if (issue !== null) {
@@ -229,7 +244,51 @@ function unitIssues(unit: unknown, index: number): string[] {
     }
   }
 
+  // A timing field alone does not group a file.
+  if (roles === 0) {
+    issues.push(`unit ${index} has no members`);
+  }
+
   return issues;
+}
+
+/** A bad playback rate, or null when the value can be passed to the preview. */
+function playbackRateIssue(value: unknown, index: number): string | null {
+  if (typeof value !== "number" || !Number.isFinite(value) || value <= 0) {
+    return `unit ${index} playbackRate is not a positive number`;
+  }
+
+  return null;
+}
+
+/**
+ * Ticks per second recorded on the unit that lists `id`, or null when that unit has none.
+ */
+export function playbackRateFor(
+  gameCode: string | undefined,
+  narcPath: string | null,
+  id: number,
+): number | null {
+  const units = explicitUnitsIn(db, gameCode, narcPath);
+
+  if (units === null) {
+    return null;
+  }
+
+  // The first unit that names the file owns its rate.
+  const found = explicitUnitsContaining(units, id);
+
+  if (found.length === 0) {
+    return null;
+  }
+
+  const rate = found[0].playbackRate;
+
+  if (typeof rate !== "number" || !Number.isFinite(rate) || rate <= 0) {
+    return null;
+  }
+
+  return rate;
 }
 
 /** One bad role or index, or null when the pair is usable. */

@@ -486,6 +486,15 @@ export interface NitroViewerClient {
     height: number,
     frameCount: number
   ): Promise<{ emitterCount: number; frames: string[] }>;
+  /** Same frames, plus per-frame delays when ticksPerSecond is a positive rate. */
+  renderRatedParticles(
+    handle: number,
+    ref: ResourceRef,
+    width: number,
+    height: number,
+    frameCount: number,
+    ticksPerSecond: number
+  ): Promise<{ emitterCount: number; frames: string[]; delaysCs?: number[] }>;
 
   getSdatInfo(handle: number, ref: ResourceRef): Promise<SdatInfo>;
   getSequenceNotes(handle: number, ref: ResourceRef, seqIndex: number): Promise<SequenceNotes>;

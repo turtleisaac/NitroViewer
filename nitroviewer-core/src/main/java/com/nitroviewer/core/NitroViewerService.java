@@ -342,6 +342,13 @@ public interface NitroViewerService
      */
     String renderParticles(int romHandle, int container, int id, int width, int height, int frameCount);
 
+    /**
+     * Same frames, with {@code delaysCs} when {@code ticksPerSecond} is positive.
+     * @return {"emitterCount":int,"frames":["dataURL",...],"delaysCs":[int,...]} | {"error"}
+     */
+    String renderParticles(int romHandle, int container, int id, int width, int height, int frameCount,
+            double ticksPerSecond);
+
     // --- sound (SDAT / SSEQ / SWAR / STRM) ---------------------------------------------------
 
     /**

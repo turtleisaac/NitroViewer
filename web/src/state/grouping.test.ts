@@ -13,6 +13,7 @@ import {
   resolveExplicitUnitIn,
   groupUnit,
   explicitIssues,
+  playbackRateFor,
   explicitUnitsContaining,
   explicitUnitsIn,
   type EntryLike,
@@ -317,6 +318,14 @@ describe("explicit units", () => {
     expect(explicitIssues(undefined, "explicit")).toEqual(["explicit grouping needs units"]);
     expect(explicitIssues([], "explicit")).toEqual([]);
     expect(explicitIssues([{ ncgr: 1 }, { nclr: -1 }], "explicit")).toEqual(["unit 1 nclr is negative"]);
+    expect(explicitIssues([{ spa: 151, playbackRate: 30 }], "explicit")).toEqual([]);
+    expect(explicitIssues([{ spa: 151, playbackRate: 0 }], "explicit")).toEqual([
+      "unit 0 playbackRate is not a positive number",
+    ]);
+    expect(explicitIssues([{ playbackRate: 30 }], "explicit")).toEqual(["unit 0 has no members"]);
+    expect(playbackRateFor("IPKE", "/a/1/0/9", 151)).toBe(30);
+    expect(playbackRateFor("IPGE", "/a/1/0/9", 152)).toBe(30);
+    expect(playbackRateFor("IPKE", "/a/1/0/9", 150)).toBeNull();
   });
 
   it("uses the formats formatOf returns as role keys", () => {
