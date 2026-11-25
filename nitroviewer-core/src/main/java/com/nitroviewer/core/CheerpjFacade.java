@@ -14,8 +14,6 @@ import io.github.turtleisaac.nds4j.g3d.GltfExporter;
 import io.github.turtleisaac.nds4j.g3d.MaterialColorAnimationSet;
 import io.github.turtleisaac.nds4j.g3d.Model;
 import io.github.turtleisaac.nds4j.g3d.ModelSet;
-import io.github.turtleisaac.nds4j.g3d.ParticleRenderer;
-import io.github.turtleisaac.nds4j.g3d.ParticleSet;
 import io.github.turtleisaac.nds4j.g3d.SkeletalAnimationSet;
 import io.github.turtleisaac.nds4j.g3d.TexturePatternAnimationSet;
 import io.github.turtleisaac.nds4j.g3d.TextureSet;
@@ -1700,19 +1698,17 @@ public final class CheerpjFacade implements NitroViewerService
     @Override
     public String renderParticles(int romHandle, int container, int id, int width, int height, int frameCount)
     {
+        return renderParticles(romHandle, container, id, width, height, frameCount, 0);
+    }
+
+    @Override
+    public String renderParticles(int romHandle, int container, int id, int width, int height, int frameCount,
+            double ticksPerSecond)
+    {
         try
         {
-            ParticleSet set = new ParticleSet(resolve(rom(romHandle), container, id));
-            java.util.List<BufferedImage> frames = new ParticleRenderer(width, height).render(set, frameCount);
-            StringBuilder sb = new StringBuilder("{\"emitterCount\":").append(set.getEmitterCount())
-                    .append(",\"frames\":[");
-            for (int i = 0; i < frames.size(); i++)
-            {
-                if (i > 0)
-                    sb.append(',');
-                sb.append(jstr(pngDataUrl(frames.get(i))));
-            }
-            return sb.append("]}").toString();
+            return ParticleFrames.render(resolve(rom(romHandle), container, id), width, height, frameCount,
+                    ticksPerSecond);
         }
         catch (Throwable t)
         {

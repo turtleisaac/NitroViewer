@@ -204,6 +204,15 @@ interface CheerpjFacade {
     height: number,
     frameCount: number,
   ): Promise<string>;
+  renderParticles(
+    handle: number,
+    container: number,
+    id: number,
+    width: number,
+    height: number,
+    frameCount: number,
+    ticksPerSecond: number,
+  ): Promise<string>;
   getSdatInfo(handle: number, container: number, id: number): Promise<string>;
   getSequenceNotes(handle: number, container: number, id: number, seqIndex: number): Promise<string>;
   renderSequenceWav(
@@ -803,6 +812,21 @@ export class CheerpjTransport implements NitroViewerClient {
   ): Promise<{ emitterCount: number; frames: string[] }> {
     return this.enqueue(async () =>
       unwrap(await this.f.renderParticles(handle, ref.container, ref.id, width, height, frameCount))
+    );
+  }
+
+  renderRatedParticles(
+    handle: number,
+    ref: ResourceRef,
+    width: number,
+    height: number,
+    frameCount: number,
+    ticksPerSecond: number
+  ): Promise<{ emitterCount: number; frames: string[]; delaysCs?: number[] }> {
+    return this.enqueue(async () =>
+      unwrap(
+        await this.f.renderParticles(handle, ref.container, ref.id, width, height, frameCount, ticksPerSecond)
+      )
     );
   }
 

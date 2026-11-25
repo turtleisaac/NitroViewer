@@ -1,6 +1,7 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useStore } from "../state/store";
 import { useChangedKey } from "../useChangedKey";
+import { holdParticleClock, loadParticles, type ParticleFrames } from "./particlePlayback";
 import { Icon } from "./icons";
 
 /** Pause or play label. */
@@ -15,18 +16,20 @@ function frameView(frames: string[], frame: number) {
   return <img className="pframe" src={frames[frame]} alt="" />;
 }
 
-// SPA effects are rendered to frames server-side (Nds4j ParticleRenderer); the viewer just cycles
-// the pre-rendered frames, so a simple interval is fine (no CheerpJ call during playback).
+// SPA effects are rendered to frames server-side. A unit playback rate comes back as per-frame
+// delays; the viewer only advances those frames, with no further preview call.
 export function ParticleViewer() {
   const selection = useStore((s) => s.selection)!;
   const client = useStore((s) => s.client);
   const romHandle = useStore((s) => s.romHandle)!;
-  const [data, setData] = useState<{ emitterCount: number; frames: string[] } | null>(null);
+  const [data, setData] = useState<ParticleFrames | null>(null);
   const [err, setErr] = useState<string>();
   const [frame, setFrame] = useState(0);
   const [playing, setPlaying] = useState(true);
+  const frameRef = useRef(0);
 
   const { container, id } = selection.ref;
+
   if (useChangedKey(`${romHandle}:${container}:${id}`)) {
     setData(null);
     setErr(undefined);
@@ -35,20 +38,15 @@ export function ParticleViewer() {
   }
 
   useEffect(() => {
-    let alive = true;
-    client
-      .renderParticles(romHandle, { container, id }, 256, 256, 48)
-      .then((d) => alive && setData(d))
-      .catch((e) => alive && setErr((e as Error).message));
-    return () => {
-      alive = false;
-    };
+    return loadParticles(client, romHandle, container, id, setData, setErr);
   }, [client, romHandle, container, id]);
 
   useEffect(() => {
-    if (!data || !playing || data.frames.length <= 1) return;
-    const iv = setInterval(() => setFrame((f) => (f + 1) % data.frames.length), 1000 / 30);
-    return () => clearInterval(iv);
+    frameRef.current = frame;
+  }, [frame]);
+
+  useEffect(() => {
+    return holdParticleClock(data, playing, frameRef, setFrame);
   }, [data, playing]);
 
   if (err) return <div className="error">Could not render effect: {err}</div>;
